@@ -1,0 +1,157 @@
+/* aiu-indicator styling */
+
+.aiu-panel-box {
+    spacing: 4px;
+}
+
+.aiu-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    margin-top: 5px;
+    margin-left: -2px;
+}
+
+.aiu-status-dot.normal {
+    background-color: #33d17a;
+}
+
+.aiu-status-dot.warning {
+    background-color: #f6d32d;
+}
+
+.aiu-status-dot.critical {
+    background-color: #e01b24;
+}
+
+.aiu-status-dot.unknown {
+    background-color: #9a9996;
+}
+
+/* Menu content */
+.aiu-menu-box {
+    min-width: 330px;
+    padding: 6px 4px;
+    spacing: 8px;
+}
+
+.aiu-header-title {
+    font-weight: 700;
+    font-size: 1.1em;
+}
+
+.aiu-header-time {
+    font-size: 0.82em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.aiu-section-label {
+    font-size: 0.75em;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.45);
+    text-transform: uppercase;
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+
+/* Provider card */
+.aiu-card {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 6px;
+}
+
+.aiu-provider-name {
+    font-weight: 700;
+    font-size: 0.95em;
+}
+
+.aiu-pill {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.75em;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.aiu-metric-name {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.aiu-metric-detail {
+    font-size: 0.82em;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.aiu-metric-reset {
+    font-size: 0.78em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+/* Progress bar */
+.aiu-track {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    height: 6px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.aiu-fill {
+    border-radius: 3px;
+    height: 6px;
+}
+
+.aiu-fill.green {
+    background-color: #33d17a;
+}
+
+.aiu-fill.yellow {
+    background-color: #f6d32d;
+}
+
+.aiu-fill.red {
+    background-color: #e01b24;
+}
+
+/* Balance & Spend row */
+.aiu-balance-row {
+    spacing: 8px;
+}
+
+.aiu-currency-val {
+    font-family: monospace;
+    font-weight: 700;
+    color: #8ff0a4;
+}
+
+/* Advice & Alert banners */
+.aiu-advice-box {
+    background-color: rgba(53, 132, 228, 0.14);
+    border: 1px solid rgba(53, 132, 228, 0.35);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 4px;
+}
+
+.aiu-advice-text {
+    font-size: 0.85em;
+    color: #99c1f1;
+}
+
+.aiu-alert-box {
+    background-color: rgba(224, 27, 36, 0.14);
+    border: 1px solid rgba(224, 27, 36, 0.35);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 4px;
+}
+
+.aiu-alert-text {
+    font-size: 0.82em;
+    color: #ff7b63;
+}
