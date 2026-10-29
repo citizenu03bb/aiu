@@ -1,4 +1,4 @@
-UUID = aiu-indicator@pat.local
+UUID = aiu-indicator@citizenu03bb.github.io
 EXT_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 SRC_DIR = $(shell pwd)
 
