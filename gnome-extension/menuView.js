@@ -256,9 +256,9 @@ export class MenuView {
 
                 // Provider header with note pill if available
                 const provHeader = new St.BoxLayout({
+                    style_class: 'aiu-provider-header',
                     x_expand: true,
                     y_align: Clutter.ActorAlign.CENTER,
-                    spacing: 6,
                 });
                 const nameLabel = new St.Label({
                     text: provider,
