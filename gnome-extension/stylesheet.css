@@ -1,7 +1,7 @@
 /* aiu-indicator styling */
 
 .aiu-panel-box {
-    spacing: 4px;
+    spacing: 3px;
 }
 
 .aiu-status-dot {
@@ -9,7 +9,7 @@
     height: 6px;
     border-radius: 3px;
     margin-top: 5px;
-    margin-left: -2px;
+    margin-left: 1px;
 }
 
 .aiu-status-dot.normal {

@@ -41,6 +41,8 @@ class AiuIndicator extends PanelMenu.Button {
         // 2. Status indicator dot
         this._statusDot = new St.Widget({
             style_class: 'aiu-status-dot unknown',
+            width: 6,
+            height: 6,
         });
         panelBox.add_child(this._statusDot);
 
@@ -67,6 +69,38 @@ class AiuIndicator extends PanelMenu.Button {
                 }
             }
         }, this);
+    }
+
+    vfunc_allocate(box) {
+        this.set_allocation(box);
+
+        const child = this.get_first_child();
+        if (!child)
+            return;
+
+        const availWidth = Math.max(0, box.x2 - box.x1);
+        const availHeight = Math.max(0, box.y2 - box.y1);
+        if (availWidth <= 0 || availHeight <= 0)
+            return;
+
+        const [, natWidth] = child.get_preferred_width(-1);
+        const minPadding = this._minHPadding || 0;
+        const natPadding = this._natHPadding || 0;
+
+        const childBox = new Clutter.ActorBox();
+        if (natWidth + 2 * natPadding <= availWidth) {
+            childBox.x1 = natPadding;
+            childBox.x2 = Math.max(childBox.x1, availWidth - natPadding);
+        } else {
+            const pad = Math.min(minPadding, Math.floor(availWidth / 2));
+            childBox.x1 = pad;
+            childBox.x2 = Math.max(childBox.x1, availWidth - pad);
+        }
+
+        childBox.y1 = 0;
+        childBox.y2 = availHeight;
+
+        child.allocate(childBox);
     }
 
     setRefreshing(isRefreshing) {

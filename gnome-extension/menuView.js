@@ -7,6 +7,15 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+function setLineWrap(label, wrap = true) {
+    const ct = typeof label.get_clutter_text === 'function'
+        ? label.get_clutter_text()
+        : (label['clutter-text'] || label.clutter_text);
+    if (ct) {
+        ct.line_wrap = wrap;
+    }
+}
+
 export class MenuView {
     constructor(menu, callbacks = {}) {
         this._menu = menu;
@@ -160,7 +169,7 @@ export class MenuView {
                 text: String(error),
                 style_class: 'aiu-alert-text',
             });
-            errDesc.clutter_text.line_wrap = true;
+            setLineWrap(errDesc, true);
             errBox.add_child(errTitle);
             errBox.add_child(errDesc);
             this._dataBox.add_child(errBox);
@@ -198,7 +207,7 @@ export class MenuView {
                     text: err.note || 'Erreur d’authentification ou quota dépassé',
                     style_class: 'aiu-alert-text',
                 });
-                noteLabel.clutter_text.line_wrap = true;
+                setLineWrap(noteLabel, true);
                 alertBox.add_child(provLabel);
                 alertBox.add_child(noteLabel);
             }
@@ -216,7 +225,7 @@ export class MenuView {
                 text: data.advice,
                 style_class: 'aiu-advice-text',
             });
-            adviceLabel.clutter_text.line_wrap = true;
+            setLineWrap(adviceLabel, true);
             adviceBox.add_child(adviceLabel);
             this._dataBox.add_child(adviceBox);
         }

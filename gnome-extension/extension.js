@@ -70,19 +70,26 @@ export default class AiuExtension extends Extension {
             return;
         }
 
-        this._indicator.setRefreshing(true);
-        const res = await this._client.fetchSnapshot();
+        try {
+            this._indicator.setRefreshing(true);
+            const res = await this._client.fetchSnapshot();
 
-        if (!this._indicator) {
-            // Extension was disabled while request was in-flight
-            return;
-        }
+            if (!this._indicator) {
+                // Extension was disabled while request was in-flight
+                return;
+            }
 
-        if (res.success) {
-            this._indicator.updateData(res.data);
-        } else {
-            console.error(`[aiu-indicator] Erreur snapshot: ${res.error}`);
-            this._indicator.updateData(null, { error: res.error });
+            if (res.success) {
+                this._indicator.updateData(res.data);
+            } else {
+                console.error(`[aiu-indicator] Erreur snapshot: ${res.error}`);
+                this._indicator.updateData(null, { error: res.error });
+            }
+        } catch (err) {
+            console.error(`[aiu-indicator] Exception dans _fetch: ${err.message}`);
+            if (this._indicator) {
+                this._indicator.updateData(null, { error: err.message });
+            }
         }
     }
 }
