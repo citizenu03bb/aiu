@@ -229,3 +229,30 @@
     font-size: 0.82em;
     color: #ff7b63;
 }
+
+/* First run: install aiu, or set up its providers. */
+.aiu-setup-box {
+    background-color: rgba(53, 132, 228, 0.14);
+    border: 1px solid rgba(53, 132, 228, 0.35);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 6px;
+}
+
+.aiu-setup-command {
+    font-family: monospace;
+    font-size: 0.85em;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    padding: 4px 6px;
+}
+
+.aiu-setup-buttons {
+    spacing: 6px;
+    padding-top: 2px;
+}
+
+.aiu-action-btn {
+    padding: 4px 10px;
+    font-size: 0.85em;
+}

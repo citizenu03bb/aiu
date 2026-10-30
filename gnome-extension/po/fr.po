@@ -35,10 +35,6 @@ msgid "passed, refresh the snapshot"
 msgstr "passé, relevé à rafraîchir"
 
 #: aiuClient.js
-msgid "Cannot find 'aiu' (neither ~/.local/bin/aiu nor on the PATH)"
-msgstr "Impossible de localiser 'aiu' (ni ~/.local/bin/aiu, ni dans le PATH)"
-
-#: aiuClient.js
 msgid "Could not start aiu: {error}"
 msgstr "Échec du lancement d'aiu : {error}"
 
@@ -192,3 +188,56 @@ msgstr "gratuit, perdu à l'expiration"
 #: menuView.js
 msgid "already spent (history)"
 msgstr "déjà dépensé (historique)"
+
+# First run: install aiu, then set up its providers
+#: menuView.js
+msgid "Setup needed"
+msgstr "Configuration requise"
+
+#: menuView.js
+msgid "👋 One step left: install aiu"
+msgstr "👋 Plus qu'une étape : installer aiu"
+
+#: menuView.js
+msgid "This panel shows what the aiu command-line tool reads from your AI subscriptions. Install it with:"
+msgstr "Ce panneau affiche ce que l'outil en ligne de commande aiu lit de vos abonnements IA. Installez-le avec :"
+
+#: menuView.js
+msgid "This needs pipx (sudo apt install pipx) or uv first."
+msgstr "Il faut d'abord pipx (sudo apt install pipx) ou uv."
+
+#: menuView.js
+msgid "Then check again. aiu writes a starter config on its first run."
+msgstr "Puis vérifiez à nouveau. aiu écrit une configuration de départ à son premier lancement."
+
+#: menuView.js
+msgid "Copy command"
+msgstr "Copier la commande"
+
+#: menuView.js
+msgid "Copied ✓"
+msgstr "Copiée ✓"
+
+#: menuView.js
+msgid "Install guide"
+msgstr "Guide d'installation"
+
+#: menuView.js
+msgid "Check again"
+msgstr "Vérifier à nouveau"
+
+#: menuView.js
+msgid "👋 No subscription read yet"
+msgstr "👋 Aucun abonnement lu pour l'instant"
+
+#: menuView.js
+msgid "Turn on the providers you use in ~/.config/ai-usage/config.toml and sign in to their command-line tools, then refresh. The notes below say what each one is missing."
+msgstr "Activez les fournisseurs que vous utilisez dans ~/.config/ai-usage/config.toml et connectez-vous à leurs outils en ligne de commande, puis actualisez. Les notes ci-dessous disent ce qui manque à chacun."
+
+#: menuView.js
+msgid "Open config"
+msgstr "Ouvrir la configuration"
+
+#: menuView.js
+msgid "Setup guide"
+msgstr "Guide de configuration"

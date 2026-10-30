@@ -1,9 +1,17 @@
 {
   "name": "AI Usage (aiu)",
-  "description": "Your AI subscription quotas and balances (Claude, Codex, Gemini, Mistral, DeepSeek, OpenRouter, OpenAI) in the GNOME top bar, with advice on which one to use first. Needs the aiu command-line tool. English and French.",
+  "description": "Your AI subscription quotas and balances (Claude, Codex, Gemini, Mistral, DeepSeek, OpenRouter, OpenAI) in the top bar, with advice on which one to use first.\n\nRequires the aiu command-line tool. Install it first with\nuv tool install git+https://github.com/citizenu03bb/aiu\nor pipx install git+https://github.com/citizenu03bb/aiu\nUntil then, the panel shows this command with a Copy button.\n\nEnglish and French.",
   "uuid": "aiu-indicator@citizenu03bb.github.io",
   "gettext-domain": "aiu-indicator",
-  "shell-version": ["45", "46", "47", "48", "49", "50", "51"],
+  "shell-version": [
+    "45",
+    "46",
+    "47",
+    "48",
+    "49",
+    "50",
+    "51"
+  ],
   "version": 1,
   "version-name": "0.2.0",
   "url": "https://github.com/citizenu03bb/aiu"

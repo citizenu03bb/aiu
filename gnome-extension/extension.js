@@ -82,6 +82,8 @@ export default class AiuExtension extends Extension {
 
             if (res.success) {
                 this._indicator.updateData(res.data);
+            } else if (res.missing) {
+                this._indicator.updateData(null, { missing: true });
             } else {
                 console.error(`[aiu-indicator] Snapshot failed: ${res.error}`);
                 this._indicator.updateData(null, { error: res.error });
