@@ -177,7 +177,9 @@ yields the bare key.
 **Done when:** CI is green and the extension leaves no `aiu` process behind
 after disable.
 
-## Wave 3: in progress
+## Wave 3: done
+
+Merged on 2026-10-30: D in #14.
 
 ### D. English interface
 
