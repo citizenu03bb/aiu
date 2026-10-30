@@ -39,3 +39,15 @@ def test_no_desktop_and_no_token(monkeypatch):
     monkeypatch.setattr(aiu, "_gemini_access_token", lambda force=False: None)
     [row] = aiu.probe_gemini({})
     assert row.kind == "error" and "open Antigravity" in row.note
+
+
+def test_plan_from_allowed_tiers(monkeypatch):
+    # Same recorded shape, no currentTier, but the quota call goes through.
+    load = {"allowedTiers": LOAD["allowedTiers"]}
+    monkeypatch.setattr(aiu, "_query_local_quota_summary", lambda: None)
+    monkeypatch.setattr(aiu, "_gemini_access_token", lambda force=False: "tok")
+    monkeypatch.setattr(aiu.httpx, "post", lambda url, **kw:
+                        Resp(200, load) if url.endswith("loadCodeAssist") else
+                        Resp(200, {"buckets": [{"modelId": "gemini-2.5-pro", "remainingFraction": 0.5}]}))
+    [row] = aiu.probe_gemini({})
+    assert row.kind == "quota" and row.note == "Gemini Code Assist"
