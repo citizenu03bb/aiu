@@ -142,24 +142,44 @@ class Row:
 # ---------------------------------------------------------------------------
 # Key resolution
 # ---------------------------------------------------------------------------
+# Values read from ~/.env by load_env_file: only the names the config refers to,
+# and never exported to os.environ, so key_cmd and other children don't see them.
+ENV_FILE: dict[str, str] = {}
+_CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
 def resolve_key(cfg: dict, name: str) -> str | None:
+    """First usable key from key_env, key_cmd, key_file. Only the first line of
+    a value counts (a `pass` entry holds more lines after the password); a value
+    that still holds control characters is refused without being quoted."""
+    def clean(v: str | None, source: str) -> str | None:
+        v = (v or "").strip()
+        if not v:
+            return None
+        v = v.splitlines()[0].strip()
+        if _CONTROL_RE.search(v):
+            print(f"[aiu] {name}: key from {source} holds control characters, ignored",
+                  file=sys.stderr)
+            return None
+        return v
+
     if cfg.get("key_env"):
-        v = os.environ.get(cfg["key_env"])
-        if v:
-            return v.strip()
+        env = cfg["key_env"]
+        if v := clean(os.environ.get(env) or ENV_FILE.get(env), "key_env"):
+            return v
     if cfg.get("key_cmd"):
         try:
             out = subprocess.run(
                 cfg["key_cmd"], shell=True, capture_output=True, text=True, timeout=15
             )
-            if out.returncode == 0 and out.stdout.strip():
-                return out.stdout.strip()
+            if out.returncode == 0 and (v := clean(out.stdout, "key_cmd")):
+                return v
         except Exception:
             pass
     if cfg.get("key_file"):
         p = Path(os.path.expanduser(cfg["key_file"]))
-        if p.is_file():
-            return p.read_text().strip()
+        if p.is_file() and (v := clean(p.read_text(errors="replace"), "key_file")):
+            return v
     return None
 
 
@@ -911,36 +931,98 @@ def _month_start_epoch() -> int:
     return int(datetime(now.year, now.month, 1, tzinfo=timezone.utc).timestamp())
 
 
-def load_env_file() -> None:
-    """Load KEY=VALUE lines from ~/.env (override with AIU_ENV_FILE) into the
-    environment, without clobbering vars already set. Makes `./aiu.py` behave
-    like the `aiu` wrapper regardless of how it's launched."""
+_ENV_LINE_RE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)")
+_ENV_ALWAYS = ("MISTRAL_ADMIN_COOKIE", "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET")
+
+
+def _env_value(v: str) -> str | None:
+    """A ~/.env value as a shell reads it, without expansion: '...' is literal,
+    "..." honours \\ escapes, an unquoted value stops at whitespace + `#`.
+    None for an unmatched quote or anything after the closing quote."""
+    if v[:1].isspace():
+        v = v.lstrip()
+        if v[:1] == "#":
+            return ""
+    if v[:1] == "'":
+        end = v.find("'", 1)
+        if end < 0:
+            return None
+        out, rest = v[1:end], v[end + 1:]
+    elif v[:1] == '"':
+        out, i = [], 1
+        while i < len(v) and v[i] != '"':
+            if v[i] == "\\" and i + 1 < len(v) and v[i + 1] in '"\\$`':
+                i += 1
+            out.append(v[i])
+            i += 1
+        if i == len(v):
+            return None
+        out, rest = "".join(out), v[i + 1:]
+    else:
+        out = re.split(r"\s#", v, maxsplit=1)[0].rstrip()
+        return None if "'" in out or '"' in out else out
+    return out if not rest.strip() or re.match(r"\s+#", rest) else None
+
+
+def load_env_file(config: dict) -> dict[str, str]:
+    """Read from ~/.env (override with AIU_ENV_FILE) only the names the config
+    refers to: each `key_env`, the Mistral cookie and the Gemini CLI OAuth
+    client. Returns them; the caller puts them in ENV_FILE, not os.environ."""
     path = Path(os.path.expanduser(os.environ.get("AIU_ENV_FILE", "~/.env")))
     if not path.is_file():
-        return
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+        return {}
+    wanted = set(_ENV_ALWAYS)
+    wanted.update(s["key_env"] for s in config.values()
+                  if isinstance(s, dict) and isinstance(s.get("key_env"), str))
+    found: dict[str, str] = {}
+    for n, line in enumerate(path.read_text(errors="replace").splitlines(), 1):
+        m = _ENV_LINE_RE.fullmatch(line)
+        if not m or m.group(1) not in wanted:
             continue
-        if line.startswith("export "):
-            line = line[len("export "):].lstrip()
-        if "=" not in line:
+        v = _env_value(m.group(2))
+        if v is None:
+            print(f"[aiu] {path}:{n}: {m.group(1)} has unmatched quotes, ignored",
+                  file=sys.stderr)
             continue
-        k, v = line.split("=", 1)
-        k = k.strip()
-        v = v.strip().strip('"').strip("'")
-        if k and k not in os.environ:
-            os.environ[k] = v
+        found[m.group(1)] = v
+    if found and path.stat().st_mode & 0o044:
+        print(f"[aiu] {path} holds keys and other users can read it: chmod 600 {path}",
+              file=sys.stderr)
+    return found
 
 
 def load_config(path: Path) -> dict:
+    """Read the config, writing the template (0600, in a 0700 directory) on
+    first run. Like OpenSSH, ignore every key_cmd when the file or its directory
+    belongs to someone else or can be written by group or others."""
     if not path.is_file():
-        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
-        path.write_text(CONFIG_TEMPLATE)
-        print(f"[aiu] wrote a starter config to {path} — edit it, then re-run.",
-              file=sys.stderr)
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        except FileExistsError:
+            pass
+        else:
+            with os.fdopen(fd, "w") as f:
+                f.write(CONFIG_TEMPLATE)
+            print(f"[aiu] wrote a starter config to {path} — edit it, then re-run.",
+                  file=sys.stderr)
     with open(path, "rb") as f:
-        return tomllib.load(f)
+        config = tomllib.load(f)
+    real = Path(os.path.realpath(path))
+    unsafe = []
+    for p in dict.fromkeys((path, path.parent, real.parent)):
+        st = p.stat()
+        if st.st_uid != os.getuid():
+            unsafe.append(f"{p} is not yours")
+        elif st.st_mode & 0o022:
+            unsafe.append(f"{p} is writable by group or others")
+    cmds = [name for name, s in config.items() if isinstance(s, dict) and "key_cmd" in s]
+    if unsafe and cmds:
+        print(f"[aiu] key_cmd ignored for {', '.join(cmds)}: {'; '.join(unsafe)}",
+              file=sys.stderr)
+        for name in cmds:
+            del config[name]["key_cmd"]
+    return config
 
 
 def collect(config: dict, only: set[str] | None) -> list[Row]:
@@ -1345,10 +1427,15 @@ def main() -> int:
                     help="warn about quota lost at reset / running dry, expiring credits (cron-friendly)")
     args = ap.parse_args()
 
-    load_env_file()
+    config = load_config(Path(os.path.expanduser(args.config)))
+    ENV_FILE.update(load_env_file(config))
+    # _gemini_oauth_client reads the environment. That client is the Gemini CLI's
+    # public one, not a user secret, so it is the only ~/.env value exported.
+    for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET"):
+        if k in ENV_FILE:
+            os.environ.setdefault(k, ENV_FILE[k])
     if args.alert:
         ensure_desktop_entry()  # before probing, so GNOME has indexed it by notify time
-    config = load_config(Path(os.path.expanduser(args.config)))
     only = set(s.strip() for s in args.only.split(",")) if args.only else None
     rows = collect(config, only)
 

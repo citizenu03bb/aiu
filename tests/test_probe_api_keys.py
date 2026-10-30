@@ -282,10 +282,51 @@ def test_resolve_key_nothing(home):
     assert aiu.resolve_key({}, "x") is None
 
 
-def test_env_file_feeds_probes(monkeypatch, home, http):
-    forget(monkeypatch, "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_ADMIN_COOKIE", "AIU_PLAIN")
+def test_resolve_key_keeps_first_line(monkeypatch, home, http):
+    """M1: a `pass` entry holds more lines after the password; only the first is the key."""
+    (home / "key").write_text("sk-from-file\r\n# my admin key\r\n")
+    assert aiu.resolve_key({"key_file": "~/key"}, "x") == "sk-from-file"
+    monkeypatch.setenv("AIU_TEST_KEY", "sk-from-env\nlogin: me@example.com")
+    assert aiu.resolve_key({"key_env": "AIU_TEST_KEY"}, "x") == "sk-from-env"
+    cfg = {"key_cmd": "printf 'sk-admin-fake\\nlogin: me@example.com\\nurl: x\\n'"}
+    http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(1.0))))
+    aiu.probe_openai(cfg)
+    assert http.calls[0].headers["Authorization"] == "Bearer sk-admin-fake"
+
+
+@pytest.mark.parametrize("value", ["sk-SECRET\tpart", "sk-SECRET\x1b[0m", "sk-SECRET\x7f"])
+def test_resolve_key_refuses_control_chars(monkeypatch, home, capsys, value):
+    """M1: a key that still holds control characters is refused, and never quoted."""
+    (home / "key").write_text("from-file")
+    monkeypatch.setenv("AIU_TEST_KEY", value)
+    assert aiu.resolve_key({"key_env": "AIU_TEST_KEY", "key_file": "~/key"}, "openai") == "from-file"
+    err = capsys.readouterr().err
+    assert "openai: key from key_env holds control characters" in err
+    assert "SECRET" not in err
+
+
+@pytest.fixture
+def env_file(monkeypatch, home):
+    """Write ~/.env (0600) and return a loader for it; ENV_FILE starts empty."""
+    monkeypatch.setattr(aiu, "ENV_FILE", {})
+    path = home / ".env"
+
+    def write(text, config=None, mode=0o600):
+        path.write_text(text)
+        path.chmod(mode)
+        return aiu.load_env_file(config or {})
+    return write
+
+
+def test_env_file_feeds_probes(monkeypatch, env_file, http):
+    """L2: only referenced names are read, into ENV_FILE, never os.environ."""
+    forget(monkeypatch, "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY", "MISTRAL_ADMIN_COOKIE",
+           "AIU_PLAIN", "LD_PRELOAD", "HTTPS_PROXY", "SSL_CERT_FILE")
     monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-already-set")
-    (home / ".env").write_text(
+    config = {"openai": {"key_env": "OPENAI_ADMIN_KEY"}, "deepseek": {"key_env": "DEEPSEEK_API_KEY"},
+              "openrouter": {"key_env": "OPENROUTER_API_KEY"}, "mistral": {"enabled": True}}
+    before = dict(os.environ)
+    found = env_file(
         "# provider keys\n"
         "export DEEPSEEK_API_KEY=\"sk-from-env-file\"\n"
         "OPENROUTER_API_KEY = 'sk-or-v1-from-env-file'\n"
@@ -293,24 +334,158 @@ def test_env_file_feeds_probes(monkeypatch, home, http):
         "OPENAI_ADMIN_KEY=sk-admin-from-file\n"
         "not a pair\n"
         "\n"
-        "AIU_PLAIN=plain\n")
-    aiu.load_env_file()
-    assert os.environ["DEEPSEEK_API_KEY"] == "sk-from-env-file"
-    assert os.environ["OPENROUTER_API_KEY"] == "sk-or-v1-from-env-file"
-    assert os.environ["MISTRAL_ADMIN_COOKIE"] == 'ory_session=abc; csrf="x=y"'
-    assert os.environ["OPENAI_ADMIN_KEY"] == "sk-admin-already-set"  # not clobbered
-    assert os.environ["AIU_PLAIN"] == "plain"
+        "AIU_PLAIN=plain\n"
+        "LD_PRELOAD=/tmp/evil.so\n"
+        "HTTPS_PROXY=http://proxy.example:3128\n"
+        "SSL_CERT_FILE=/tmp/ca.pem\n", config)
+    assert found == {"DEEPSEEK_API_KEY": "sk-from-env-file",
+                     "OPENROUTER_API_KEY": "sk-or-v1-from-env-file",
+                     "MISTRAL_ADMIN_COOKIE": 'ory_session=abc; csrf="x=y"',
+                     "OPENAI_ADMIN_KEY": "sk-admin-from-file"}
+    assert dict(os.environ) == before
+    aiu.ENV_FILE.update(found)
+    assert aiu.resolve_key(config["openai"], "openai") == "sk-admin-already-set"  # env wins
+    assert aiu.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE"}, "mistral") == 'ory_session=abc; csrf="x=y"'
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": [balance()]}))
     aiu.probe_deepseek({"key_env": "DEEPSEEK_API_KEY"})
     assert http.calls[0].headers["Authorization"] == "Bearer sk-from-env-file"
 
 
+@pytest.mark.parametrize("line, value", [
+    ("K=sk-abc", "sk-abc"),
+    ("K=sk-abc   # a comment", "sk-abc"),
+    ("K=sk-abc\t# a comment", "sk-abc"),
+    ("K=sk#abc", "sk#abc"),                      # `#` inside a word is not a comment
+    ("K= # nothing", ""),
+    ("K='a b # c'  # comment", "a b # c"),
+    ("K='it''s'", None),                         # text after the closing quote
+    ('K="a \\"b\\" \\\\ $HOME"', 'a "b" \\ $HOME'),  # no expansion
+    ('K="sk-abc" # comment', "sk-abc"),
+    ("K='sk-abc", None),
+    ('K="sk-abc', None),
+    ("K=sk-abc'", None),
+    ("K=sk-abc\"", None),
+    ("  export   K = sk-abc", "sk-abc"),
+])
+def test_env_file_parses_like_a_shell(env_file, line, value):
+    assert env_file(line + "\n", {"p": {"key_env": "K"}}).get("K") == value
+
+
+def test_env_file_unmatched_quote_warns_without_value(env_file, capsys):
+    assert env_file("K='sk-SECRET\n", {"p": {"key_env": "K"}}) == {}
+    err = capsys.readouterr().err
+    assert ".env:1: K has unmatched quotes, ignored" in err
+    assert "SECRET" not in err
+
+
+def test_env_file_readme_example(env_file):
+    """The README's own example, inline comments included, yields bare values."""
+    readme = (Path(__file__).resolve().parents[1] / "README.md").read_text()
+    block = readme.split("### Secrets", 1)[1].split("```sh\n", 1)[1].split("```", 1)[0]
+    names = [line.split("=", 1)[0] for line in block.splitlines() if "=" in line]
+    assert "OPENAI_ADMIN_KEY" in names and "MISTRAL_ADMIN_COOKIE" in names
+    found = env_file(block, {n: {"key_env": n} for n in names})
+    assert found["OPENAI_ADMIN_KEY"] == "sk-admin-..."
+    assert found["MISTRAL_ADMIN_COOKIE"] == "..."
+    assert all("#" not in v and " " not in v for v in found.values())
+
+
+def test_env_file_warns_when_others_can_read(env_file, capsys):
+    env_file("K=sk-abc\n", {"p": {"key_env": "K"}}, mode=0o644)
+    assert "other users can read it: chmod 600" in capsys.readouterr().err
+    env_file("K=sk-abc\n", {"p": {"key_env": "K"}}, mode=0o600)
+    env_file("OTHER=1\n", {"p": {"key_env": "K"}}, mode=0o644)  # none of ours: not our business
+    assert capsys.readouterr().err == ""
+
+
 def test_env_file_override_and_missing(monkeypatch, home, tmp_path):
-    forget(monkeypatch, "AIU_FROM_OTHER")
     other = tmp_path / "other.env"
     other.write_text("AIU_FROM_OTHER=1\n")
     monkeypatch.setenv("AIU_ENV_FILE", str(other))
-    aiu.load_env_file()
-    assert os.environ["AIU_FROM_OTHER"] == "1"
+    assert aiu.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {"AIU_FROM_OTHER": "1"}
     monkeypatch.setenv("AIU_ENV_FILE", str(tmp_path / "absent.env"))
-    aiu.load_env_file()  # no file: silently nothing
+    assert aiu.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {}  # no file: silently nothing
+
+
+def test_main_exports_only_the_gemini_client(monkeypatch, home, tmp_path, capsys):
+    """GEMINI_CLIENT_ID / _SECRET keep working from ~/.env (the Gemini code reads
+    the environment); the provider keys stay out of os.environ."""
+    forget(monkeypatch, "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY")
+    monkeypatch.setattr(aiu, "ENV_FILE", {})
+    config = tmp_path / "cfg" / "config.toml"
+    config.parent.mkdir(mode=0o700)
+    config.write_text('[deepseek]\nkey_env = "DEEPSEEK_API_KEY"\n')
+    config.chmod(0o600)
+    (home / ".env").write_text("GEMINI_CLIENT_ID=id.apps.googleusercontent.com\n"
+                               "GEMINI_CLIENT_SECRET='s3cret' # public CLI client\n"
+                               "DEEPSEEK_API_KEY=sk-ds\n")
+    (home / ".env").chmod(0o600)
+    monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(config), "--only", "none", "--json"])
+    assert aiu.main() == 0
+    assert os.environ["GEMINI_CLIENT_ID"] == "id.apps.googleusercontent.com"
+    assert os.environ["GEMINI_CLIENT_SECRET"] == "s3cret"
+    assert "DEEPSEEK_API_KEY" not in os.environ
+    assert aiu.ENV_FILE["DEEPSEEK_API_KEY"] == "sk-ds"
+
+
+# ---------------------------------------------------------------------------
+# Config file: creation and the key_cmd trust check
+# ---------------------------------------------------------------------------
+KEY_CMD_CONFIG = '[openai]\nkey_env = "OPENAI_ADMIN_KEY"\nkey_cmd = "echo sk-x"\n'
+
+
+def test_load_config_creates_private_template(tmp_path, capsys):
+    """L1: a --config path whose parent is missing gets a 0700 dir and a 0600 file."""
+    path = tmp_path / "a" / "b" / "config.toml"
+    config = aiu.load_config(path)
+    assert config["claude"]["enabled"] is True
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert path.parent.stat().st_mode & 0o777 == 0o700
+    assert "wrote a starter config" in capsys.readouterr().err
+
+
+def write_config(path, mode=0o600, dir_mode=0o700):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.parent.chmod(dir_mode)
+    path.write_text(KEY_CMD_CONFIG)
+    path.chmod(mode)
+    return path
+
+
+def test_load_config_keeps_key_cmd_when_private(tmp_path, capsys):
+    for mode, dir_mode in ((0o600, 0o700), (0o644, 0o755)):
+        path = write_config(tmp_path / "cfg" / "config.toml", mode, dir_mode)
+        assert aiu.load_config(path)["openai"]["key_cmd"] == "echo sk-x"
+    assert capsys.readouterr().err == ""
+
+
+@pytest.mark.parametrize("mode, dir_mode, why", [
+    (0o620, 0o700, "config.toml is writable by group or others"),
+    (0o602, 0o700, "config.toml is writable by group or others"),
+    (0o600, 0o770, "cfg is writable by group or others"),
+    (0o600, 0o1777, "cfg is writable by group or others"),
+])
+def test_load_config_refuses_key_cmd_when_writable(tmp_path, capsys, mode, dir_mode, why):
+    path = write_config(tmp_path / "cfg" / "config.toml", mode, dir_mode)
+    config = aiu.load_config(path)
+    assert "key_cmd" not in config["openai"]
+    assert config["openai"]["key_env"] == "OPENAI_ADMIN_KEY"  # the rest still applies
+    err = capsys.readouterr().err
+    assert "key_cmd ignored for openai" in err and why in err
+
+
+def test_load_config_refuses_key_cmd_through_symlink(tmp_path, capsys):
+    """A config symlinked into a shared folder is judged by where it really lives."""
+    target = write_config(tmp_path / "shared" / "config.toml", 0o600, 0o777)
+    link = tmp_path / "cfg" / "config.toml"
+    link.parent.mkdir(mode=0o700)
+    link.symlink_to(target)
+    assert "key_cmd" not in aiu.load_config(link)["openai"]
+    assert "shared is writable by group or others" in capsys.readouterr().err
+
+
+def test_load_config_refuses_key_cmd_not_owned(monkeypatch, tmp_path, capsys):
+    path = write_config(tmp_path / "cfg" / "config.toml")
+    monkeypatch.setattr(aiu.os, "getuid", lambda: path.stat().st_uid + 1)
+    assert "key_cmd" not in aiu.load_config(path)["openai"]
+    assert "config.toml is not yours" in capsys.readouterr().err
