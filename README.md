@@ -11,6 +11,7 @@ aiu --alert               # warn (+ desktop notify) on quota lost at reset / run
 aiu --json                # machine-readable
 aiu --html /tmp/u.html    # local HTML page
 aiu --only claude         # subset, ignores enabled flags
+aiu config show           # what the config sets (see `aiu config` below)
 watch -n 60 aiu           # poor man's live view
 ```
 
@@ -198,6 +199,41 @@ them can run code as you.
   key: until it expires it can create API keys and change billing. Keep it in
   a keyring (`key_cmd` in `[mistral]`) rather than in `~/.env`.
 
+### `aiu config`
+Reads and changes the config for scripts and the GNOME indicator, so nothing
+else parses or writes `config.toml`. Both create the starter config first if
+there is none, and both take `--config PATH` like `aiu` itself.
+
+```sh
+aiu config show                    # one line per provider setting
+aiu config show --json             # the same, for scripts
+aiu config set openai.enabled true
+aiu config set openai.key_cmd "secret-tool lookup service aiu provider openai"
+aiu config set mistral.vibe_allowance_eur 0
+aiu config set openai.key_env ""   # an empty string turns a key source off
+```
+
+`show` lists each provider's settings: `enabled`, the key sources it uses
+(`key_env`, `key_cmd`, `key_file`), and its own options (`claude_cmd`,
+Mistral's allowances), each with its value and whether the file sets it
+(`"source": "file"`) or aiu's default applies. `--json` also gives the config
+path and whether `key_cmd` may run (`key_cmd_allowed`, with the reasons when
+not). It shows values only: it never runs `key_cmd`, reads a `key_file` or
+`~/.env`, or prints a key.
+
+`set` changes one setting per call: a known provider and option, with
+`true`/`false` for `enabled`, a number for the allowances, and a variable name
+for `key_env`. Errors go to stderr with a non-zero exit, and they never quote
+the value you typed. The edit is line-level: comments, blank lines, order and
+keys `aiu` doesn't know stay as they are. It changes the value in place,
+uncomments a `# key_cmd = ...` line in the same section rather than adding a
+second one, and otherwise adds the setting after the section's last one (or the
+section at the end of the file). The result must parse back to the old config
+plus that one value, or nothing is written. The file is replaced atomically,
+`0600`, and a symlinked config stays a symlink. `set` refuses a config that is
+not yours, and refuses `key_cmd` and `claude_cmd` when the config fails the
+check above (yours, not writable by group or others).
+
 ### claude
 Nothing to configure, and no app needs to be open. The OAuth token is read
 locally from `~/.claude/.credentials.json` (same source Claude Code uses).
@@ -272,8 +308,9 @@ subscription quota is what matters for the CLI.)*
 
 ## Adding a provider
 Write a `probe_<name>(cfg) -> list[Row]` function, register it in `PROBES`, add
-a `[<name>]` block to the config template. A `Row` is provider/metric/kind
-(`quota|spend|balance|credit`) + `used`/`limit`/`unit`/`reset`/`note`.
+a `[<name>]` block to the config template and its options to `CONFIG_OPTIONS`
+(for `aiu config`). A `Row` is provider/metric/kind (`quota|spend|balance|credit`)
++ `used`/`limit`/`unit`/`reset`/`note`.
 
 ## Unofficial endpoints & privacy
 The subscription probes call **undocumented** endpoints, the same ones the

@@ -304,6 +304,31 @@ FR = {
         "⚠ {provider} · {metric}: à sec dans ~{runway} à ton allure, reset {reset} "
         "→ ~{gap} sans {provider}",
     "⚠ {provider}: data unavailable ({note})": "⚠ {provider}: données indisponibles ({note})",
+    # aiu config
+    "aiu config: {error}": "aiu config : {error}",
+    "unknown provider; one of: {providers}": "fournisseur inconnu ; au choix : {providers}",
+    "unknown option for {provider}; it takes: {options}":
+        "réglage inconnu pour {provider} ; il accepte : {options}",
+    "{option} takes true or false": "{option} prend true ou false",
+    "{option} takes a number, 0 or more": "{option} prend un nombre, 0 ou plus",
+    "{option} cannot hold control characters":
+        "{option} ne peut pas contenir de caractères de contrôle",
+    "key_env takes a variable name (letters, digits and _) or an empty string":
+        "key_env prend un nom de variable (lettres, chiffres et _) ou une chaîne vide",
+    "{option} refused: {reasons}": "{option} refusé : {reasons}",
+    "{path} does not parse: {error}": "{path} est illisible : {error}",
+    "{name} in {path} is not a table": "{name} n'est pas une table dans {path}",
+    "{path} is not UTF-8": "{path} n'est pas en UTF-8",
+    "cannot change {option} in place: edit it by hand":
+        "impossible de modifier {option} sur place : modifie-le à la main",
+    "{option} set in {path}": "{option} réglé dans {path}",
+    "Config: {path}": "Config : {path}",
+    "key_cmd is ignored: {reasons}": "key_cmd est ignoré : {reasons}",
+    "Option": "Réglage",
+    "Value": "Valeur",
+    "Source": "Provenance",
+    "file": "fichier",
+    "default": "par défaut",
     "AI quota · snapshot {time}": "Quota AI · relevé {time}",
     "✓ nothing will be lost at reset or run dry for long":
         "✓ rien ne sera perdu au reset ni à sec longtemps",
@@ -1435,24 +1460,25 @@ def load_env_file(config: dict) -> dict[str, str]:
     return found
 
 
-def load_config(path: Path) -> dict:
-    """Read the config, writing the template (0600, in a 0700 directory) on
-    first run. Like OpenSSH, ignore every key_cmd when the file or its directory
-    belongs to someone else or can be written by others (group write is fine for
-    the user's private group)."""
-    if not path.is_file():
-        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-        try:
-            fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
-        except FileExistsError:
-            pass
-        else:
-            with os.fdopen(fd, "w") as f:
-                f.write(CONFIG_TEMPLATE_FR if ui_lang() == "fr" else CONFIG_TEMPLATE)
-            print(tr("[aiu] wrote a starter config to {path} — edit it, then re-run.", path=path),
-                  file=sys.stderr)
-    with open(path, "rb") as f:
-        config = tomllib.load(f)
+def ensure_config(path: Path) -> None:
+    """Write the starter config (0600, in a 0700 directory) unless there is one."""
+    if path.is_file():
+        return
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        return
+    with os.fdopen(fd, "w") as f:
+        f.write(CONFIG_TEMPLATE_FR if ui_lang() == "fr" else CONFIG_TEMPLATE)
+    print(tr("[aiu] wrote a starter config to {path} — edit it, then re-run.", path=path),
+          file=sys.stderr)
+
+
+def config_trust_problems(path: Path) -> list[str]:
+    """Why the config may not run commands: the file, its directory or the
+    directory of its real path belongs to someone else or can be written by
+    others (group write is fine for the user's private group). Empty when trusted."""
     real = Path(os.path.realpath(path))
     unsafe = []
     for p in dict.fromkeys((path, path.parent, real.parent)):
@@ -1461,6 +1487,16 @@ def load_config(path: Path) -> dict:
             unsafe.append(tr("{path} is not yours", path=p))
         elif _writable_by_others(st):
             unsafe.append(tr("{path} is writable by group or others", path=p))
+    return unsafe
+
+
+def load_config(path: Path) -> dict:
+    """Read the config, writing the template on first run. Like OpenSSH, ignore
+    every key_cmd when config_trust_problems finds any."""
+    ensure_config(path)
+    with open(path, "rb") as f:
+        config = tomllib.load(f)
+    unsafe = config_trust_problems(path)
     cmds = [name for name, s in config.items() if isinstance(s, dict) and "key_cmd" in s]
     if unsafe and cmds:
         print(tr("[aiu] key_cmd ignored for {names}: {reasons}",
@@ -2038,6 +2074,276 @@ def alert(rows: list[Row], notify: bool = True, hist: list[dict] | None = None) 
 
 
 # ---------------------------------------------------------------------------
+# aiu config: read and change config.toml from scripts and the GNOME
+# preferences window, so that aiu stays the only program that parses or writes
+# it. Values only: never a resolved key, nothing from ~/.env, no key_cmd run.
+# Edits are line-level, so comments, blank lines, order and unknown keys stay.
+# ---------------------------------------------------------------------------
+_KEY_SOURCES = {"key_env": ("string", None), "key_cmd": ("string", None),
+                "key_file": ("string", None)}
+# provider -> option -> (type, default when the file does not set it)
+CONFIG_OPTIONS = {
+    "claude": {"enabled": ("bool", False), "claude_cmd": ("string", None)},
+    "codex": {"enabled": ("bool", False)},
+    "openai": {"enabled": ("bool", False), **_KEY_SOURCES},
+    "deepseek": {"enabled": ("bool", False), **_KEY_SOURCES},
+    "openrouter": {"enabled": ("bool", False), **_KEY_SOURCES},
+    "gemini": {"enabled": ("bool", False)},
+    "mistral": {"enabled": ("bool", False), **_KEY_SOURCES,
+                "key_env": ("string", "MISTRAL_ADMIN_COOKIE"),
+                "vibe_allowance_eur": ("number", MISTRAL_ALLOWANCE_EUR),
+                "api_allowance_eur": ("number", MISTRAL_ALLOWANCE_EUR)},
+}
+# Options that make aiu run a program: only set in a config that passes the
+# trust check (an empty value, which turns them off, is always allowed).
+CONFIG_RUNS_CODE = ("key_cmd", "claude_cmd")
+_VAR_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_TOML_HEADER_RE = re.compile(r"\s*\[(\[?)\s*(.+?)\s*\]\]?\s*(?:#.*)?")
+_TOML_COMMENT_RE = re.compile(r"\s*(?:#.*)?")
+
+
+class ConfigError(Exception):
+    """A refused `aiu config` call; the message is for the user and never
+    quotes the value they gave."""
+
+
+def config_value(kind: str, option: str, raw: str):
+    """raw as an option of this type."""
+    if kind == "bool":
+        if raw.strip().lower() in ("true", "false"):
+            return raw.strip().lower() == "true"
+        raise ConfigError(tr("{option} takes true or false", option=option))
+    if kind == "number":
+        try:
+            v = float(raw)
+        except ValueError:
+            v = math.nan
+        if not math.isfinite(v) or v < 0:
+            raise ConfigError(tr("{option} takes a number, 0 or more", option=option))
+        return int(v) if v.is_integer() and abs(v) < 2 ** 53 else v
+    if _CONTROL_RE.search(raw):
+        raise ConfigError(tr("{option} cannot hold control characters", option=option))
+    if option == "key_env" and raw and not _VAR_NAME_RE.fullmatch(raw):
+        raise ConfigError(tr("key_env takes a variable name (letters, digits and _) "
+                             "or an empty string"))
+    return raw
+
+
+def _toml_literal(v) -> str:
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if isinstance(v, (int, float)):
+        return repr(v)
+    return '"' + v.replace("\\", "\\\\").replace('"', '\\"') + '"'
+
+
+def _toml_scalar_end(s: str) -> int | None:
+    """Where the one-line value at the start of s ends; None if it goes on."""
+    if s.startswith(('"""', "'''")):
+        end = s.find(s[:3], 3)
+        return None if end < 0 else end + 3
+    if s[:1] == '"':
+        i = 1
+        while i < len(s):
+            if s[i] == '"':
+                return i + 1
+            i += 2 if s[i] == "\\" else 1
+        return None
+    if s[:1] == "'":
+        end = s.find("'", 1)
+        return None if end < 0 else end + 1
+    m = re.match(r"[^\s#\[\]{}]+", s)
+    return m.end() if m else None
+
+
+def _after_value(s: str) -> str | None:
+    """What follows the value at the start of s (spaces, a comment), or None if
+    the value spans lines or something else follows it."""
+    end = _toml_scalar_end(s)
+    return s[end:] if end is not None and _TOML_COMMENT_RE.fullmatch(s[end:]) else None
+
+
+def config_edit(text: str, section: str, option: str, value) -> str:
+    """text with [section] option = value, changing as few bytes as possible:
+    the value of an existing line, else a commented-out `# option = ...` in the
+    section, uncommented, else a new line after the section's last setting, else
+    a new section at the end. The caller checks the result with tomllib."""
+    literal = _toml_literal(value)
+    nl = "\r\n" if "\r\n" in text else "\n"
+    if text and not text.endswith("\n"):
+        text += nl
+    lines = text.split("\n")  # each ends with "\r" in a CRLF file; the last is ""
+    start, end = None, len(lines)
+    for i, line in enumerate(lines):
+        m = _TOML_HEADER_RE.fullmatch(line.rstrip("\r"))
+        if not m:
+            continue
+        if start is not None:
+            end = i
+            break
+        if not m.group(1) and m.group(2) in (section, f'"{section}"'):
+            start = i
+    if start is None:
+        sep = nl if text.strip() and not text.endswith(nl * 2) else ""
+        return f"{text}{sep}[{section}]{nl}{option} = {literal}{nl}"
+
+    key = re.escape(option)
+    body = range(start + 1, end)
+    set_re = re.compile(rf"""(\s*(?:{key}|"{key}"|'{key}')\s*=\s*)(.*)""")
+    commented_re = re.compile(rf"(\s*)#\s*({key}\s*=\s*)(.*)")
+    for i in body:
+        line = lines[i].rstrip("\r")
+        if m := set_re.fullmatch(line):
+            rest = _after_value(m.group(2))
+            if rest is None:
+                raise ConfigError(tr("cannot change {option} in place: edit it by hand",
+                                     option=f"{section}.{option}"))
+            lines[i] = m.group(1) + literal + rest + lines[i][len(line):]
+            return "\n".join(lines)
+    for i in body:
+        line = lines[i].rstrip("\r")
+        if m := commented_re.fullmatch(line):
+            lines[i] = m.group(1) + m.group(2) + literal + (_after_value(m.group(3)) or "") \
+                + lines[i][len(line):]
+            return "\n".join(lines)
+    last = max((i for i in body if lines[i].strip() and not lines[i].lstrip().startswith("#")),
+               default=start)
+    indent = re.match(r"\s*", lines[last]).group() if last > start else ""
+    lines.insert(last + 1, f"{indent}{option} = {literal}" + ("\r" if nl == "\r\n" else ""))
+    return "\n".join(lines)
+
+
+def _write_private(target: Path, data: bytes) -> None:
+    """Replace target atomically with a 0600 file (fsync'd temp file next to it)."""
+    import tempfile
+    fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "wb") as f:  # mkstemp: O_EXCL, mode 0600
+            f.write(data)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, target)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def config_set(path: Path, option: str, raw: str) -> None:
+    """Set one `provider.option` in the config, creating the starter config
+    first if there is none. Refuses a file that is not the user's, a command
+    in a config that fails the trust check, and any edit that does not parse
+    back to the old config plus this one value."""
+    import fcntl
+    provider, _, name = option.partition(".")
+    if provider not in CONFIG_OPTIONS:
+        raise ConfigError(tr("unknown provider; one of: {providers}",
+                             providers=", ".join(CONFIG_OPTIONS)))
+    if name not in CONFIG_OPTIONS[provider]:
+        raise ConfigError(tr("unknown option for {provider}; it takes: {options}", provider=provider,
+                             options=", ".join(CONFIG_OPTIONS[provider])))
+    value = config_value(CONFIG_OPTIONS[provider][name][0], name, raw)
+    ensure_config(path)
+    target = Path(os.path.realpath(path))  # a symlinked config stays a symlink
+    if target.stat().st_uid != os.getuid():
+        raise ConfigError(tr("{path} is not yours", path=path))
+    if value and name in CONFIG_RUNS_CODE and (problems := config_trust_problems(path)):
+        raise ConfigError(tr("{option} refused: {reasons}", option=option,
+                             reasons="; ".join(problems)))
+    # Under a lock shared by every aiu config run: two quick toggles from the
+    # preferences window must not lose one another's change.
+    lock = os.open(target.with_name(f".{target.name}.aiu-lock"), os.O_CREAT | os.O_WRONLY, 0o600)
+    try:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        text = target.read_bytes().decode()
+        try:
+            old = tomllib.loads(text)
+        except tomllib.TOMLDecodeError as e:
+            raise ConfigError(tr("{path} does not parse: {error}", path=path, error=e)) from None
+        if not isinstance(old.get(provider, {}), dict):
+            raise ConfigError(tr("{name} in {path} is not a table", name=provider, path=path))
+        new_text = config_edit(text, provider, name, value)
+        try:
+            new = tomllib.loads(new_text)
+        except tomllib.TOMLDecodeError:
+            new = None
+        if new != {**old, provider: {**old.get(provider, {}), name: value}}:
+            raise ConfigError(tr("cannot change {option} in place: edit it by hand", option=option))
+        if new_text != text:
+            _write_private(target, new_text.encode())
+    finally:
+        os.close(lock)  # releases the flock
+
+
+def config_snapshot(path: Path) -> dict:
+    """The config as `aiu config show --json` prints it: each provider's options
+    with their value and whether the file sets it, and whether key_cmd may run."""
+    ensure_config(path)
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+    except tomllib.TOMLDecodeError as e:
+        raise ConfigError(tr("{path} does not parse: {error}", path=path, error=e)) from None
+    problems = config_trust_problems(path)
+    providers = {}
+    for provider, options in CONFIG_OPTIONS.items():
+        section = data.get(provider)
+        section = section if isinstance(section, dict) else {}
+        providers[provider] = {
+            "section": provider in data,
+            "options": {name: {"type": kind, "value": section.get(name, default),
+                               "source": "file" if name in section else "default"}
+                        for name, (kind, default) in options.items()},
+        }
+    return {"path": str(path), "key_cmd_allowed": not problems, "key_cmd_problems": problems,
+            "providers": providers}
+
+
+def render_config(snap: dict) -> None:
+    def show(v) -> str:
+        return "—" if v is None else str(v).lower() if isinstance(v, bool) else str(v)
+
+    print(tr("Config: {path}", path=snap["path"]))
+    if snap["key_cmd_problems"]:
+        print(tr("key_cmd is ignored: {reasons}", reasons="; ".join(snap["key_cmd_problems"])))
+    head = (tr("Provider"), tr("Option"), tr("Value"), tr("Source"))
+    rows = [(provider, name, show(o["value"]), tr("file") if o["source"] == "file" else tr("default"))
+            for provider, p in snap["providers"].items() for name, o in p["options"].items()]
+    widths = [max(len(r[i]) for r in [head, *rows]) for i in range(3)]
+    for r in [head, *rows]:
+        print("  ".join(c.ljust(w) for c, w in zip(r, widths)) + "  " + r[3])
+
+
+def config_main(args: argparse.Namespace) -> int:
+    path = Path(os.path.expanduser(args.config))
+    try:
+        if args.config_action == "show":
+            snap = config_snapshot(path)
+        else:
+            config_set(path, args.option, args.value)
+    except ConfigError as e:
+        print(tr("aiu config: {error}", error=e), file=sys.stderr)
+        return 1
+    except OSError as e:
+        where = f"{e.filename}: " if e.filename else ""
+        print(tr("aiu config: {error}", error=where + (e.strerror or type(e).__name__)),
+              file=sys.stderr)
+        return 1
+    except UnicodeDecodeError:
+        print(tr("aiu config: {error}", error=tr("{path} is not UTF-8", path=path)), file=sys.stderr)
+        return 1
+    if args.config_action == "set":
+        print(tr("{option} set in {path}", option=args.option, path=path))
+    elif args.config_json:
+        print(json.dumps(snap, indent=2, ensure_ascii=False, default=str))
+    else:
+        render_config(snap)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # main
 # ---------------------------------------------------------------------------
 def main() -> int:
@@ -2051,7 +2357,19 @@ def main() -> int:
                     help="recommend where to route: earliest-expiring surplus first")
     ap.add_argument("--alert", action="store_true",
                     help="warn about quota lost at reset / running dry, expiring credits (cron-friendly)")
+    # Without a subcommand, aiu takes its snapshot as it always has.
+    sub = ap.add_subparsers(dest="command", metavar="{config}")
+    cp = sub.add_parser("config", help="show or change the config (for scripts and the GNOME extension)")
+    cp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    csub = cp.add_subparsers(dest="config_action", required=True)
+    show = csub.add_parser("show", help="every provider's settings, and whether the file sets them")
+    show.add_argument("--json", dest="config_json", action="store_true", help="emit JSON")
+    cset = csub.add_parser("set", help="change one setting, e.g. `aiu config set openai.enabled true`")
+    cset.add_argument("option", help="<provider>.<option>")
+    cset.add_argument("value")
     args = ap.parse_args()
+    if args.command == "config":
+        return config_main(args)
 
     config = load_config(Path(os.path.expanduser(args.config)))
     ENV_FILE.update(load_env_file(config))
