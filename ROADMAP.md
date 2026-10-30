@@ -377,9 +377,13 @@ Mistral setup), `docs/security-review.md` (L3 status).
 Firefox one into the keyring stub without writing outside a private
 directory, and the maintainer's real Mistral session is imported once by hand.
 
-## Wave 7: restructure, in order (P needs O)
+## Wave 7: O and P done
 
-`aiu.py` has grown to about 2,800 lines and 91 top-level functions: seven
+Merged on 2026-10-30: O in #36 (the `aiu/` package, `--json` checked
+byte-identical against 7204525), P in #37 (`"schema": 1`, `docs/json-schema.md`,
+fixtures shared by the Python and GJS tests). Not released yet.
+
+`aiu.py` had grown to about 2,800 lines and 91 top-level functions: seven
 probes, keys and `~/.env`, config editing, cookie import, history, routing,
 rendering, alerts, the French table and the CLI. Waves 2 and 4 could only run
 in parallel by splitting it by function, and a new provider means editing the
