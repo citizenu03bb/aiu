@@ -263,6 +263,59 @@ Released on 2026-10-30, before the first upload to extensions.gnome.org.
 
 Left to the maintainer: upload the v0.3.0 zip to extensions.gnome.org.
 
+## Wave 5: preferences panel, in order (M needs L)
+
+The extension gets a preferences window for aiu's config. aiu stays the only
+program that reads or writes `config.toml`: the extension goes through a new
+`aiu config` subcommand, so it never parses TOML and every rule from the
+security review (0600 file, `key_cmd` trust check) stays in one place.
+No secret is ever typed into the UI: it only says *where* aiu finds a key.
+
+### L. `aiu config` subcommand
+
+**Goal:** read and change the config from scripts and the extension, as JSON.
+
+- `aiu config show --json`: every provider section with its settings
+  (`enabled`, `key_env`, `key_cmd`, `key_file`, provider-specific options),
+  where each value comes from, and the config path. Values only: never a
+  resolved key, never the contents of `~/.env`.
+- `aiu config set <provider>.<option> <value>`: one change at a time,
+  validated (known provider, known option, right type). `enabled` and the key
+  source options at least; `key_cmd` only when the config passes the existing
+  trust check.
+- Edits are line-level: comments, order and unknown keys survive. No new
+  dependency. A setting that is commented out (as in the starter config) is
+  uncommented in place rather than duplicated.
+- Atomic write that keeps mode 0600 (temp file + `os.replace`), refusing a
+  config that is not the user's, as `load_config` does.
+- New user-facing text goes through `tr()` with French.
+
+**Files:** `aiu.py` (new `config` subcommand and its helpers; `main` for
+dispatch), `tests/`, `README.md` (a short section on `aiu config`).
+**Done when:** CI is green; `show` then `set` round-trips on the starter
+config and on a hand-edited one with comments, which stay intact.
+
+### M. Preferences window (`prefs.js`)
+
+**Goal:** set up aiu from GNOME's Extensions app.
+
+- `prefs.js` (Adwaita, GNOME 45+ `ExtensionPreferences`): one row per
+  provider with an on/off switch and its key source (environment variable,
+  command, file) read and written through `aiu config`; the state from the
+  last snapshot ("signed in", "run `claude` once"); an *Open config file*
+  button; a link to the install guide when `aiu` is missing.
+- Extension-only settings in GSettings (`schemas/`): refresh interval.
+- Never a field that holds a secret; the key-source help points to
+  `secret-tool` as the README *Secrets* section does.
+- Strings in gettext with French.
+
+**Files:** `gnome-extension/prefs.js`, `gnome-extension/schemas/`,
+`gnome-extension/extension.js` (read the interval), `gnome-extension/Makefile`
+(pack the schema), `gnome-extension/po/`, `gnome-extension/tests/`,
+`gnome-extension/README.md`.
+**Done when:** CI is green and the window, checked locally in a nested or
+headless GNOME Shell, turns a provider on and off through `aiu config`.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
