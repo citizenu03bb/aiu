@@ -55,6 +55,7 @@ export default class AiuExtension extends Extension {
         }
 
         if (this._client) {
+            // Kills a running aiu, so none is left behind
             this._client.cancel();
             this._client = null;
         }
@@ -74,8 +75,8 @@ export default class AiuExtension extends Extension {
             this._indicator.setRefreshing(true);
             const res = await this._client.fetchSnapshot();
 
-            if (!this._indicator) {
-                // Extension was disabled while request was in-flight
+            if (!this._indicator || res.cancelled) {
+                // Extension was disabled, or a newer fetch replaced this one
                 return;
             }
 

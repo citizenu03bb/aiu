@@ -14,13 +14,14 @@ import aiu  # noqa: E402
 
 PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
                 "MISTRAL_ADMIN_COOKIE", "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET",
-                "AIU_ENV_FILE", "XDG_DATA_HOME")
+                "AIU_ENV_FILE", "XDG_DATA_HOME", "XDG_CACHE_HOME")
 
 
 @pytest.fixture(autouse=True)
 def home(tmp_path, monkeypatch):
-    """~ is an empty tmp dir; PATH holds only tmp/bin, so no real `claude` or
-    `gemini` is found unless a test puts a fake one there."""
+    """~ is an empty tmp dir; PATH holds only tmp/bin, and tmp/bin/claude is the
+    only place aiu looks for `claude`, so no real `claude` or `gemini` is found
+    unless a test puts a fake one there."""
     home = tmp_path / "home"
     (tmp_path / "bin").mkdir()
     home.mkdir()
@@ -30,6 +31,7 @@ def home(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     # Resolved at import time from the real home.
     monkeypatch.setattr(aiu, "GEMINI_CREDS_PATH", home / ".gemini" / "oauth_creds.json")
+    monkeypatch.setattr(aiu, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))
     return home
 
 
