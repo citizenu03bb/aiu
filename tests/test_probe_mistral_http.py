@@ -59,7 +59,13 @@ def test_auth_rejected(cookie, http, status):
 def test_network_error(cookie, http):
     http.on("GET", USAGE_URL, httpx.ConnectError("offline"))
     [row] = aiu.probe_mistral({})
-    assert row.kind == "error" and row.note == "network: offline"
+    assert row.kind == "error" and row.note == "network: cannot connect"
+
+
+def test_bad_cookie_header_never_quoted(cookie, http):
+    http.on("GET", USAGE_URL, httpx.LocalProtocolError("Illegal header value b'ory_session_x=fake\\n'"))
+    [row] = aiu.probe_mistral({})
+    assert row.kind == "error" and "ory_session" not in row.note
 
 
 def test_empty_month(cookie, http):
@@ -69,11 +75,21 @@ def test_empty_month(cookie, http):
     assert vibe.used == 0 and api.used == 0 and vibe.note == "€0.00 / €8.50"
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: an HTTP 500 or a malformed body is reported as a network error")
-@pytest.mark.parametrize("reply", [(500, {"error": {"json": {"code": -32603}}}),
-                                   (200, {"result": {"data": GROUPS}})])  # envelope without "json"
-def test_server_error_or_malformed_body(cookie, http, reply):
+@pytest.mark.parametrize("reply, note", [
+    ((500, {"error": {"json": {"code": -32603}}}), "HTTP 500"),
+    ((200, {"result": {"data": GROUPS}}), "malformed response: not a tRPC result"),  # no "json"
+    ((200, "<html>maintenance</html>"), "malformed response: not JSON"),
+    ((200, trpc([GROUPS])), "malformed response: not a tRPC result"),
+])
+def test_server_error_or_malformed_body(cookie, http, reply, note):
     http.on("GET", USAGE_URL, reply)
     http.on("GET", PRICES_URL, (200, trpc(PRICES)))
     [row] = aiu.probe_mistral({})
-    assert row.kind == "error" and not row.note.startswith("network:")
+    assert row.kind == "error" and row.note == note
+
+
+def test_malformed_price_list(cookie, http):
+    http.on("GET", USAGE_URL, (200, trpc(GROUPS)))
+    http.on("GET", PRICES_URL, (200, trpc({"prices": [{"billingMetric": "mistral-medium-3-5"}]})))
+    [row] = aiu.probe_mistral({})
+    assert row.kind == "error" and row.note == "malformed response (KeyError)"

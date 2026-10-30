@@ -66,12 +66,23 @@ def test_credits_balance(auth, http):
     assert (rows[-1].metric, rows[-1].kind, rows[-1].used, rows[-1].unit) == ("Credits", "balance", 12.5, "USD")
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: a credits balance sent as a string "
-                                       "(as the Codex CLI's own response type declares it) is dropped")
 def test_credits_balance_as_string(auth, http):
+    # codex-rs decodes `balance` as Option<String>, strictly (CreditStatusDetails).
     http.on("GET", URL, (200, usage(credits={"has_credits": True, "unlimited": False, "balance": "12.50"})))
     rows = aiu.probe_codex({})
     assert rows[-1].metric == "Credits" and rows[-1].used == 12.5
+
+
+def test_credits_balance_not_a_number(auth, http):
+    http.on("GET", URL, (200, usage(credits={"has_credits": True, "unlimited": False, "balance": "lots"})))
+    five, week, credits = aiu.probe_codex({})
+    assert five.kind == week.kind == "quota"
+    assert credits.kind == "error" and credits.note == "malformed response: `balance` is not a number"
+
+
+def test_no_credits_balance(auth, http):
+    http.on("GET", URL, (200, usage(credits={"has_credits": False, "unlimited": False, "balance": None})))
+    assert [r.metric for r in aiu.probe_codex({})] == ["5-Hour Limit", "Weekly Limit"]
 
 
 def test_limit_reached(auth, http):
@@ -146,9 +157,14 @@ def test_unusable_auth_file(home, http, content):
     assert row.kind == "error" and "no token" in row.note and http.calls == []
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError,
-                   reason="probe bug: a 200 with a non-JSON body raises out of the probe")
 def test_non_json_body(auth, http):
     http.on("GET", URL, (200, "<!DOCTYPE html><title>Just a moment...</title>"))
     [row] = aiu.probe_codex({})
-    assert row.kind == "error"
+    assert row.kind == "error" and row.note == "malformed response: not JSON"
+
+
+@pytest.mark.parametrize("body", [["usage"], {"rate_limit": {"primary_window": 29}}])
+def test_malformed_body(auth, http, body):
+    http.on("GET", URL, (200, body))
+    [row] = aiu.probe_codex({})
+    assert row.kind == "error" and row.note.startswith("malformed response")

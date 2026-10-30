@@ -89,7 +89,15 @@ def test_openai_server_error(openai_key, http):
 def test_openai_network_error(openai_key, http):
     http.on("GET", OPENAI_URL, httpx.ConnectError("connection refused"))
     [row] = aiu.probe_openai(openai_key)
-    assert row.kind == "error" and row.note == "network: connection refused"
+    assert row.kind == "error" and row.note == "network: cannot connect"
+
+
+def test_openai_bad_header_never_quotes_the_key(openai_key, http):
+    # A multi-line key_cmd output: h11 quotes the header value (security review, M1).
+    http.on("GET", OPENAI_URL, httpx.LocalProtocolError(
+        "Illegal header value b'Bearer sk-admin-fake\\nlogin: me@example.com'"))
+    [row] = aiu.probe_openai(openai_key)
+    assert row.kind == "error" and "sk-admin" not in row.note and "example.com" not in row.note
 
 
 def test_openai_no_key(http):
@@ -97,20 +105,34 @@ def test_openai_no_key(http):
     assert row.kind == "error" and "OPENAI_ADMIN_KEY" in row.note and http.calls == []
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: a response without `data` reads as $0.00 spent")
 def test_openai_renamed_data(openai_key, http):
     http.on("GET", OPENAI_URL, (200, {"object": "page", "buckets": [cost_bucket(5.0)], "has_more": False}))
     [row] = aiu.probe_openai(openai_key)
-    assert row.kind == "error"
+    assert row.kind == "error" and row.used is None and row.note == "malformed response: no `data`"
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: a malformed body is reported as a network error")
-@pytest.mark.parametrize("body", ["<html>Bad gateway</html>",
-                                  costs_page({"results": [{"amount": None}]})])
-def test_openai_malformed_body(openai_key, http, body):
+def test_openai_renamed_results(openai_key, http):
+    http.on("GET", OPENAI_URL, (200, costs_page({"object": "bucket", "items": []})))
+    [row] = aiu.probe_openai(openai_key)
+    assert row.kind == "error" and row.note == "malformed response: no `results`"
+
+
+def test_openai_malformed_second_page(openai_key, http):
+    # Half a month is not the month: a bad page fails the whole spend.
+    http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(1.0), next_page="page_AAA")),
+            (200, "<html>Bad gateway</html>"))
+    [row] = aiu.probe_openai(openai_key)
+    assert row.kind == "error" and row.used is None
+
+
+@pytest.mark.parametrize("body, note", [("<html>Bad gateway</html>", "malformed response: not JSON"),
+                                        (costs_page({"results": [{"amount": None}]}),
+                                         "malformed response: no `amount`"),
+                                        (costs_page(cost_bucket("n/a")), "malformed response (ValueError)")])
+def test_openai_malformed_body(openai_key, http, body, note):
     http.on("GET", OPENAI_URL, (200, body))
     [row] = aiu.probe_openai(openai_key)
-    assert row.kind == "error" and not row.note.startswith("network:")
+    assert row.kind == "error" and row.note == note
 
 
 # ---------------------------------------------------------------------------
@@ -155,7 +177,18 @@ def test_deepseek_missing_fields_in_info(deepseek_key, http):
     assert (row.metric, row.used, row.unit) == ("Balance (?)", 1.5, "")
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: a missing `is_available` flags the account as unavailable")
+def test_deepseek_missing_total_balance(deepseek_key, http):
+    http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": [{"currency": "CNY"}]}))
+    [row] = aiu.probe_deepseek(deepseek_key)
+    assert row.kind == "error" and row.used is None and row.note == "malformed response: no `total_balance`"
+
+
+def test_deepseek_renamed_balance_infos(deepseek_key, http):
+    http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balances": [balance()]}))
+    [row] = aiu.probe_deepseek(deepseek_key)
+    assert row.kind == "error" and row.note == "malformed response: no `balance_infos`"
+
+
 def test_deepseek_missing_is_available(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"balance_infos": [balance()]}))
     [row] = aiu.probe_deepseek(deepseek_key)
@@ -186,12 +219,10 @@ def test_deepseek_no_key(http):
     assert row.kind == "error" and "DEEPSEEK_API_KEY" in row.note and http.calls == []
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError,
-                   reason="probe bug: a 200 with a non-JSON body raises out of the probe")
 def test_deepseek_non_json_body(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, "<html>502 Bad Gateway</html>"))
     [row] = aiu.probe_deepseek(deepseek_key)
-    assert row.kind == "error"
+    assert row.kind == "error" and row.note == "malformed response: not JSON"
 
 
 # ---------------------------------------------------------------------------
@@ -234,7 +265,7 @@ def test_openrouter_server_error(openrouter_key, http):
 def test_openrouter_network_error(openrouter_key, http):
     http.on("GET", OPENROUTER_URL, httpx.ConnectError("connection reset"))
     [row] = aiu.probe_openrouter(openrouter_key)
-    assert row.kind == "error" and row.note == "network: connection reset"
+    assert row.kind == "error" and row.note == "network: cannot connect"
 
 
 def test_openrouter_no_key(http):
@@ -242,20 +273,20 @@ def test_openrouter_no_key(http):
     assert row.kind == "error" and "OPENROUTER_API_KEY" in row.note and http.calls == []
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: renamed fields read as 0 spent, 0 left")
 def test_openrouter_renamed_fields(openrouter_key, http):
     http.on("GET", OPENROUTER_URL, (200, {"data": {"credits": 25.0, "usage": 7.4}}))
-    rows = aiu.probe_openrouter(openrouter_key)
-    assert all(r.kind == "error" for r in rows)
+    [row] = aiu.probe_openrouter(openrouter_key)
+    assert row.kind == "error" and row.used is None and row.note == "malformed response: no `total_credits`"
 
 
-@pytest.mark.xfail(strict=True, raises=(ValueError, AttributeError),
-                   reason="probe bug: a non-JSON body, or `data: null`, raises out of the probe")
-@pytest.mark.parametrize("body", ["<html>Cloudflare</html>", {"data": None}])
-def test_openrouter_malformed_body(openrouter_key, http, body):
+@pytest.mark.parametrize("body, note", [("<html>Cloudflare</html>", "malformed response: not JSON"),
+                                        ({"data": None}, "malformed response: no `data`"),
+                                        ({"data": {"total_credits": 25.0, "total_usage": None}},
+                                         "malformed response: no `total_usage`")])
+def test_openrouter_malformed_body(openrouter_key, http, body, note):
     http.on("GET", OPENROUTER_URL, (200, body))
-    rows = aiu.probe_openrouter(openrouter_key)
-    assert rows[0].kind == "error"
+    [row] = aiu.probe_openrouter(openrouter_key)
+    assert row.kind == "error" and row.note == note
 
 
 # ---------------------------------------------------------------------------
