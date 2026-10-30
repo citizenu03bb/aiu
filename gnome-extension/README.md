@@ -13,7 +13,7 @@ Extension GNOME Shell (compatible GNOME 45 à 51+, testée sur GNOME Shell 50.1 
 - **Menu complet et soigné** :
   - **Forfaits & Quotas** : Barres de progression dynamiques avec code couleur, pourcentages et compte à rebours de reset (ex: `in 49m`).
   - **Soldes & Consommation** : DeepSeek, OpenRouter, soldes en USD et métriques de dépenses.
-  - **Conseil d'arbitrage (`--advise`)** : Recommandation automatique du forfait ayant le plus de marge disponible.
+  - **Conseil d'arbitrage** : reprend le champ `advice` de `aiu --json` — brûle d'abord le forfait (ou crédit) dont le surplus expire le plus tôt, et signale ceux à ménager parce qu'ils seront à sec avant leur reset.
   - **Alertes explicites** : Affichage sans omission des erreurs ou jetons expirés avec instruction de rafraîchissement.
   - **Bouton d'actualisation instantanée** et actualisation automatique toutes les 5 minutes (ou à l'ouverture du menu si > 2 min).
   - **Raccourcis rapides** : Ouverture de `aiu` dans le terminal et liens directs vers les consoles web IA (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek).

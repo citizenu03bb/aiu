@@ -115,9 +115,6 @@ export class AiuClient {
         let hasWarningQuota = false;
         let hasError = false;
 
-        // Collect per-provider min free headroom for advice
-        const providerHeadroom = {};
-
         for (const row of rows) {
             if (row.kind === 'error') {
                 errors.push(row);
@@ -141,11 +138,6 @@ export class AiuClient {
                 } else if (usedPct >= 75) {
                     hasWarningQuota = true;
                 }
-
-                const freePct = Math.max(0, 100 - usedPct);
-                if (providerHeadroom[row.provider] === undefined || freePct < providerHeadroom[row.provider]) {
-                    providerHeadroom[row.provider] = freePct;
-                }
             } else if (row.kind === 'balance' || row.kind === 'spend' || row.kind === 'credit') {
                 balances.push(row);
             }
@@ -159,8 +151,8 @@ export class AiuClient {
             statusColor = 'warning';
         }
 
-        // Generate routing advice
-        const advice = this._generateAdvice(providerHeadroom, quotas, balances, errors);
+        // Routing advice comes from aiu itself (earliest-expiring surplus first)
+        const advice = this._generateAdvice(raw.advice);
 
         return {
             capturedAt,
@@ -173,26 +165,41 @@ export class AiuClient {
         };
     }
 
-    _generateAdvice(providerHeadroom, quotas, balances, errors) {
-        const entries = Object.entries(providerHeadroom);
-        if (entries.length === 0) {
+    _formatDuration(secs) {
+        const s = Math.max(0, Math.floor(secs));
+        const d = Math.floor(s / 86400);
+        const h = Math.floor((s % 86400) / 3600);
+        const m = Math.floor((s % 3600) / 60);
+        if (d) return `${d}j${h}h`;
+        if (h) return `${h}h${String(m).padStart(2, '0')}`;
+        return `${m}min`;
+    }
+
+    /**
+     * Summarize aiu's "advice" list (already in routing order: burn / unknown
+     * pace by deadline, then on_track, then conserve) into one line.
+     */
+    _generateAdvice(lots) {
+        if (!Array.isArray(lots) || lots.length === 0) {
             return null;
         }
 
-        // Sort descending by headroom free
-        entries.sort((a, b) => b[1] - a[1]);
+        const keep = [...new Set(lots.filter(l => l.status === 'conserve').map(l => l.provider))];
+        const spare = keep.length ? ` · ménage ${keep.join(', ')}` : '';
+        const first = lots[0];
 
-        const best = entries[0];
-        const worst = entries[entries.length - 1];
-
-        if (worst[1] <= 5 && best[1] > 20) {
-            return `💡 ${worst[0]} saturé (${Math.round(100 - worst[1])}%) → basculez vers ${best[0]} (${Math.round(best[1])}% libre)`;
+        if (first.status === 'burn' || first.status === '?') {
+            const when = typeof first.ttr_secs === 'number'
+                ? ` expire dans ${this._formatDuration(first.ttr_secs)}`
+                : '';
+            const unsure = first.status === '?' ? ' (allure inconnue)' : '';
+            return `💡 Brûle d'abord ${first.provider} : ${first.metric}${when}${unsure}${spare}`;
         }
 
-        if (best[1] > 0) {
-            return `💡 Forfait recommandé : ${best[0]} (${Math.round(best[1])}% de marge disponible)`;
+        if (first.status === 'on_track') {
+            return `💡 Pas de surplus qui expire : route par fit de tâche${spare}`;
         }
 
-        return null;
+        return `💡 Aucun forfait n'a de surplus : réserve chacun à ce que lui seul sait faire, déborde sur l'API payante`;
     }
 }

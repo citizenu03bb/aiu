@@ -14,6 +14,12 @@ async function run() {
             { provider: "codex", metric: "5-Hour Limit", kind: "quota", used: 1.0, used_pct: 100.0, reset: "in 40m" },
             { provider: "gemini", metric: "5-Hour Limit", kind: "quota", used: 0.1, used_pct: 10.0, reset: "in 4h" },
             { provider: "deepseek", metric: "Balance (USD)", kind: "balance", used: 6.31, unit: "USD" }
+        ],
+        advice: [
+            { provider: "claude_max", metric: "Weekly (all models)", status: "burn", ttr_secs: 21485, detail: "" },
+            { provider: "claude_max", metric: "Cloud Credit", status: "burn", ttr_secs: 514625, detail: "" },
+            { provider: "codex", metric: "Weekly Limit", status: "conserve", ttr_secs: 437723, detail: "" },
+            { provider: "gemini", metric: "Weekly Limit", status: "conserve", ttr_secs: 424800, detail: "" }
         ]
     };
 
@@ -31,8 +37,24 @@ async function run() {
     if (processed.quotas.length !== 2) {
         throw new Error(`Expected 2 quotas, got: ${processed.quotas.length}`);
     }
-    if (!processed.advice || !processed.advice.includes('codex')) {
-        throw new Error(`Expected advice to mention codex saturation, got: ${processed.advice}`);
+    const expected = "💡 Brûle d'abord claude_max : Weekly (all models) expire dans 5h58 · ménage codex, gemini";
+    if (processed.advice !== expected) {
+        throw new Error(`Expected advice "${expected}", got: ${processed.advice}`);
+    }
+    const cases = [
+        [[{ provider: "codex", metric: "Weekly Limit", status: "on_track", ttr_secs: 3600 }],
+            "💡 Pas de surplus qui expire : route par fit de tâche"],
+        [[{ provider: "gemini", metric: "Gemini Flash", status: "?", ttr_secs: 600 }],
+            "💡 Brûle d'abord gemini : Gemini Flash expire dans 10min (allure inconnue)"],
+        [[{ provider: "codex", metric: "Weekly Limit", status: "conserve", ttr_secs: 9 }],
+            "💡 Aucun forfait n'a de surplus : réserve chacun à ce que lui seul sait faire, déborde sur l'API payante"],
+        [undefined, null],
+    ];
+    for (const [lots, want] of cases) {
+        const got = client._generateAdvice(lots);
+        if (got !== want) {
+            throw new Error(`Expected advice "${want}", got: ${got}`);
+        }
     }
 
     console.log('[Test] Testing real async execution with aiu CLI...');
