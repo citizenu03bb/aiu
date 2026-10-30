@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-3.0-or-later -->
+<!-- Settings of the panel itself. aiu's own settings (providers, key sources)
+     stay in config.toml, read and written only through `aiu config`. -->
+<schemalist>
+  <schema id="org.gnome.shell.extensions.aiu-indicator"
+          path="/org/gnome/shell/extensions/aiu-indicator/">
+    <key name="refresh-interval" type="u">
+      <range min="60" max="86400"/>
+      <default>300</default>
+      <summary>Refresh interval</summary>
+      <description>Seconds between two background runs of aiu.</description>
+    </key>
+  </schema>
+</schemalist>
