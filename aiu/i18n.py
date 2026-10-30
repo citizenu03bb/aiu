@@ -138,6 +138,19 @@ FR = {
     "cannot change {option} in place: edit it by hand":
         "impossible de modifier {option} sur place : modifie-le à la main",
     "{option} set in {path}": "{option} réglé dans {path}",
+    "aiu now reads Claude Code's sign-in token (~/.claude/.credentials.json) and sends it to "
+    "Anthropic's usage endpoint, as the Claude apps do. Anthropic's terms say: \"developers may "
+    "not collect, store, or intermediate Claude.ai credentials or session tokens\" "
+    "(code.claude.com/docs/en/legal-and-compliance). The aiu-claude-usage plugin for Claude Code "
+    "needs no token: /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu. "
+    "To turn this off: aiu config set claude.read_token false":
+        "aiu lit désormais le jeton de connexion de Claude Code (~/.claude/.credentials.json) et "
+        "l'envoie au point d'accès d'usage d'Anthropic, comme les applications Claude. Les "
+        "conditions d'Anthropic disent : « developers may not collect, store, or intermediate "
+        "Claude.ai credentials or session tokens » (code.claude.com/docs/en/legal-and-compliance). "
+        "Le plugin aiu-claude-usage pour Claude Code n'a besoin d'aucun jeton : "
+        "/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu. "
+        "Pour le désactiver : aiu config set claude.read_token false",
     "Config: {path}": "Config : {path}",
     "key_cmd is ignored: {reasons}": "key_cmd est ignoré : {reasons}",
     "Option": "Réglage",

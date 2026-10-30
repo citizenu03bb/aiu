@@ -6,6 +6,9 @@ The GNOME extension runs `aiu --json` every five minutes and
 it can be `null`. It is the contract between `aiu` and the extension, which
 are installed and updated separately.
 
+A second contract, read by aiu and written by the Claude Code plugin in
+`claude-code-plugin/`, is at the end: [`claude-usage.json`](#claude-usagejson).
+
 ## The schema number
 
 Both outputs start with `"schema": 1`, the version of this contract
@@ -67,7 +70,7 @@ One per metric a probe read, or one `error` row for a probe that failed.
 | `limit` | number. `quota`: 1; `credit`: the grant; otherwise a budget when known | yes | extension (credit) |
 | `unit` | string: `%`, `USD`, `CNY`…, may be empty | no | extension |
 | `reset` | string, human (`in 2h 0m`, `expires in 10d 0h`, `now`) | yes | extension, when `reset_epoch` is null |
-| `note` | string, may be empty: plan name, allowance, or why an `error` row failed | no | extension |
+| `note` | string, may be empty: plan name, allowance, the age of an old Claude Code reading (`Claude Code reading from 2h 5m ago`), or why an `error` row failed | no | extension |
 | `reset_epoch` | number, Unix seconds of the reset | yes | extension |
 | `window_secs` | integer, the quota window length | yes | not read |
 
@@ -111,8 +114,8 @@ A provider:
 | `section` | boolean, whether the file has the provider's table | no | not read |
 | `options` | object, option name → option, in aiu's order | no | extension |
 
-An option (`enabled`, `key_env`, `key_cmd`, `key_file`, `claude_cmd`,
-`vibe_allowance_eur`, `api_allowance_eur`):
+An option (`enabled`, `key_env`, `key_cmd`, `key_file`, `read_token`,
+`claude_cmd`, `vibe_allowance_eur`, `api_allowance_eur`):
 
 | Field | Type | Null | Read by |
 |---|---|---|---|
@@ -120,6 +123,64 @@ An option (`enabled`, `key_env`, `key_cmd`, `key_file`, `claude_cmd`,
 | `value` | the value of that type | yes | extension |
 | `source` | string: `file` or `default` | no | extension |
 
-The window shows `enabled` as the provider's switch and each `string` or
-`number` option as a field; `key_cmd` and `claude_cmd` are read-only when
-`key_cmd_allowed` is false. An option of another type is left out.
+The window shows `enabled` as the provider's switch, each other `bool` option
+(`read_token`) as a switch of its own, and each `string` or `number` option as
+a field; `key_cmd` and `claude_cmd` are read-only when `key_cmd_allowed` is
+false. An option of another type is left out.
+
+## `claude-usage.json`
+
+Written by the `aiu-claude-usage` Claude Code plugin
+(`claude-code-plugin/hooks/register.ts`), read by the `claude` probe
+(`_read_claude_usage` in `aiu/probes/claude.py`). The plugin owns this format:
+change both sides together, and bump `schema` on the same rule as above. They
+are installed separately (the plugin from Claude Code, aiu with pipx or uv), so
+aiu reads only `"schema": 1` and takes any other file as absent.
+
+**Where.** `$XDG_STATE_HOME/aiu/claude-usage.json` when `XDG_STATE_HOME` is an
+absolute path, else `~/.local/state/aiu/claude-usage.json`: the directory of
+aiu's pace history (`state_dir` in `aiu/util.py`).
+
+**When.** At `session.start`, from `$.session.usage()`, and on `session.measure`
+when its `changed` names `rateLimits` (after each turn, when a window moved a
+whole point, appeared or left). Never when there is no window to report.
+The whole file is replaced each time.
+
+An object:
+
+| Field | Type | Null | Read by |
+|---|---|---|---|
+| `schema` | integer, `1` | no | aiu: any other value, the file is absent |
+| `source` | string, `claude-code` | no | aiu: any other value, the file is absent |
+| `written_at` | string, ISO 8601 UTC with milliseconds (`2026-10-30T22:11:46.367Z`) | no | aiu: the reading's age |
+| `rate_limits` | array of windows, as Claude Code lists them | no | aiu |
+
+A window (Claude Code's `SessionRateLimit`):
+
+| Field | Type | Null | Read by |
+|---|---|---|---|
+| `kind` | string: `five_hour`, `seven_day`, or another window (a Claude gateway's `spend_limit`) | no | aiu: the row's label; a kind aiu has no label for is skipped |
+| `percent_used` | number, 0 to 100 with at most one decimal (past 100 on an exceeded spend limit) | no | aiu: `used` = `percent_used` / 100 |
+| `resets_at` | string, ISO 8601 | yes | aiu: `reset_epoch` |
+
+How aiu reads it:
+
+- The file is absent when it is missing, over 64 KiB, not JSON, of another
+  `schema` or `source`, has a field of the wrong type (a `percent_used` that is
+  not a number from 0 to 1000, a `resets_at` that is not a date), more than 32
+  windows, a `written_at` more than 5 minutes ahead of the clock, or no window
+  aiu has a label for.
+- Rows come out as from the usage endpoint: `5-Hour Limit` (`five_hour`),
+  `Weekly (all models)` (`seven_day`), and the other labels in
+  `CLAUDE_QUOTA_LABELS`, each a `quota` row with its window length.
+- A window whose `resets_at` has passed is at 0 %, its `reset` and
+  `reset_epoch` null: it reset since the reading, and the next reset is not
+  known until Claude Code reports again. A window without `resets_at` counts as
+  reset once the reading is older than the window.
+- A reading older than an hour (`CLAUDE_USAGE_STALE`) puts its age in each
+  row's note (`Claude Code reading from 2h 5m ago`), and is used only while at
+  least one window has yet to reset. Past that, the row is an `error` that says
+  how old the last reading is.
+- Credits (`Cloud Credit`) and windows only the usage endpoint reports are not
+  in this file. With `claude.read_token = true` the token read adds them; the
+  file's windows take precedence over the endpoint's for the same label.

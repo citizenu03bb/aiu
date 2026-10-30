@@ -11,6 +11,7 @@ from pathlib import Path
 
 from aiu.routing import RATE_WINDOW_MAX
 from aiu.rows import Row
+from aiu.util import state_dir
 
 
 # Snapshot history: the last reading of each recent volume window, so a window
@@ -24,9 +25,7 @@ HISTORY_MAX_BYTES = 64 * 1024  # a bigger file is not ours: ignored, then rewrit
 
 
 def _history_path() -> Path:
-    state = os.environ.get("XDG_STATE_HOME", "")
-    base = Path(state) if os.path.isabs(state) else Path(os.path.expanduser("~/.local/state"))
-    return base / "aiu" / "history.json"
+    return state_dir() / "history.json"
 
 
 def _history_entry(e) -> dict | None:

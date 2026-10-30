@@ -15,7 +15,7 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
    Until `aiu` is there, the menu shows this command with **Copy command**, **Install guide** and **Check again** buttons, and the dot stays grey.
    **Copy command** is the extension's only use of the clipboard: it writes the command there when you click it, and never reads the clipboard.
 2. **Turn on the extension** from [extensions.gnome.org](https://extensions.gnome.org), or from the release zip (see [Install](#install)).
-3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for in the [preferences window](#preferences) (or in the file itself), and sign in to their command-line tools (`claude`, `codex`…). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
+3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for in the [preferences window](#preferences) (or in the file itself), and sign in to their command-line tools (`codex`…); for Claude, install aiu's Claude Code plugin (`/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu`). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
 
 ## Features
 
@@ -42,7 +42,7 @@ Open them with **⚙️ Preferences…** at the bottom of the panel menu, from t
 gnome-extensions prefs aiu-indicator@citizenu03bb.github.io
 ```
 
-- **Providers**: one row per provider, with an on/off switch and, under it, where `aiu` finds the key: an environment variable (its name), a command that prints the key, or a file. Mistral also has its two allowances, Claude the path of the `claude` program. The line under each name is its state in a snapshot taken when the window opens (**Signed in**, or the probe's note such as "token expired"); the refresh button takes a new one.
+- **Providers**: one row per provider, with an on/off switch and, under it, where `aiu` finds the key: an environment variable (its name), a command that prints the key, or a file. Mistral also has its two allowances; Claude has the **Read the claude sign-in token** switch (off by default; its subtitle says what it does and quotes Anthropic's terms) and the path of the `claude` program. The line under each name is its state in a snapshot taken when the window opens (**Signed in**, or the probe's note such as "token expired"); the refresh button takes a new one.
 - **General**: the refresh interval (5 minutes by default, 1 minute at least), the `aiu` program in use and an **Open config file** button, plus a link to the install guide when `aiu` is missing.
 
 The window never parses or writes `config.toml` itself: it reads it with `aiu config show --json` and saves each change with `aiu config set` (see [`aiu config`](../README.md#aiu-config)), so every rule of `aiu` applies, and the file keeps its comments.

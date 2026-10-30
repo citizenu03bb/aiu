@@ -274,6 +274,14 @@ msgid "claude program"
 msgstr "Programme claude"
 
 #: aiuConfig.js
+msgid "Read the claude sign-in token"
+msgstr "Lire le jeton de connexion de claude"
+
+#: aiuConfig.js
+msgid "Off by default. On, aiu reads the claude command-line tool's sign-in token and sends it to Anthropic's usage endpoint, which adds credits and other windows. Anthropic's terms say developers may not collect, store, or intermediate Claude.ai credentials or session tokens (code.claude.com/docs/en/legal-and-compliance). The aiu-claude-usage plugin for Claude Code needs no token."
+msgstr "Désactivé par défaut. Activé, aiu lit le jeton de connexion de l'outil en ligne de commande claude et l'envoie au point d'accès d'usage d'Anthropic, ce qui ajoute les crédits et d'autres fenêtres. Les conditions d'Anthropic disent que les développeurs ne peuvent pas collecter, stocker ni relayer les identifiants ou jetons de session Claude.ai (code.claude.com/docs/en/legal-and-compliance). Le plugin aiu-claude-usage pour Claude Code n'a besoin d'aucun jeton."
+
+#: aiuConfig.js
 msgid "Vibe allowance (EUR)"
 msgstr "Allocation Vibe (EUR)"
 
@@ -322,8 +330,8 @@ msgid "aiu takes the key from the first of these that gives one: the variable (f
 msgstr "aiu prend la clé dans la première de ces sources qui en donne une : la variable (de votre session ou de ~/.env), la commande, puis le fichier. Mieux que ~/.env, le trousseau GNOME : enregistrez la clé une fois avec secret-tool store --label=\"aiu {provider}\" service aiu provider {provider}, puis mettez comme commande secret-tool lookup service aiu provider {provider}"
 
 #: prefsWindow.js
-msgid "Nothing to enter here: aiu reads the sign-in of the claude command-line tool. Run claude once to sign in. Set the program only if claude is installed where aiu does not look."
-msgstr "Rien à saisir ici : aiu lit la connexion de l'outil en ligne de commande claude. Lancez claude une fois pour vous connecter. N'indiquez le programme que si claude est installé là où aiu ne regarde pas."
+msgid "Nothing to enter here: aiu reads the usage Claude Code reports, through its aiu-claude-usage plugin. Install it at a claude prompt with /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu (in the desktop app: + next to the prompt box, Plugins, Add marketplace). Set the program only if you read the sign-in token and claude is installed where aiu does not look."
+msgstr "Rien à saisir ici : aiu lit l'usage que Claude Code annonce, grâce à son plugin aiu-claude-usage. Installez-le à une invite claude avec /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu (dans l'application de bureau : + à côté de la zone de saisie, Plugins, Add marketplace). N'indiquez le programme que si vous lisez le jeton de connexion et que claude est installé là où aiu ne regarde pas."
 
 #: prefsWindow.js
 msgid "Nothing to enter here: aiu reads the sign-in of the {provider} command-line tool. Run it once to sign in."

@@ -93,3 +93,7 @@ def test_consult_messages_in_french(monkeypatch, capsys):
     monkeypatch.setenv("AIU_LANG", "fr")
     assert consult.main() == 2
     assert "fournisseur inconnu 'nope'" in capsys.readouterr().err
+
+
+def test_config_notices_have_a_french_text():
+    assert config.CONFIG_NOTICES and set(config.CONFIG_NOTICES.values()) <= i18n.FR.keys()

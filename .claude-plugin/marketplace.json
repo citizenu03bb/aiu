@@ -1,0 +1,14 @@
+{
+  "name": "aiu",
+  "owner": {
+    "name": "citizen-lambda"
+  },
+  "description": "aiu's companion plugins for Claude Code.",
+  "plugins": [
+    {
+      "name": "aiu-claude-usage",
+      "source": "./claude-code-plugin",
+      "description": "Writes Claude Code's own rate-limit readings to a file aiu reads, so aiu never reads a Claude.ai token."
+    }
+  ]
+}
