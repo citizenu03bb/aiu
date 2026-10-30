@@ -335,7 +335,7 @@ N merged on 2026-10-30 in #31. The first real import (Chrome) showed that
 Mistral sets its session on `.mistral.ai`, not `admin.mistral.ai`; #33 reads
 what a browser sends to `admin.mistral.ai` (RFC 6265 domain match). The
 maintainer's session now lives in the keyring and `MISTRAL_ADMIN_COOKIE` is
-gone from their `~/.env`. Not released yet.
+gone from their `~/.env`. Released in v0.5.0.
 
 ### N. `aiu cookie import mistral`
 
@@ -377,11 +377,12 @@ Mistral setup), `docs/security-review.md` (L3 status).
 Firefox one into the keyring stub without writing outside a private
 directory, and the maintainer's real Mistral session is imported once by hand.
 
-## Wave 7: O and P done
+## Wave 7: done
 
 Merged on 2026-10-30: O in #36 (the `aiu/` package, `--json` checked
 byte-identical against 7204525), P in #37 (`"schema": 1`, `docs/json-schema.md`,
-fixtures shared by the Python and GJS tests). Not released yet.
+fixtures shared by the Python and GJS tests), Q in #39 (an early, fast pace
+is `conserve`, not "unknown pace"). Released in v0.5.0, with wave 6.
 
 `aiu.py` had grown to about 2,800 lines and 91 top-level functions: seven
 probes, keys and `~/.env`, config editing, cookie import, history, routing,
