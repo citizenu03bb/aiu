@@ -474,9 +474,11 @@ the provider's terms address, and one clean official sign-in:
   credentials or session tokens" (code.claude.com/docs/en/legal-and-compliance).
   aiu reads Claude Code's stored token and calls `api/oauth/usage`, the same
   endpoint, header and token type the Claude desktop app uses for its own usage
-  card. The only documented alternative, the Claude Code status line's
-  `rate_limits`, exists only in CLI sessions. The maintainer keeps the probe,
-  as an informed opt-in.
+  card. The status line's `rate_limits` exist only in CLI sessions, but
+  Claude Code's plugin API hands the same figures to a mod in the desktop app
+  too (`session.measure`, `$.session.usage()`): a prototype mod wrote them to
+  a file on 2026-10-30, matching the token read to the point. So aiu reads
+  that file first, and the token read becomes an explicit opt-in.
 - **Google**: the Gemini CLI FAQ calls third-party software that piggybacks on
   Gemini CLI's OAuth a "direct violation" that "may be grounds for immediate
   suspension". aiu's Gemini fallback refreshes and uses the Gemini CLI's
@@ -486,21 +488,42 @@ the provider's terms address, and one clean official sign-in:
   `GET /api/v1/key` reads that key's limit and usage (`/api/v1/credits`, used
   today, is documented for management keys).
 
-### R. Claude as an informed opt-in
+### R. Claude from Claude Code's own figures, token read as an opt-in
 
-- The starter config ships `claude.enabled = false`, with a comment that says
-  what the probe does (reads Claude Code's token, calls `api/oauth/usage`) and
-  quotes the policy line. Existing configs keep their value.
-- `aiu config set claude.enabled true` (and the preferences switch) prints the
-  same notice once; nothing else changes in the probe.
-- While there: the window labels the desktop app knows that aiu drops today
-  (`seven_day_opus`, `seven_day_oauth_apps`, `seven_day_cowork`) get labels and
-  window lengths, if the endpoint returns them.
-- README and `docs/security-review.md` state the terms question plainly.
+- **The mod.** Ship `claude-code-plugin/` in this repository as an installable
+  Claude Code plugin (`.claude-plugin/plugin.json`, `hooks/hooks.json`,
+  `hooks/register.ts`, README, LICENSE; a `.claude-plugin/marketplace.json` at
+  the repository root so `/plugin install aiu-claude-usage --marketplace
+  citizenu03bb/aiu` works). On `session.measure` (when `rateLimits` changed)
+  and at `session.start` (from `$.session.usage()`) it writes
+  `$XDG_STATE_HOME/aiu/claude-usage.json` (else `~/.local/state/aiu/`):
+  `{"schema": 1, "source": "claude-code", "written_at", "rate_limits": [{"kind",
+  "percent_used", "resets_at"}]}`. Nothing else: no token, no prompt content.
+  The prototype is in the maintainer's session dev-mods folder; start from it.
+- **The probe.** `aiu/probes/claude.py` reads that file first. A reading is
+  used when `written_at` is recent or a window's `resets_at` is still ahead
+  (a window that reset since is shown at 0 % with its next reset unknown).
+  Rows come out as today's (`5-Hour Limit`, `Weekly (all models)`), with a note
+  of the reading's age when it is old. Credits (`Cloud Credit`) and windows
+  only the endpoint knows are not in the file: say so in the README.
+- **The token read** (Claude Code's `~/.claude/.credentials.json` and
+  `api/oauth/usage`, plus `claude auth status` for a stale token) runs only
+  with `claude.read_token = true`, off by default, with a comment in the
+  starter config that says what it does and quotes Anthropic's policy line.
+  `aiu config set claude.read_token true` prints that notice. With the opt-in
+  on, the token read fills in what the file lacks (credits, extra windows).
+- `claude.enabled` stays as it is in existing configs; with neither the file
+  nor the opt-in, the row says how to install the plugin.
+- While there: labels and window lengths for `seven_day_opus`,
+  `seven_day_oauth_apps`, `seven_day_cowork` when the endpoint returns them.
+- README, `docs/security-review.md` and `docs/json-schema.md` (if a row note
+  changes) say what changed for existing users.
 
-**Files:** `aiu/config.py` (starter config), `aiu/probes/claude.py`,
-`aiu/i18n.py`, `tests/`, `README.md`, `docs/security-review.md`,
-`gnome-extension/prefsWindow.js` (notice text only), `gnome-extension/po/`.
+**Files:** `claude-code-plugin/`, `.claude-plugin/marketplace.json`,
+`aiu/probes/claude.py`, `aiu/config.py` (starter config, `read_token`),
+`aiu/i18n.py`, `tests/`, `README.md`, `docs/`,
+`gnome-extension/prefsWindow.js` (the new option and notice),
+`gnome-extension/po/`.
 
 ### S. Drop the Gemini CLI OAuth fallback
 
