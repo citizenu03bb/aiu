@@ -16,6 +16,7 @@ from aiu.probes import deepseek, gemini, openai, openrouter  # noqa: E402
 OPENAI_URL = "https://api.openai.com/v1/organizations/costs"
 DEEPSEEK_URL = "https://api.deepseek.com/user/balance"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/credits"
+OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
 
 
 def forget(monkeypatch, *names):
@@ -228,67 +229,140 @@ def test_deepseek_non_json_body(deepseek_key, http):
 
 
 # ---------------------------------------------------------------------------
-# OpenRouter: total spend + remaining credits
+# OpenRouter: the key's own cap and spend from /key, the account's credits
+# from /credits when the key has no cap or /key does not describe it
 # ---------------------------------------------------------------------------
+def key_body(**over):
+    """A /api/v1/key answer (openrouter.ai/docs/api/reference/limits)."""
+    d = {"label": "aiu", "limit": None, "limit_remaining": None, "limit_reset": None,
+         "usage": 1.2345, "usage_daily": 0.25, "usage_weekly": 1.0, "usage_monthly": 1.2345,
+         "byok_usage": 0, "is_free_tier": False}
+    return {"data": {**d, **over}}
+
+
 @pytest.fixture
 def openrouter_key(monkeypatch):
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
     return {"key_env": "OPENROUTER_API_KEY"}
 
 
-def test_openrouter_credits(openrouter_key, http):
+def test_openrouter_limited_key(openrouter_key, http):
+    http.on("GET", OPENROUTER_KEY_URL, (200, key_body(limit=100, limit_remaining=74.5,
+                                                      limit_reset="monthly", usage=25.5)))
+    spend, left = openrouter.probe_openrouter(openrouter_key)
+    assert (spend.metric, spend.kind, spend.used, spend.unit) == ("Spend (total)", "spend", 25.5, "USD")
+    assert spend.note == "this key; today 0.25 USD"
+    assert (left.metric, left.kind, left.used, left.unit) == ("Remaining", "balance", 74.5, "USD")
+    assert left.note == "key limit 100.00 USD, resets monthly"
+    # The cap is the key's ceiling: /credits is not asked.
+    assert [c.url for c in http.calls] == [OPENROUTER_KEY_URL]
+    assert http.calls[0].headers["Authorization"] == "Bearer sk-or-v1-fake"
+
+
+def test_openrouter_limited_key_used_up_free_tier(openrouter_key, http):
+    http.on("GET", OPENROUTER_KEY_URL, (200, key_body(limit=5, limit_remaining=0, usage=5,
+                                                      usage_daily=None, is_free_tier=True)))
+    spend, left = openrouter.probe_openrouter(openrouter_key)
+    assert spend.note == "this key" and left.used == 0
+    assert left.note == "key limit 5.00 USD (free tier)"
+
+
+def test_openrouter_unlimited_key_reads_the_account(openrouter_key, http):
+    http.on("GET", OPENROUTER_KEY_URL, (200, key_body()))
     http.on("GET", OPENROUTER_URL, (200, {"data": {"total_credits": 25.0, "total_usage": 7.4321}}))
     spend, left = openrouter.probe_openrouter(openrouter_key)
-    assert (spend.metric, spend.kind, spend.used, spend.unit) == ("Spend (total)", "spend", 7.43, "USD")
-    assert (left.metric, left.kind, left.used) == ("Remaining", "balance", 17.57)
-    assert http.calls[0].headers["Authorization"] == "Bearer sk-or-v1-fake"
+    # The rows of before /key: the account's spend and balance.
+    assert (spend.metric, spend.kind, spend.used, spend.note) == ("Spend (total)", "spend", 7.43, "")
+    assert (left.metric, left.kind, left.used, left.note) == ("Remaining", "balance", 17.57, "")
+    assert [c.url for c in http.calls] == [OPENROUTER_KEY_URL, OPENROUTER_URL]
+    assert all(c.headers["Authorization"] == "Bearer sk-or-v1-fake" for c in http.calls)
+
+
+def test_openrouter_unlimited_free_tier(openrouter_key, http):
+    http.on("GET", OPENROUTER_KEY_URL, (200, key_body(is_free_tier=True, usage=0)))
+    http.on("GET", OPENROUTER_URL, (200, {"data": {"total_credits": 0, "total_usage": 0}}))
+    _, left = openrouter.probe_openrouter(openrouter_key)
+    assert left.used == 0 and left.note == "free tier"
+
+
+@pytest.mark.parametrize("credits", [(403, {"error": {"code": 403}}), (500, "oops"),
+                                     httpx.ConnectError("offline")])
+def test_openrouter_unlimited_key_without_the_account(openrouter_key, http, credits):
+    # /credits is documented for management keys: without it, the key's spend.
+    http.on("GET", OPENROUTER_KEY_URL, (200, key_body()))
+    http.on("GET", OPENROUTER_URL, credits)
+    [spend] = openrouter.probe_openrouter(openrouter_key)
+    assert (spend.metric, spend.kind, spend.used) == ("Spend (total)", "spend", 1.23)
+    assert spend.note == "this key; no limit, account balance not readable; today 0.25 USD"
 
 
 def test_openrouter_overdrawn(openrouter_key, http):
     # Usage past the purchased credits (negative balance, requests refused).
+    http.on("GET", OPENROUTER_KEY_URL, (200, key_body()))
     http.on("GET", OPENROUTER_URL, (200, {"data": {"total_credits": 10, "total_usage": 10.5}}))
     _, left = openrouter.probe_openrouter(openrouter_key)
     assert left.used == -0.5
 
 
+@pytest.mark.parametrize("status", [401, 403, 404])
+def test_openrouter_management_key_falls_back_to_credits(openrouter_key, http, status):
+    http.on("GET", OPENROUTER_KEY_URL, (status, {"error": {"code": status}}))
+    http.on("GET", OPENROUTER_URL, (200, {"data": {"total_credits": "25.0", "total_usage": 7.4321}}))
+    spend, left = openrouter.probe_openrouter(openrouter_key)
+    assert (spend.used, left.used, left.note) == (7.43, 17.57, "")
+
+
 @pytest.mark.parametrize("status", [401, 403])
 def test_openrouter_auth_rejected(openrouter_key, http, status):
-    http.on("GET", OPENROUTER_URL, (status, {"error": {"code": status, "message": "No auth credentials found"}}))
+    body = {"error": {"code": status, "message": "No auth credentials found"}}
+    http.on("GET", OPENROUTER_KEY_URL, (status, body))
+    http.on("GET", OPENROUTER_URL, (status, body))
     [row] = openrouter.probe_openrouter(openrouter_key)
-    assert row.kind == "error" and row.note == f"auth rejected ({status})"
+    assert row.kind == "error" and row.metric == "Credits" and row.note == f"auth rejected ({status})"
 
 
 def test_openrouter_server_error(openrouter_key, http):
-    http.on("GET", OPENROUTER_URL, (500, {"error": {"code": 500}}))
+    http.on("GET", OPENROUTER_KEY_URL, (500, {"error": {"code": 500}}))
     [row] = openrouter.probe_openrouter(openrouter_key)
-    assert row.kind == "error" and row.note == "HTTP 500"
+    assert row.kind == "error" and row.note == "HTTP 500" and len(http.calls) == 1
 
 
 def test_openrouter_network_error(openrouter_key, http):
-    http.on("GET", OPENROUTER_URL, httpx.ConnectError("connection reset"))
+    http.on("GET", OPENROUTER_KEY_URL, httpx.ConnectError("connection reset"))
     [row] = openrouter.probe_openrouter(openrouter_key)
-    assert row.kind == "error" and row.note == "network: cannot connect"
+    assert row.kind == "error" and row.note == "network: cannot connect" and len(http.calls) == 1
 
 
 def test_openrouter_no_key(http):
     [row] = openrouter.probe_openrouter({"key_env": "OPENROUTER_API_KEY"})
     assert row.kind == "error" and "OPENROUTER_API_KEY" in row.note and http.calls == []
+    assert "aiu login openrouter" in row.note
 
 
-def test_openrouter_renamed_fields(openrouter_key, http):
-    http.on("GET", OPENROUTER_URL, (200, {"data": {"credits": 25.0, "usage": 7.4}}))
+@pytest.mark.parametrize("body, note", [
+    ("<html>Cloudflare</html>", "malformed response: not JSON"),
+    ({"data": None}, "malformed response: no `data`"),
+    (key_body(usage=None), "malformed response: no `usage`"),
+    (key_body(usage="1.0"), "malformed response: no `usage`"),
+    (key_body(limit=10), "malformed response: no `limit_remaining`"),
+    (key_body(limit="10", limit_remaining=5), "malformed response: no `limit`"),
+])
+def test_openrouter_malformed_key_body(openrouter_key, http, body, note):
+    http.on("GET", OPENROUTER_KEY_URL, (200, body))
     [row] = openrouter.probe_openrouter(openrouter_key)
-    assert row.kind == "error" and row.used is None and row.note == "malformed response: no `total_credits`"
+    assert row.kind == "error" and row.used is None and row.note == note
 
 
-@pytest.mark.parametrize("body, note", [("<html>Cloudflare</html>", "malformed response: not JSON"),
+@pytest.mark.parametrize("body, note", [({"data": {"credits": 25.0, "usage": 7.4}},
+                                         "malformed response: no `total_credits`"),
                                         ({"data": None}, "malformed response: no `data`"),
                                         ({"data": {"total_credits": 25.0, "total_usage": None}},
                                          "malformed response: no `total_usage`")])
-def test_openrouter_malformed_body(openrouter_key, http, body, note):
+def test_openrouter_malformed_credits_body(openrouter_key, http, body, note):
+    http.on("GET", OPENROUTER_KEY_URL, (401, {"error": {"code": 401}}))
     http.on("GET", OPENROUTER_URL, (200, body))
     [row] = openrouter.probe_openrouter(openrouter_key)
-    assert row.kind == "error" and row.note == note
+    assert row.kind == "error" and row.used is None and row.note == note
 
 
 # ---------------------------------------------------------------------------

@@ -89,6 +89,10 @@ def answers(home, http, monkeypatch):
         "is_available": True, "balance_infos": [{"currency": "USD", "total_balance": "4.20"},
                                                 {"currency": "CNY", "total_balance": "12.00"}]}))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
+    # A key without a cap of its own: the account's credits give the balance.
+    http.on("GET", "openrouter.ai/api/v1/key", (200, {"data": {
+        "label": "aiu", "limit": None, "limit_remaining": None, "limit_reset": None, "usage": 0.0,
+        "usage_daily": 0.0, "usage_weekly": 0.0, "usage_monthly": 0.0, "is_free_tier": False}}))
     http.on("GET", "openrouter.ai/api/v1/credits", (200, {"data": {"total_credits": 20, "total_usage": 7.5}}))
     (home / ".gemini").mkdir()
     (home / ".gemini" / "oauth_creds.json").write_text(json.dumps(
@@ -123,6 +127,7 @@ def failures(home, http, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-fake")
     http.on("GET", "api.deepseek.com/user/balance", (200, ["not", "an", "object"]))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
+    http.on("GET", "openrouter.ai/api/v1/key", httpx.ConnectError("offline"))
     http.on("GET", "openrouter.ai/api/v1/credits", httpx.ConnectError("offline"))
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "ory_session_x=fake")
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
@@ -143,6 +148,7 @@ def snapshot(home, http, monkeypatch):
                                             "reset_at": int(NOW + 5 * 86400)}},
         "credits": {"balance": "9.99"},
     }))
+    http.on("GET", "openrouter.ai/api/v1/key", httpx.ConnectError("offline"))
     http.on("GET", "openrouter.ai/api/v1/credits", httpx.ConnectError("offline"))
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
             (307, "", {"location": "https://auth.mistral.ai/ui/login"}))

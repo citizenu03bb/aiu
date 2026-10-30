@@ -65,6 +65,9 @@ enabled = false
 key_env = "DEEPSEEK_API_KEY"
 # key_cmd = "jq -r .api_key ~/.config/deepseek/config.json"
 
+# `aiu login openrouter` signs in in the browser, keeps the key OpenRouter
+# issues in the keyring and sets key_cmd (comment key_env out, or leave the
+# variable unset: key_env is read first).
 [openrouter]
 enabled = false
 key_env = "OPENROUTER_API_KEY"
@@ -137,6 +140,9 @@ enabled = false
 key_env = "DEEPSEEK_API_KEY"
 # key_cmd = "jq -r .api_key ~/.config/deepseek/config.json"
 
+# `aiu login openrouter` se connecte dans le navigateur, garde la clé que
+# donne OpenRouter dans le trousseau et règle key_cmd (commente key_env, ou
+# laisse la variable vide : key_env est lu en premier).
 [openrouter]
 enabled = false
 key_env = "OPENROUTER_API_KEY"
