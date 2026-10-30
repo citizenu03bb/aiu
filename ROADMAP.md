@@ -329,7 +329,11 @@ manual review). Its rule is that clipboard access must be declared in the
 description, so v0.3.1 says there that **Copy command** writes the install
 command to the clipboard on click and never reads it.
 
-## Wave 6: not started
+## Wave 6: merged, real import pending
+
+N merged on 2026-10-30 in #31. Left: the maintainer imports their real
+Mistral session once by hand (steps in #31), then removes
+`MISTRAL_ADMIN_COOKIE` from `~/.env`.
 
 ### N. `aiu cookie import mistral`
 
@@ -370,6 +374,69 @@ Mistral setup), `docs/security-review.md` (L3 status).
 **Done when:** CI is green, a test decrypts a Chromium fixture and reads a
 Firefox one into the keyring stub without writing outside a private
 directory, and the maintainer's real Mistral session is imported once by hand.
+
+## Wave 7: restructure, in order (P needs O)
+
+`aiu.py` has grown to about 2,800 lines and 91 top-level functions: seven
+probes, keys and `~/.env`, config editing, cookie import, history, routing,
+rendering, alerts, the French table and the CLI. Waves 2 and 4 could only run
+in parallel by splitting it by function, and a new provider means editing the
+core. The `--json` output the extension reads every five minutes has no
+version and no test shared by both sides. Behaviour does not change in this
+wave.
+
+### O. Split `aiu.py` into a package
+
+**Goal:** one module per concern, so tasks touch different files and a
+provider is a file of its own.
+
+- An `aiu/` package: `probes/` (one module per provider behind a small
+  `Probe` protocol: name, options it reads, `probe(cfg) -> list[Row]`, and a
+  registry replacing `PROBES`), `rows.py` (`Row`), `keys.py` (key resolution,
+  `~/.env`), `config.py` (load, trust check, `config show/set`), `cookies.py`,
+  `history.py`, `routing.py` (SURPLUS-EDF, advise), `render.py` (table, HTML,
+  JSON), `notify.py` (alert), `i18n.py` (`tr`, `FR`), `cli.py` (`main`).
+- Pure move: no behaviour change, no new dependency. All existing tests pass
+  with only their imports and monkeypatch targets updated; any test that has
+  to change in substance is a sign the move changed behaviour.
+- These must keep working, unchanged for the user:
+  - the maintainer's launcher `~/.local/bin/aiu` → `~/Projects/aiu/aiu.py`;
+  - `./aiu.py` run directly with uv (its inline script metadata stays);
+  - `pipx install` / `uv tool install` from git, providing `aiu` and `consult`;
+  - `aiu --json` output, byte-for-byte on the same input.
+
+  The usual way: `aiu.py` at the root becomes a thin script that keeps the
+  inline metadata, puts its own directory on `sys.path`, and calls
+  `aiu.cli.main()`. Check that `import aiu` resolves to the package
+  everywhere (tests, the wheel, the script), not to the root file.
+- `consult.py` stays as it is unless it imports from `aiu.py`.
+- Runs alone: it touches every Python file, so no other task runs meanwhile.
+
+**Files:** `aiu.py`, a new `aiu/`, `tests/` (imports only), `pyproject.toml`
+(packages instead of `py-modules`), `README.md` and `docs/` where they name
+functions or line numbers.
+**Done when:** CI is green, the test count is unchanged, `aiu --json` gives
+the same output as before on recorded fixtures, and the launcher, `./aiu.py`
+and a `uv tool install` from the branch all run.
+
+### P. A versioned `--json` contract
+
+**Goal:** the CLI and the extension cannot drift apart unnoticed.
+
+- `aiu --json` gains a top-level `"schema": 1`. The fields the extension
+  relies on are written down in `docs/json-schema.md`.
+- One fixture (`tests/fixtures/snapshot.json`) is produced by a Python test
+  from recorded probe answers and read by a GJS test through `AiuClient`, so
+  a change on either side fails CI.
+- The extension accepts schema 1, and shows a clear "update aiu" or "update
+  the extension" message for an unknown one, instead of a parse error.
+- `aiu config show --json` gets the same `schema` field.
+
+**Files:** `aiu/render.py`, `aiu/config.py` (or the matching parts of
+`aiu.py` if O has not landed), `tests/`, `gnome-extension/aiuClient.js`,
+`gnome-extension/aiuConfig.js`, `gnome-extension/tests/`, `docs/`.
+**Done when:** CI is green, and editing a field name on either side alone
+makes a test fail.
 
 ## Later
 
