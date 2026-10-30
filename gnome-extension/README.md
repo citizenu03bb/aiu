@@ -15,7 +15,7 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
    Until `aiu` is there, the menu shows this command with **Copy command**, **Install guide** and **Check again** buttons, and the dot stays grey.
    **Copy command** is the extension's only use of the clipboard: it writes the command there when you click it, and never reads the clipboard.
 2. **Turn on the extension** from [extensions.gnome.org](https://extensions.gnome.org), or from the release zip (see [Install](#install)).
-3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for, and sign in to their command-line tools (`claude`, `codex`…). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
+3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for in the [preferences window](#preferences) (or in the file itself), and sign in to their command-line tools (`claude`, `codex`…). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
 
 ## Features
 
@@ -31,8 +31,38 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
   - **Credits & paid APIs**: free credits with their expiry, prepaid balances, and lifetime spend (greyed out).
   - **Advice**: from the `advice` field of `aiu --json`: burn first the subscription (or credit) whose surplus expires first, and keep for later the ones that would run dry before their reset.
   - **Errors in full**: every probe error or expired token, with what to run to fix it.
-  - **Refresh button**, plus an automatic refresh every 5 minutes (or when the menu opens and the data is over 2 minutes old).
+  - **Refresh button**, plus an automatic refresh every 5 minutes, or at the interval set in the preferences (and when the menu opens and the data is over 2 minutes old).
   - **Shortcuts**: open `aiu` in a terminal, and links to the AI web consoles (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek).
+
+## Preferences
+
+Open them from the Extensions app, or with:
+
+```bash
+gnome-extensions prefs aiu-indicator@citizenu03bb.github.io
+```
+
+- **Providers**: one row per provider, with an on/off switch and, under it, where `aiu` finds the key: an environment variable (its name), a command that prints the key, or a file. Mistral also has its two allowances, Claude the path of the `claude` program. The line under each name is its state in a snapshot taken when the window opens (**Signed in**, or the probe's note such as "token expired"); the refresh button takes a new one.
+- **General**: the refresh interval (5 minutes by default, 1 minute at least), the `aiu` program in use and an **Open config file** button, plus a link to the install guide when `aiu` is missing.
+
+The window never parses or writes `config.toml` itself: it reads it with `aiu config show --json` and saves each change with `aiu config set` (see [`aiu config`](../README.md#aiu-config)), so every rule of `aiu` applies, and the file keeps its comments.
+A switch is saved at once, a text field one second after you stop typing (or on Enter), and the window reads the config back after each change. When `aiu` refuses one, its message shows under the provider and the field stays as typed, to fix.
+
+- **No field holds a key.** They say *where* `aiu` finds one; text that looks like a key (`sk-…`, a long token) is wiped from the field and never saved. Keep the key in the GNOME keyring and point the command at it, as in the main README's [Secrets](../README.md#secrets) section:
+
+  ```bash
+  secret-tool store --label='aiu openai' service aiu provider openai
+  ```
+
+  then set the command to `secret-tool lookup service aiu provider openai`.
+- **Commands are read-only** when `aiu` would ignore them: a config file or directory that is not yours or that others can write. The window shows why.
+- `aiu` runs in the background with a timeout, from an argument list (no shell). Closing the window waits up to 5 seconds for the last change to be saved, then kills any `aiu` still running.
+
+The refresh interval is a GSettings key of the extension (`schemas/`), not an `aiu` setting:
+
+```bash
+gsettings --schemadir schemas set org.gnome.shell.extensions.aiu-indicator refresh-interval 600
+```
 
 ## Languages
 
@@ -70,14 +100,16 @@ GNOME Shell keeps an extension's JavaScript in memory for the whole session: aft
 
 ## Make commands
 
-- `make check`: checks the syntax of every JavaScript file, `metadata.json`, and the translations against the strings in the code. Needs `node` and `python3`.
-- `make test`: offline unit tests, the ones CI runs, in English and in French. Needs only `gjs` (and `python3` to compile the translations); the French run needs a UTF-8 locale other than `C`, or `localedef` with the glibc locale sources to build `fr_FR` on the fly.
+- `make check`: checks the syntax of every JavaScript file, `metadata.json`, the settings schema, and the translations against the strings in the code. Needs `node`, `python3` and `glib-compile-schemas`.
+- `make test`: offline unit tests, the ones CI runs, in English and in French, including what the preferences window does without a window (reading `aiu config show --json`, the `aiu config set` command line, killing `aiu` on close). Needs `gjs` (and `python3` and `glib-compile-schemas` to compile the translations and the schema); the French run needs a UTF-8 locale other than `C`, or `localedef` with the glibc locale sources to build `fr_FR` on the fly.
 - `make test-live`: runs the installed `aiu`, so it calls your providers. Local only, never in CI.
 - `make mo`: compiles `po/*.po` into `locale/` (with `python3`, no GNU gettext needed).
+- `make schemas`: compiles the settings schema into `schemas/gschemas.compiled`, for a checkout linked in place (`make install` does it). The zip carries only the XML: GNOME compiles it when it installs the extension.
 - `make pot`: writes the translation template `po/aiu-indicator.pot` (needs `xgettext`).
-- `make pack`: builds `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` for extensions.gnome.org, compiled translations included.
-- `make clean`: removes the zip and `locale/`.
-- `make install`: compiles the translations, links this directory into `~/.local/share/gnome-shell/extensions/` and enables the extension.
+- `make pack`: builds `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` for extensions.gnome.org, compiled translations and the schema XML included.
+- `make clean`: removes the zip, `locale/` and the compiled schema.
+- `make install`: compiles the translations and the schema, links this directory into `~/.local/share/gnome-shell/extensions/` and enables the extension.
+- `make prefs`: opens the preferences window of the installed extension.
 - `make reload`: disables then re-enables the extension.
 - `make uninstall`: disables the extension and removes the link.
 - `make status`: shows the extension's state with `gnome-extensions info`.
@@ -87,4 +119,5 @@ GNOME Shell keeps an extension's JavaScript in memory for the whole session: aft
 
 - **No misleading fallback**: when `aiu` fails or reports an error, the error is shown as text, never hidden behind made-up data.
 - **Clean disable**: `disable()` removes every `GLib.Source` timeout, cancels the `Gio.Cancellable` in flight, kills a running `aiu` and destroys the Clutter actors.
-- **Plain text only**: every label is `St.Label({ text })`, never markup, so provider text and translations cannot inject Pango markup.
+- **Plain text only**: every label is `St.Label({ text })`, never markup, so provider text and translations cannot inject Pango markup. The preferences rows set `use-markup` to false for the same reason.
+- **One owner for `config.toml`**: only `aiu` reads or writes it; the preferences window goes through `aiu config`. `prefs.js` and `prefsWindow.js` use Gtk 4 and Adwaita only (they run in the Extensions app); `aiuConfig.js` holds what can be tested without a window.

@@ -22,3 +22,6 @@ scratch/
 # compiled translations (make mo) and the template (make pot)
 /locale/
 /po/*.pot
+
+# compiled settings schema (make schemas, make install); never packed
+/schemas/gschemas.compiled

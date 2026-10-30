@@ -241,3 +241,181 @@ msgstr "Ouvrir la configuration"
 #: menuView.js
 msgid "Setup guide"
 msgstr "Guide de configuration"
+
+# Preferences window
+
+#: aiuConfig.js
+msgid "Environment variable (name only)"
+msgstr "Variable d'environnement (son nom seulement)"
+
+#: aiuConfig.js
+msgid "Command that prints the key"
+msgstr "Commande qui affiche la clé"
+
+#: aiuConfig.js
+msgid "File that holds the key"
+msgstr "Fichier qui contient la clé"
+
+#: aiuConfig.js
+msgid "claude program"
+msgstr "Programme claude"
+
+#: aiuConfig.js
+msgid "Vibe allowance (EUR)"
+msgstr "Allocation Vibe (EUR)"
+
+#: aiuConfig.js
+msgid "API allowance (EUR)"
+msgstr "Allocation API (EUR)"
+
+#: aiuConfig.js
+msgid "aiu config show listed no providers"
+msgstr "aiu config show n'a listé aucun fournisseur"
+
+#: aiuConfig.js
+msgid "This looks like a key. Enter where aiu finds it (a variable name, a command or a file), never the key itself."
+msgstr "Ceci ressemble à une clé. Indiquez où aiu la trouve (un nom de variable, une commande ou un fichier), jamais la clé elle-même."
+
+#: aiuConfig.js
+msgid "error"
+msgstr "erreur"
+
+#: aiuConfig.js
+msgid "Off"
+msgstr "Désactivé"
+
+#: aiuConfig.js
+msgid "Checking…"
+msgstr "Vérification…"
+
+#: aiuConfig.js
+msgid "Signed in"
+msgstr "Connecté"
+
+#: aiuConfig.js
+msgid "Not in the last check: check again"
+msgstr "Absent de la dernière vérification : vérifiez à nouveau"
+
+#: aiuConfig.js
+msgid "Status unknown"
+msgstr "État inconnu"
+
+#: aiuConfig.js
+msgid "aiu stopped with status {status}"
+msgstr "aiu s'est arrêté avec le code {status}"
+
+#: prefsWindow.js
+msgid "aiu takes the key from the first of these that gives one: the variable (from your session or ~/.env), the command, then the file. Better than ~/.env, the GNOME keyring: store the key once with secret-tool store --label=\"aiu {provider}\" service aiu provider {provider}, then set the command to secret-tool lookup service aiu provider {provider}"
+msgstr "aiu prend la clé dans la première de ces sources qui en donne une : la variable (de votre session ou de ~/.env), la commande, puis le fichier. Mieux que ~/.env, le trousseau GNOME : enregistrez la clé une fois avec secret-tool store --label=\"aiu {provider}\" service aiu provider {provider}, puis mettez comme commande secret-tool lookup service aiu provider {provider}"
+
+#: prefsWindow.js
+msgid "Nothing to enter here: aiu reads the sign-in of the claude command-line tool. Run claude once to sign in. Set the program only if claude is installed where aiu does not look."
+msgstr "Rien à saisir ici : aiu lit la connexion de l'outil en ligne de commande claude. Lancez claude une fois pour vous connecter. N'indiquez le programme que si claude est installé là où aiu ne regarde pas."
+
+#: prefsWindow.js
+msgid "Nothing to enter here: aiu reads the sign-in of the {provider} command-line tool. Run it once to sign in."
+msgstr "Rien à saisir ici : aiu lit la connexion de l'outil en ligne de commande {provider}. Lancez-le une fois pour vous connecter."
+
+#: prefsWindow.js
+msgid "Providers"
+msgstr "Fournisseurs"
+
+#: prefsWindow.js
+msgid "aiu is not installed"
+msgstr "aiu n'est pas installé"
+
+#: prefsWindow.js
+msgid "Try again"
+msgstr "Réessayer"
+
+#: prefsWindow.js
+msgid "aiu could not read its config"
+msgstr "aiu n'a pas pu lire sa configuration"
+
+#: prefsWindow.js
+msgid "Commands are read-only"
+msgstr "Les commandes sont en lecture seule"
+
+#: prefsWindow.js
+msgid "Could not check the status"
+msgstr "Impossible de vérifier l'état"
+
+#: prefsWindow.js
+msgid "Turn on the subscriptions you pay for, and say where aiu finds each key. aiu saves each change to its config file."
+msgstr "Activez les abonnements que vous payez, et indiquez où aiu trouve chaque clé. aiu enregistre chaque modification dans son fichier de configuration."
+
+#: prefsWindow.js
+msgid "Check the status again"
+msgstr "Vérifier l'état à nouveau"
+
+#: prefsWindow.js
+msgid "General"
+msgstr "Général"
+
+#: prefsWindow.js
+msgid "Panel"
+msgstr "Panneau"
+
+#: prefsWindow.js
+msgid "Refresh every (minutes)"
+msgstr "Actualiser toutes les (minutes)"
+
+#: prefsWindow.js
+msgid "How often aiu runs in the background. Opening the menu also refreshes data older than 2 minutes."
+msgstr "La fréquence à laquelle aiu tourne en arrière-plan. Ouvrir le menu actualise aussi les données de plus de 2 minutes."
+
+#: prefsWindow.js
+msgid "aiu command"
+msgstr "Commande aiu"
+
+#: prefsWindow.js
+msgid "Program"
+msgstr "Programme"
+
+#: prefsWindow.js
+msgid "Config file"
+msgstr "Fichier de configuration"
+
+#: prefsWindow.js
+msgid "Open config file"
+msgstr "Ouvrir le fichier de configuration"
+
+#: prefsWindow.js
+msgid "The preferences go through aiu. Install it with: {command}"
+msgstr "Les préférences passent par aiu. Installez-le avec : {command}"
+
+#: prefsWindow.js
+msgid "Not installed"
+msgstr "Non installé"
+
+#: prefsWindow.js
+msgid "This aiu has no config command yet: update it (uv tool upgrade aiu, or pipx upgrade aiu), then check again."
+msgstr "Cet aiu n'a pas encore la commande config : mettez-le à jour (uv tool upgrade aiu, ou pipx upgrade aiu), puis vérifiez à nouveau."
+
+#: prefsWindow.js
+msgid "aiu config show printed something else: {error}"
+msgstr "aiu config show a affiché autre chose : {error}"
+
+#: prefsWindow.js
+msgid "aiu ignores key_cmd and claude_cmd: {reasons}. Fix that, then check again."
+msgstr "aiu ignore key_cmd et claude_cmd : {reasons}. Corrigez cela, puis vérifiez à nouveau."
+
+#: prefsWindow.js
+msgid "Read this provider"
+msgstr "Lire ce fournisseur"
+
+#: prefsWindow.js
+msgid "Where aiu finds the key"
+msgstr "Où aiu trouve la clé"
+
+#: prefsWindow.js
+msgid "Sign in"
+msgstr "Connexion"
+
+#: prefsWindow.js
+msgid "Not saved"
+msgstr "Non enregistré"
+
+#: prefsWindow.js
+msgid "Could not open {path}: {error}"
+msgstr "Impossible d'ouvrir {path} : {error}"

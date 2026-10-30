@@ -82,6 +82,19 @@ export function needsSetup(data) {
     return !!data && data.quotas.length === 0 && data.balances.length === 0;
 }
 
+/**
+ * The aiu program, or null when it is not installed: ~/.local/bin/aiu, where
+ * uv and pipx put it (gnome-shell's PATH often lacks that directory), else PATH.
+ * The preferences window finds it the same way.
+ */
+export function findAiu() {
+    const localBin = GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'aiu']);
+    if (GLib.file_test(localBin, GLib.FileTest.IS_EXECUTABLE)) {
+        return localBin;
+    }
+    return GLib.find_program_in_path('aiu');
+}
+
 export class AiuClient {
     constructor({ timeoutSeconds = FETCH_TIMEOUT_SECONDS } = {}) {
         this._timeoutSeconds = timeoutSeconds;
@@ -90,14 +103,8 @@ export class AiuClient {
 
     /** The aiu command line, or null when aiu is not installed. */
     _resolveCommand() {
-        const home = GLib.get_home_dir();
-        const localBin = GLib.build_filenamev([home, '.local', 'bin', 'aiu']);
-        if (GLib.file_test(localBin, GLib.FileTest.IS_EXECUTABLE)) {
-            return [localBin, '--json'];
-        }
-
-        const pathBin = GLib.find_program_in_path('aiu');
-        return pathBin ? [pathBin, '--json'] : null;
+        const aiu = findAiu();
+        return aiu ? [aiu, '--json'] : null;
     }
 
     /** Stop the fetch in flight, if any: its promise resolves with `cancelled`, its aiu is killed. */

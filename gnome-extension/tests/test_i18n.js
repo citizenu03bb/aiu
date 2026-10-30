@@ -5,6 +5,7 @@ import Gettext from 'gettext';
 import System from 'system';
 import { DOMAIN } from '../i18n.js';
 import { AiuClient, formatDuration, resetText } from '../aiuClient.js';
+import { fieldValue, optionTitle, statusText } from '../aiuConfig.js';
 
 const extDir = GLib.path_get_dirname(GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]));
 
@@ -50,6 +51,13 @@ function run() {
     for (const [lots, want] of cases) {
         assertEqual(client._generateAdvice(lots), want, 'advice');
     }
+
+    // The preferences window, in the same catalog.
+    assertEqual(statusText({ state: 'ok' }), 'Connecté', 'status line');
+    assertEqual(optionTitle('key_cmd'), 'Commande qui affiche la clé', 'field title');
+    assertEqual(optionTitle('unknown_option'), 'unknown_option', 'unknown option keeps its name');
+    assertEqual(fieldValue({ type: 'string' }, 'sk-abc').error.startsWith('Ceci ressemble à une clé'), true,
+        'a key is refused in French');
     console.log('[Test] French translations render ✅');
 }
 

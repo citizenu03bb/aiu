@@ -5,15 +5,17 @@ import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import GLib from 'gi://GLib';
 import { AiuClient } from './aiuClient.js';
+import { clampInterval, REFRESH_KEY, SCHEMA_ID } from './aiuConfig.js';
 import { AiuIndicator } from './indicator.js';
-
-const REFRESH_INTERVAL_SECONDS = 300; // 5 minutes
 
 export default class AiuExtension extends Extension {
     enable() {
         console.log('[aiu-indicator] Enabling AI Usage indicator');
 
         this._client = new AiuClient();
+        // The refresh interval, set in the preferences window: a change reschedules.
+        this._settings = this.getSettings(SCHEMA_ID);
+        this._settingsId = this._settings.connect(`changed::${REFRESH_KEY}`, () => this._schedule());
         this._indicator = new AiuIndicator(this.path, {
             onRefresh: () => this._fetch(),
         });
@@ -32,15 +34,7 @@ export default class AiuExtension extends Extension {
             'center'
         );
 
-        // Schedule periodic background refresh
-        this._timeoutId = GLib.timeout_add_seconds(
-            GLib.PRIORITY_DEFAULT,
-            REFRESH_INTERVAL_SECONDS,
-            () => {
-                this._fetch();
-                return GLib.SOURCE_CONTINUE;
-            }
-        );
+        this._schedule();
 
         // Initial background fetch
         this._fetch();
@@ -54,6 +48,11 @@ export default class AiuExtension extends Extension {
             this._timeoutId = null;
         }
 
+        if (this._settings) {
+            this._settings.disconnect(this._settingsId);
+            this._settings = null;
+        }
+
         if (this._client) {
             // Kills a running aiu, so none is left behind
             this._client.cancel();
@@ -64,6 +63,21 @@ export default class AiuExtension extends Extension {
             this._indicator.destroy();
             this._indicator = null;
         }
+    }
+
+    /** (Re)start the periodic background refresh at the interval from GSettings. */
+    _schedule() {
+        if (this._timeoutId) {
+            GLib.source_remove(this._timeoutId);
+        }
+        this._timeoutId = GLib.timeout_add_seconds(
+            GLib.PRIORITY_DEFAULT,
+            clampInterval(this._settings.get_uint(REFRESH_KEY)),
+            () => {
+                this._fetch();
+                return GLib.SOURCE_CONTINUE;
+            }
+        );
     }
 
     async _fetch() {
