@@ -119,17 +119,17 @@ def test_alert_on_snapshot(capsys, no_desktop):
     assert aiu.alert(SNAPSHOT, notify=False) == 1
     assert no_desktop == []
     out = capsys.readouterr().out
-    assert "claude · Weekly (all models): ~11% du plafond perdu au reset" in out
-    assert "Cloud Credit: 98.46 USD non dépensés" in out
-    assert "codex · Weekly Limit: à sec dans" in out
-    assert "gemini · Weekly Limit: à sec dans" in out
+    assert "claude · Weekly (all models): ~11% of the cap lost at reset" in out
+    assert "Cloud Credit: 98.46 USD unspent" in out
+    assert "codex · Weekly Limit: runs dry in" in out
+    assert "gemini · Weekly Limit: runs dry in" in out
 
 
 def test_alert_reports_probe_errors_and_skips_locked_credit(capsys):
     rows = [Row("codex", "—", "error", note="HTTP 500"), credit(50, D, note="locked: x")]
     assert aiu.alert(rows, notify=False) == 1
     out = capsys.readouterr().out
-    assert "codex: données indisponibles (HTTP 500)" in out
+    assert "codex: data unavailable (HTTP 500)" in out
     assert "Cloud Credit" not in out
 
 
@@ -148,7 +148,7 @@ def test_notification_replaces_one_gtk_notification(monkeypatch, no_desktop, tmp
                         "--object-path", "/org/gtk/Notifications", "--method",
                         "org.gtk.Notifications.AddNotification"]
     assert argv[9:11] == [aiu.APP_ID, aiu.NOTIFICATION_ID]   # same id every run = replace
-    assert f"'title': <'Quota AI · relevé {TAKEN}'>" in argv[11]
+    assert f"'title': <'AI quota · snapshot {TAKEN}'>" in argv[11]
     # GNOME only accepts notifications from an app it knows
     assert (tmp_path / "applications" / f"{aiu.APP_ID}.desktop").is_file()
 
@@ -157,7 +157,7 @@ def test_falls_back_to_notify_send_outside_gnome(monkeypatch, no_desktop):
     monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
     no_desktop.run.returncode = 1          # e.g. no org.gtk.Notifications service
     aiu.alert(SNAPSHOT)
-    assert no_desktop[-1][:4] == ["notify-send", "-a", "aiu", f"Quota AI · relevé {TAKEN}"]
+    assert no_desktop[-1][:4] == ["notify-send", "-a", "aiu", f"AI quota · snapshot {TAKEN}"]
 
 
 def test_all_clear_withdraws_the_previous_alert(monkeypatch, no_desktop):
@@ -175,6 +175,33 @@ def test_gvariant_string_escaping():
 
 def test_advise_renders_without_error(capsys):
     assert aiu.advise(SNAPSHOT, NOW) == 0
-    out = capsys.readouterr().out
-    assert "Brûle d'abord claude" in out
+    out = " ".join(capsys.readouterr().out.split())   # undo rich's line wrapping
+    assert "Burn claude first" in out
+    assert "Conserve codex, gemini for what only they can do." in out
     assert "Spend (total)" not in out   # lifetime spend is sunk, not overflow capacity
+
+
+def test_advise_and_alert_in_french(monkeypatch, capsys):
+    monkeypatch.setenv("AIU_LANG", "fr")
+    aiu.advise(SNAPSHOT, NOW)
+    out = " ".join(capsys.readouterr().out.split())
+    assert "Conseil de routage" in out and "Brûle d'abord claude" in out
+    assert "Ménage codex, gemini pour ce qu'eux seuls savent faire." in out
+    assert "Weekly Limit 19% libre : à sec dans" in out
+    assert "raisonnement profond / agentique" in out
+    assert aiu.alert(SNAPSHOT, notify=False) == 1
+    out = capsys.readouterr().out
+    assert "claude · Weekly (all models): ~11% du plafond perdu au reset" in out
+    assert "Cloud Credit: 98.46 USD non dépensés" in out
+    assert "Routing advice" not in out and "runs dry" not in out
+
+
+def test_french_advice_detail_keeps_the_routing():
+    """Only the wording changes with the language, never the order or statuses."""
+    english = aiu.route_order(SNAPSHOT, NOW)
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("AIU_LANG", "fr")
+        french = aiu.route_order(SNAPSHOT, NOW)
+    strip = lambda lots: [{k: v for k, v in l.items() if k != "detail"} for l in lots]
+    assert strip(french) == strip(english)
+    assert "libre" in french[2]["detail"] and "free" in english[2]["detail"]

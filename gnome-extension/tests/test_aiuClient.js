@@ -3,7 +3,7 @@
 // the subprocess tests here run sh and sleep in its place.
 import GLib from 'gi://GLib';
 import System from 'system';
-import { AiuClient } from '../aiuClient.js';
+import { AiuClient, resetText } from '../aiuClient.js';
 
 function run() {
     console.log('[Test] Instantiating AiuClient...');
@@ -40,20 +40,20 @@ function run() {
     if (processed.quotas.length !== 2) {
         throw new Error(`Expected 2 quotas, got: ${processed.quotas.length}`);
     }
-    const expected = "💡 Brûle d'abord Claude\nWeekly (all models) : ~11 % perdu au reset dans 5h58\nÀ ménager : Codex, Gemini";
+    const expected = "💡 Burn Claude first\nWeekly (all models): ~11% lost at reset in 5h58m\nConserve: Codex, Gemini";
     if (processed.advice !== expected) {
         throw new Error(`Expected advice "${expected}", got: ${processed.advice}`);
     }
     const cases = [
         [[{ provider: "codex", metric: "Weekly Limit", status: "on_track", ttr_secs: 3600, leftover: 0.01 }],
-            "💡 Pas de surplus qui expire : route par fit de tâche"],
+            "💡 No expiring surplus: route by task fit"],
         [[{ provider: "gemini", metric: "Gemini Flash", status: "?", ttr_secs: 600, leftover: null }],
-            "💡 Brûle d'abord Gemini\nGemini Flash : reset dans 10min (allure inconnue)"],
+            "💡 Burn Gemini first\nGemini Flash: reset in 10m (unknown pace)"],
         [[{ provider: "claude", metric: "Cloud Credit", status: "burn", ttr_secs: 90000, leftover: null },
           { provider: "gemini", metric: "Weekly Limit", status: "conserve", ttr_secs: 9, leftover: -0.5 }],
-            "💡 Brûle d'abord Claude\nCloud Credit : expire dans 1j1h\nÀ ménager : Gemini"],
+            "💡 Burn Claude first\nCloud Credit: expires in 1d1h\nConserve: Gemini"],
         [[{ provider: "codex", metric: "Weekly Limit", status: "conserve", ttr_secs: 9, leftover: -0.5 }],
-            "💡 Aucun forfait n'a de surplus\nRéserve chacun à ce que lui seul sait faire, déborde sur l'API payante"],
+            "💡 No subscription has surplus\nKeep each for what only it can do, overflow to the paid API"],
         [undefined, null],
     ];
     const unknown = client._processData({ rows: [{ provider: "x", metric: "m", kind: "quota" }], advice: [] });
@@ -68,6 +68,21 @@ function run() {
         const got = client._generateAdvice(lots);
         if (got !== want) {
             throw new Error(`Expected advice "${want}", got: ${got}`);
+        }
+    }
+
+    const resets = [
+        [{ reset_epoch: 1000 + 3 * 3600 + 8 * 60 }, 'in 3h08m'],
+        [{ reset_epoch: 999 }, 'passed, refresh the snapshot'],
+        [{ reset: 'expires in 2d 3h' }, 'in 2d3h'],
+        [{ reset: 'now' }, 'passed, refresh the snapshot'],
+        [{ reset: '2026-11-01T00:00:00Z' }, '2026-11-01T00:00:00Z'],
+        [{}, null],
+    ];
+    for (const [row, want] of resets) {
+        const got = resetText(row, 1000);
+        if (got !== want) {
+            throw new Error(`Expected reset text "${want}" for ${JSON.stringify(row)}, got: ${got}`);
         }
     }
 

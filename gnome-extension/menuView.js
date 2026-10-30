@@ -6,7 +6,9 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import Pango from 'gi://Pango';
+import GLib from 'gi://GLib';
 import { displayName, formatDuration, resetText } from './aiuClient.js';
+import { _, N_, fmt } from './i18n.js';
 
 function setLineWrap(label, wrap = true) {
     const ct = typeof label.get_clutter_text === 'function'
@@ -20,11 +22,12 @@ function setLineWrap(label, wrap = true) {
     }
 }
 
+// [badge text (translated when shown), style class]
 const STATUS_BADGES = {
-    burn: ['à brûler', 'burn'],
-    '?': ['allure inconnue', 'unknown'],
-    on_track: ['au rythme', 'on-track'],
-    conserve: ['à ménager', 'conserve'],
+    burn: [N_('burn first'), 'burn'],
+    '?': [N_('unknown pace'), 'unknown'],
+    on_track: [N_('on track'), 'on-track'],
+    conserve: [N_('conserve'), 'conserve'],
 };
 
 // Bar colour for the window aiu routes on: what to DO with it, not how full it is.
@@ -88,7 +91,7 @@ export class MenuView {
             style_class: 'aiu-header-title',
         });
         this._headerSubtitle = new St.Label({
-            text: 'Initialisation...',
+            text: _('Starting…'),
             style_class: 'aiu-header-time',
         });
 
@@ -139,14 +142,14 @@ export class MenuView {
         this._menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
         // Terminal launcher
-        const termItem = new PopupMenu.PopupMenuItem('💻 Ouvrir aiu dans le terminal');
+        const termItem = new PopupMenu.PopupMenuItem(_('💻 Open aiu in a terminal'));
         termItem.connect('activate', () => {
             this._launchTerminalAiu();
         });
         this._menu.addMenuItem(termItem);
 
         // Web consoles submenu
-        const webSubmenu = new PopupMenu.PopupSubMenuMenuItem('🌐 Consoles Web');
+        const webSubmenu = new PopupMenu.PopupSubMenuMenuItem(_('🌐 Web consoles'));
         this._addWebLink(webSubmenu, 'Google AI Studio', 'https://aistudio.google.com/');
         this._addWebLink(webSubmenu, 'Anthropic Console', 'https://console.anthropic.com/');
         this._addWebLink(webSubmenu, 'ChatGPT / OpenAI', 'https://chatgpt.com/');
@@ -161,7 +164,7 @@ export class MenuView {
             try {
                 Gio.AppInfo.launch_default_for_uri(url, null);
             } catch (e) {
-                console.error(`[aiu-indicator] Erreur ouverture URL ${url}: ${e.message}`);
+                console.error(`[aiu-indicator] Could not open ${url}: ${e.message}`);
             }
         });
         submenu.menu.addMenuItem(item);
@@ -169,17 +172,19 @@ export class MenuView {
 
     _launchTerminalAiu() {
         try {
-            const cmd = 'gnome-terminal -- bash -c "aiu; echo \'\'; read -p \'Appuyez sur Entrée pour fermer...\'"';
+            // Quoted twice: once for bash, once for the command line parser.
+            const script = `aiu; echo; read -r -p ${GLib.shell_quote(_('Press Enter to close…'))}`;
+            const cmd = `gnome-terminal -- bash -c ${GLib.shell_quote(script)}`;
             const context = global.create_app_launch_context(0, -1);
             Gio.AppInfo.create_from_commandline(cmd, 'aiu', Gio.AppInfoCreateFlags.NONE).launch([], context);
         } catch (e) {
-            console.error(`[aiu-indicator] Erreur lancement terminal aiu: ${e.message}`);
+            console.error(`[aiu-indicator] Could not open aiu in a terminal: ${e.message}`);
         }
     }
 
     setRefreshing(isRefreshing) {
         if (isRefreshing) {
-            this._headerSubtitle.text = 'Actualisation en cours...';
+            this._headerSubtitle.text = _('Refreshing…');
             this._refreshButton.reactive = false;
         } else {
             this._refreshButton.reactive = true;
@@ -196,7 +201,7 @@ export class MenuView {
                 x_expand: true,
             });
             const errTitle = new St.Label({
-                text: '⚠️ Erreur lors de la récupération',
+                text: _('⚠️ Could not fetch the snapshot'),
                 style_class: 'aiu-provider-name',
             });
             const errDesc = new St.Label({
@@ -207,13 +212,13 @@ export class MenuView {
             errBox.add_child(errTitle);
             errBox.add_child(errDesc);
             this._dataBox.add_child(errBox);
-            this._headerSubtitle.text = 'Erreur';
+            this._headerSubtitle.text = _('Error');
             return;
         }
 
         if (!data) {
             const loadingLabel = new St.Label({
-                text: 'Aucune donnée disponible',
+                text: _('No data available'),
                 style_class: 'aiu-header-time',
             });
             this._dataBox.add_child(loadingLabel);
@@ -222,8 +227,8 @@ export class MenuView {
 
         // Update header timestamp
         const dateObj = new Date(data.capturedAt);
-        const timeStr = dateObj.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-        this._headerSubtitle.text = `Dernier relevé : ${timeStr}`;
+        const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        this._headerSubtitle.text = fmt(_('Last snapshot: {time}'), { time: timeStr });
 
         // 1. Errors & Token warnings (if any)
         if (data.errors && data.errors.length > 0) {
@@ -234,11 +239,11 @@ export class MenuView {
             });
             for (const err of data.errors) {
                 const provLabel = new St.Label({
-                    text: `⚠️ ${displayName(err.provider)} :`,
+                    text: fmt(_('⚠️ {provider}:'), { provider: displayName(err.provider) }),
                     style_class: 'aiu-provider-name',
                 });
                 const noteLabel = new St.Label({
-                    text: err.note || 'Erreur d’authentification ou quota dépassé',
+                    text: err.note || _('Authentication error or quota exceeded'),
                     style_class: 'aiu-alert-text',
                 });
                 setLineWrap(noteLabel, true);
@@ -279,7 +284,7 @@ export class MenuView {
         // 3. Subscriptions, in routing order (the one to use first on top)
         if (data.quotas && data.quotas.length > 0) {
             this._dataBox.add_child(new St.Label({
-                text: 'Forfaits',
+                text: _('Subscriptions'),
                 style_class: 'aiu-section-label',
             }));
 
@@ -320,7 +325,7 @@ export class MenuView {
                 if (lot && STATUS_BADGES[lot.status]) {
                     const [text, cls] = STATUS_BADGES[lot.status];
                     provHeader.add_child(new St.Label({
-                        text,
+                        text: _(text),
                         style_class: `aiu-badge ${cls}`,
                         y_align: Clutter.ActorAlign.CENTER,
                     }));
@@ -338,7 +343,9 @@ export class MenuView {
                         x_expand: true,
                     }));
                     infoLine.add_child(new St.Label({
-                        text: item.used_pct === null ? '— inconnu' : `${Math.round(item.used_pct)} % utilisé`,
+                        text: item.used_pct === null
+                            ? _('— unknown')
+                            : fmt(_('{percent}% used'), { percent: Math.round(item.used_pct) }),
                         style_class: 'aiu-metric-detail',
                     }));
                     rowBox.add_child(infoLine);
@@ -356,12 +363,14 @@ export class MenuView {
 
                     const bits = [];
                     const reset = resetText(item);
-                    if (reset) bits.push(`Reset ${reset}`);
+                    if (reset) bits.push(fmt(_('Reset {when}'), { when: reset }));
                     if (isRouted && typeof lot.leftover === 'number') {
                         if (lot.status === 'conserve' && typeof lot.runway_secs === 'number') {
-                            bits.push(`à sec dans ~${formatDuration(lot.runway_secs)} à ton allure`);
+                            bits.push(fmt(_('runs dry in ~{duration} at your pace'),
+                                { duration: formatDuration(lot.runway_secs) }));
                         } else if (lot.status === 'burn') {
-                            bits.push(`~${Math.round(lot.leftover * 100)} % perdu au reset à ton allure`);
+                            bits.push(fmt(_('~{percent}% lost at reset at your pace'),
+                                { percent: Math.round(lot.leftover * 100) }));
                         }
                     }
                     if (bits.length) {
@@ -384,7 +393,7 @@ export class MenuView {
         // 4. Credits, prepaid balances, lifetime spend
         if (data.balances && data.balances.length > 0) {
             this._dataBox.add_child(new St.Label({
-                text: 'Crédits & API payantes',
+                text: _('Credits & paid APIs'),
                 style_class: 'aiu-section-label',
             }));
 
@@ -420,9 +429,11 @@ export class MenuView {
                 let sub = null;
                 if (b.kind === 'credit') {
                     const left = resetText(b);
-                    sub = `gratuit, perdu à l'expiration${left ? ` (${left.replace(/^dans/, 'expire dans')})` : ''}`;
+                    sub = left
+                        ? fmt(_('free, lost when it expires ({when})'), { when: left })
+                        : _('free, lost when it expires');
                 } else if (b.kind === 'spend' && /total/i.test(b.metric)) {
-                    sub = 'déjà dépensé (historique)';
+                    sub = _('already spent (history)');
                 }
                 if (b.note) {
                     sub = sub ? `${sub} · ${b.note}` : b.note;

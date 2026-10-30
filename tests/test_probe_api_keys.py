@@ -405,8 +405,14 @@ def test_env_file_parses_like_a_shell(env_file, line, value):
 def test_env_file_unmatched_quote_warns_without_value(env_file, capsys):
     assert env_file("K='sk-SECRET\n", {"p": {"key_env": "K"}}) == {}
     err = capsys.readouterr().err
-    assert ".env:1: K has unmatched quotes, ignored" in err
+    assert ".env:1: K has unmatched quotes, ignored (.env values must fit on one line)" in err
     assert "SECRET" not in err
+
+
+def test_env_file_multiline_value_says_one_line(env_file, capsys):
+    """A quoted value continued on the next line is refused with the reason."""
+    assert env_file("MISTRAL_ADMIN_COOKIE='a=1;\nb=2'\n", {}) == {}
+    assert "values must fit on one line" in capsys.readouterr().err
 
 
 def test_env_file_readme_example(env_file):

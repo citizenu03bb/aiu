@@ -34,6 +34,7 @@ Usage:
   ./aiu.py --html out.html # local HTML page
   ./aiu.py --only claude,deepseek
   ./aiu.py --config ~/.config/ai-usage/config.toml
+  AIU_LANG=fr ./aiu.py --advise   # French messages (also picked from a French LANG)
 
 Config lives at ~/.config/ai-usage/config.toml (a template is written on first run).
 No secret is ever stored in this script; keys are resolved at runtime from env,
@@ -120,6 +121,187 @@ key_env = "MISTRAL_ADMIN_COOKIE"
 enabled = false
 """
 
+# Same settings as CONFIG_TEMPLATE, French comments (tests check they parse alike).
+CONFIG_TEMPLATE_FR = """\
+# Config aiu — active les fournisseurs que tu utilises, dis à aiu où trouver
+# chaque clé. Résolution de la clé par fournisseur, par ordre de priorité :
+#   key_env  = "NOM"           -> lit la variable d'environnement NOM, sinon NOM
+#                                 dans ~/.env
+#   key_cmd  = "commande"      -> la lance et prend la première ligne de sa
+#                                 sortie (pratique pour extraire une clé de la
+#                                 config d'une CLI) ; ignorée si d'autres
+#                                 peuvent écrire ce fichier
+#   key_file = "/chemin"       -> lit la première ligne du fichier
+# Une clé qui contient encore des caractères de contrôle est refusée.
+# Claude Max n'a pas besoin de clé ici : le jeton OAuth est lu
+# automatiquement dans ~/.claude/.credentials.json.
+
+[claude]
+enabled = true
+
+# Codex CLI + Pi se connectent par OAuth ChatGPT (pas de clé API) -> quota
+# d'abonnement, comme claude. Jeton lu dans ~/.codex/auth.json.
+[codex]
+enabled = true
+
+[openai]
+# N'active que si tu utilises vraiment l'*API* OpenAI (pas seulement Codex/ChatGPT).
+# L'API Costs exige une clé ADMIN (commence par sk-admin-...), pas une clé sk- normale.
+enabled = false
+key_env = "OPENAI_ADMIN_KEY"
+# key_cmd = "pass show openai/admin"
+
+[deepseek]
+enabled = false
+key_env = "DEEPSEEK_API_KEY"
+# key_cmd = "jq -r .api_key ~/.config/deepseek/config.json"
+
+[openrouter]
+enabled = false
+key_env = "OPENROUTER_API_KEY"
+
+# Les forfaits mensuels de Mistral (Vibe Code + API, 8,5 € chacun en Free) ne se
+# lisent qu'avec la session navigateur d'admin.mistral.ai : mets tout l'en-tête
+# Cookie de la requête (DevTools > Réseau > n'importe quel appel /api/local-trpc/)
+# dans MISTRAL_ADMIN_COOKIE, entre apostrophes dans ~/.env (il contient des ';').
+# Les clés API sont refusées. Recopie-le quand la session expire.
+[mistral]
+enabled = false
+key_env = "MISTRAL_ADMIN_COOKIE"
+# vibe_allowance_eur = 8.5   # 0 masque cette ligne
+# api_allowance_eur = 8.5
+
+# Note : Cohere n'expose AUCUN point d'accès d'usage ou de dépense agrégé (tableau
+# de bord seulement), donc impossible de le relever sans compter les jetons soi-même.
+
+# Gemini (Antigravity / Google One AI Pro) -> quota d'abonnement, lu dans
+# l'application de bureau Antigravity tant qu'elle est ouverte. Pas de clé.
+[gemini]
+enabled = false
+"""
+
+
+# ---------------------------------------------------------------------------
+# Interface language: English, or French when AIU_LANG (else the locale) says
+# so. Messages are written in English and looked up in FR by their exact text.
+# Probe notes, metric names and --json keys stay English: they are data, and
+# some (a credit's "locked: ..." note) are matched on.
+# ---------------------------------------------------------------------------
+def ui_lang() -> str:
+    """'fr' when AIU_LANG, else the first set of LC_ALL, LC_MESSAGES and LANG,
+    starts with fr; 'en' otherwise. Read on every call."""
+    for var in ("AIU_LANG", "LC_ALL", "LC_MESSAGES", "LANG"):
+        if v := os.environ.get(var):
+            return "fr" if v.lower().startswith("fr") else "en"
+    return "en"
+
+
+def tr(msg: str, **fields) -> str:
+    """msg in the interface language, with its {fields} filled in."""
+    if ui_lang() == "fr":
+        msg = FR.get(msg, msg)
+    return msg.format(**fields) if fields else msg
+
+
+FR = {
+    # stderr warnings
+    "[aiu] {name}: key from {source} holds control characters, ignored":
+        "[aiu] {name} : la clé lue par {source} contient des caractères de contrôle, ignorée",
+    "aiu: claude_cmd {path} is not an executable file":
+        "aiu : claude_cmd {path} n'est pas un fichier exécutable",
+    "aiu: not running {path}: writable by other users":
+        "aiu : {path} non lancé : d'autres utilisateurs peuvent l'écrire",
+    "[aiu] gemini: refreshed token kept for this run only, {path} left as is: {reason}":
+        "[aiu] gemini : jeton rafraîchi gardé pour cette exécution seulement, "
+        "{path} laissé tel quel : {reason}",
+    "not owned by you": "il ne t'appartient pas",
+    "not a JSON object": "ce n'est pas un objet JSON",
+    "signed in again meanwhile": "nouvelle connexion entre-temps",
+    "[aiu] {path}:{line}: {name} has unmatched quotes, ignored ({file} values must fit on one line)":
+        "[aiu] {path}:{line} : guillemets non appariés pour {name}, ignoré "
+        "(une valeur de {file} doit tenir sur une seule ligne)",
+    "[aiu] {path} holds keys and other users can read it: chmod 600 {path}":
+        "[aiu] {path} contient des clés et d'autres utilisateurs peuvent le lire : chmod 600 {path}",
+    "[aiu] wrote a starter config to {path} — edit it, then re-run.":
+        "[aiu] config de départ écrite dans {path} — modifie-la, puis relance.",
+    "{path} is not yours": "{path} ne t'appartient pas",
+    "{path} is writable by group or others": "{path} est modifiable par le groupe ou les autres",
+    "[aiu] key_cmd ignored for {names}: {reasons}": "[aiu] key_cmd ignoré pour {names} : {reasons}",
+    "[aiu] wrote {path}": "[aiu] {path} écrit",
+    # table and HTML page
+    "AI usage snapshot": "Relevé d'usage IA",
+    "Provider": "Fournisseur",
+    "Metric": "Mesure",
+    "Usage": "Utilisation",
+    "Resets / note": "Reset / note",
+    "{used}/{limit} {unit} left": "{used}/{limit} {unit} restants",
+    # --advise
+    "deep reasoning / agentic": "raisonnement profond / agentique",
+    "volume / throwaway tasks (Flash)": "volume / tâches jetables (Flash)",
+    "second coding voice / diversity": "2e voix de code / diversité",
+    "Vibe / Le Chonk (1M context)": "Vibe / Le Chonk (contexte 1M)",
+    "{metric} {used}/{limit} {unit}, expires in {ttr} (≈{per_day} {unit}/day to use it all)":
+        "{metric} {used}/{limit} {unit}, expire dans {ttr} (≈{per_day} {unit}/jour pour tout utiliser)",
+    "{metric} {left}% free: runs dry in ~{runway}, reset in {ttr} → ~{gap} without {provider}":
+        "{metric} {left}% libre : à sec dans ~{runway}, reset dans {ttr} → ~{gap} sans {provider}",
+    "{metric} {left}% free, reset in {ttr} (unknown pace)":
+        "{metric} {left}% libre, reset dans {ttr} (allure inconnue)",
+    "{metric} {left}% free, reset unknown (unknown pace)":
+        "{metric} {left}% libre, reset inconnu (allure inconnue)",
+    "{metric}: reset in {ttr}, ~{leftover}% of the cap lost at your pace "
+    "({pace}%/h; using it all = {need}%/h, ×{ratio})":
+        "{metric} : reset dans {ttr}, ~{leftover}% du plafond perdu à ton allure "
+        "({pace}%/h ; tout utiliser = {need}%/h, ×{ratio})",
+    "{metric} {left}% free, reset in {ttr} — on track":
+        "{metric} {left}% libre, reset dans {ttr} — au rythme",
+    "; {metric} runs out in ~{runway}": " ; {metric} épuisé dans ~{runway}",
+    "\n[bold]Routing advice[/bold] — earliest-expiring capacity first "
+    "(surplus projected at your current pace):\n":
+        "\n[bold]Conseil de routage[/bold] — la capacité qui expire le plus tôt d'abord "
+        "(surplus projeté à ton allure actuelle) :\n",
+    "\n  [bold]On track (no surplus to give):[/bold]":
+        "\n  [bold]Au rythme (pas de surplus à offrir) :[/bold]",
+    "\n  [bold red]Conserve[/bold red] (runs dry before the reset — keep it for "
+    "what only it can do):":
+        "\n  [bold red]À ménager[/bold red] (s'épuise avant le reset — garde-le pour "
+        "ce que lui seul sait faire) :",
+    "\n  [dim]Paid (overflow only; currencies not added up):[/dim]":
+        "\n  [dim]Payant (débordement seulement ; devises non additionnées) :[/dim]",
+    "\n  [bold green]→ Burn {provider} first[/bold green] (expires in {ttr}): "
+    "send it everything it can do":
+        "\n  [bold green]→ Brûle d'abord {provider}[/bold green] (expire dans {ttr}) : "
+        "envoie-lui tout ce qu'il sait faire",
+    "\n  [bold green]→ Burn {provider} first[/bold green] (expires in {ttr}, unknown pace): "
+    "send it everything it can do":
+        "\n  [bold green]→ Brûle d'abord {provider}[/bold green] (expire dans {ttr}, "
+        "allure inconnue) : envoie-lui tout ce qu'il sait faire",
+    ", including what you would give {names}.": ", y compris ce que tu donnerais à {names}.",
+    " Conserve {names} for what only it can do.": " Ménage {names} pour ce que lui seul sait faire.",
+    " Conserve {names} for what only they can do.":
+        " Ménage {names} pour ce qu'eux seuls savent faire.",
+    "\n  [bold]→ No expiring surplus[/bold]: route by task fit to {providers} (on track)":
+        "\n  [bold]→ Aucun surplus qui expire[/bold] : route par fit de tâche vers "
+        "{providers} (au rythme)",
+    ", conserve {names}.": ", ménage {names}.",
+    "\n  [bold yellow]→ No subscription has surplus[/bold yellow]: keep each for what "
+    "only it can do; overflow the rest to the cheapest paid API.\n":
+        "\n  [bold yellow]→ Aucun forfait n'a de surplus[/bold yellow] : réserve chacun à ce "
+        "que lui seul sait faire ; déborde le reste sur l'API payante la moins chère.\n",
+    # --alert
+    "⚠ {provider} · {metric}: {left} {unit} unspent, {reset}":
+        "⚠ {provider} · {metric}: {left} {unit} non dépensés, {reset}",
+    "⚠ {provider} · {metric}: ~{waste}% of the cap lost at reset, reset {reset}":
+        "⚠ {provider} · {metric}: ~{waste}% du plafond perdu au reset, reset {reset}",
+    "⚠ {provider} · {metric}: runs dry in ~{runway} at your pace, reset {reset} "
+    "→ ~{gap} without {provider}":
+        "⚠ {provider} · {metric}: à sec dans ~{runway} à ton allure, reset {reset} "
+        "→ ~{gap} sans {provider}",
+    "⚠ {provider}: data unavailable ({note})": "⚠ {provider}: données indisponibles ({note})",
+    "AI quota · snapshot {time}": "Quota AI · relevé {time}",
+    "✓ nothing will be lost at reset or run dry for long":
+        "✓ rien ne sera perdu au reset ni à sec longtemps",
+}
+
 
 # ---------------------------------------------------------------------------
 # Normalized record every probe returns
@@ -181,8 +363,8 @@ def resolve_key(cfg: dict, name: str) -> str | None:
             return None
         v = v.splitlines()[0].strip()
         if _CONTROL_RE.search(v):
-            print(f"[aiu] {name}: key from {source} holds control characters, ignored",
-                  file=sys.stderr)
+            print(tr("[aiu] {name}: key from {source} holds control characters, ignored",
+                     name=name, source=source), file=sys.stderr)
             return None
         return v
 
@@ -275,7 +457,8 @@ def _refresh_claude_token(cfg: dict | None = None) -> bool:
         real = Path(os.path.realpath(path))
         if not (real.is_file() and os.access(real, os.X_OK)):
             if configured:
-                print(f"aiu: claude_cmd {path} is not an executable file", file=sys.stderr)
+                print(tr("aiu: claude_cmd {path} is not an executable file", path=path),
+                      file=sys.stderr)
             continue
         # The link, its target and both directories: none writable by others.
         try:
@@ -286,7 +469,8 @@ def _refresh_claude_token(cfg: dict | None = None) -> bool:
         if safe:
             exe = str(real)
         else:
-            print(f"aiu: not running {path}: writable by other users", file=sys.stderr)
+            print(tr("aiu: not running {path}: writable by other users", path=path),
+                  file=sys.stderr)
         break
     if not exe:
         return False
@@ -665,8 +849,8 @@ def _gemini_refresh(refresh_token: str) -> str | None:
     # persist so the next call (and the CLIs) reuse it
     reason = _gemini_persist(refresh_token, at, expiry, j.get("id_token"))
     if reason:
-        print(f"[aiu] gemini: refreshed token kept for this run only, "
-              f"{GEMINI_CREDS_PATH} left as is: {reason}", file=sys.stderr)
+        print(tr("[aiu] gemini: refreshed token kept for this run only, {path} left as is: {reason}",
+                 path=GEMINI_CREDS_PATH, reason=tr(reason)), file=sys.stderr)
     return at
 
 
@@ -1232,13 +1416,15 @@ def load_env_file(config: dict) -> dict[str, str]:
             continue
         v = _env_value(m.group(2))
         if v is None:
-            print(f"[aiu] {path}:{n}: {m.group(1)} has unmatched quotes, ignored",
-                  file=sys.stderr)
+            # Most often a quoted value continued on the next lines.
+            print(tr("[aiu] {path}:{line}: {name} has unmatched quotes, ignored "
+                     "({file} values must fit on one line)",
+                     path=path, line=n, name=m.group(1), file=path.name), file=sys.stderr)
             continue
         found[m.group(1)] = v
     if found and path.stat().st_mode & 0o044:
-        print(f"[aiu] {path} holds keys and other users can read it: chmod 600 {path}",
-              file=sys.stderr)
+        print(tr("[aiu] {path} holds keys and other users can read it: chmod 600 {path}",
+                 path=path), file=sys.stderr)
     return found
 
 
@@ -1255,8 +1441,8 @@ def load_config(path: Path) -> dict:
             pass
         else:
             with os.fdopen(fd, "w") as f:
-                f.write(CONFIG_TEMPLATE)
-            print(f"[aiu] wrote a starter config to {path} — edit it, then re-run.",
+                f.write(CONFIG_TEMPLATE_FR if ui_lang() == "fr" else CONFIG_TEMPLATE)
+            print(tr("[aiu] wrote a starter config to {path} — edit it, then re-run.", path=path),
                   file=sys.stderr)
     with open(path, "rb") as f:
         config = tomllib.load(f)
@@ -1265,13 +1451,13 @@ def load_config(path: Path) -> dict:
     for p in dict.fromkeys((path, path.parent, real.parent)):
         st = p.stat()
         if st.st_uid != os.getuid():
-            unsafe.append(f"{p} is not yours")
+            unsafe.append(tr("{path} is not yours", path=p))
         elif _writable_by_others(st):
-            unsafe.append(f"{p} is writable by group or others")
+            unsafe.append(tr("{path} is writable by group or others", path=p))
     cmds = [name for name, s in config.items() if isinstance(s, dict) and "key_cmd" in s]
     if unsafe and cmds:
-        print(f"[aiu] key_cmd ignored for {', '.join(cmds)}: {'; '.join(unsafe)}",
-              file=sys.stderr)
+        print(tr("[aiu] key_cmd ignored for {names}: {reasons}",
+                 names=", ".join(cmds), reasons="; ".join(unsafe)), file=sys.stderr)
         for name in cmds:
             del config[name]["key_cmd"]
     return config
@@ -1305,11 +1491,11 @@ def render_table(rows: list[Row]) -> None:
     from rich import box
 
     console = Console()
-    t = Table(box=box.SIMPLE_HEAVY, title="AI usage snapshot", title_style="bold")
-    t.add_column("Provider", style="cyan")
-    t.add_column("Metric")
-    t.add_column("Usage", justify="right")
-    t.add_column("Resets / note", style="dim")
+    t = Table(box=box.SIMPLE_HEAVY, title=tr("AI usage snapshot"), title_style="bold")
+    t.add_column(tr("Provider"), style="cyan")
+    t.add_column(tr("Metric"))
+    t.add_column(tr("Usage"), justify="right")
+    t.add_column(tr("Resets / note"), style="dim")
 
     for r in rows:
         if r.kind == "error":
@@ -1322,7 +1508,7 @@ def render_table(rows: list[Row]) -> None:
         elif r.kind in ("spend", "balance") and r.used is not None:
             usage = f"{r.used:,.2f} {r.unit}"
         elif r.kind == "credit" and r.used is not None:
-            usage = f"{r.used:,.2f}/{r.limit:,.0f} {r.unit} left"
+            usage = _credit_left(r)
         else:
             usage = "—"
         tail = r.reset or ""
@@ -1330,6 +1516,10 @@ def render_table(rows: list[Row]) -> None:
             tail = f"{tail}  {r.note}".strip()
         t.add_row(r.provider, r.metric, usage, tail)
     console.print(t)
+
+
+def _credit_left(r: Row) -> str:
+    return tr("{used}/{limit} {unit} left", used=f"{r.used:,.2f}", limit=f"{r.limit:,.0f}", unit=r.unit)
 
 
 def _bar(frac: float, width: int = 12) -> str:
@@ -1345,7 +1535,7 @@ def render_html(rows: list[Row], path: Path) -> None:
         if r.kind in ("spend", "balance") and r.used is not None:
             return f"{r.used:,.2f} {r.unit}"
         if r.kind == "credit" and r.used is not None:
-            return f"{r.used:,.2f}/{r.limit:,.0f} {r.unit} left"
+            return _credit_left(r)
         return "—" if r.kind != "error" else "err"
     # Provider text (plan names, credit keys, notes, a local server's reply) is
     # untrusted: every value is escaped, and the CSP blocks scripts regardless.
@@ -1354,7 +1544,8 @@ def render_html(rows: list[Row], path: Path) -> None:
     def esc(v) -> str:
         return escape(str(v), quote=True)
     lines = ["<table border=1 cellpadding=6 style='border-collapse:collapse;font-family:sans-serif'>",
-             "<tr><th>Provider</th><th>Metric</th><th>Usage</th><th>Resets / note</th></tr>"]
+             "<tr>" + "".join(f"<th>{esc(tr(h))}</th>"
+                              for h in ("Provider", "Metric", "Usage", "Resets / note")) + "</tr>"]
     for r in rows:
         tail = " ".join(x for x in (r.reset or "", r.note) if x)
         lines.append(f"<tr><td>{esc(r.provider)}</td><td>{esc(r.metric)}</td>"
@@ -1364,18 +1555,19 @@ def render_html(rows: list[Row], path: Path) -> None:
                     "<meta http-equiv=\"Content-Security-Policy\" "
                     "content=\"default-src 'none'; style-src 'unsafe-inline'\">\n"
                     + "\n".join(lines))
-    print(f"[aiu] wrote {path}", file=sys.stderr)
+    print(tr("[aiu] wrote {path}", path=path), file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------
 # Advice / alerting — turn the snapshot into "where should I route, what's wasting"
 # ---------------------------------------------------------------------------
 # What each flat-fee subscription is best at (free at the margin -> route here first).
+# English; advise() translates them.
 PROVIDER_HINTS = {
-    "claude": "raisonnement profond / agentique",
-    "gemini": "volume / tâches jetables (Flash)",
-    "codex": "2e voix de code / diversité",
-    "mistral": "Vibe / Le Chonk (contexte 1M)",
+    "claude": "deep reasoning / agentic",
+    "gemini": "volume / throwaway tasks (Flash)",
+    "codex": "second coding voice / diversity",
+    "mistral": "Vibe / Le Chonk (1M context)",
 }
 # Alert thresholds for "paid-for capacity about to vanish unused".
 ALERT_USED_MAX = 40.0        # only warn if a window is under this % used
@@ -1430,8 +1622,10 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
             # Spent only by sessions you choose to run: no committed load, all surplus.
             ttr = r.reset_epoch - now
             lots.append({"prov": r.provider, "status": "burn", "ttr": ttr, "metric": r.metric,
-                         "what": f"{r.metric} {r.used:,.2f}/{r.limit:,.0f} {r.unit}, expire dans "
-                                 f"{_dur(ttr)} (≈{r.used / ttr * 86400:,.2f} {r.unit}/jour pour tout utiliser)"})
+                         "what": tr("{metric} {used}/{limit} {unit}, expires in {ttr} "
+                                    "(≈{per_day} {unit}/day to use it all)",
+                                    metric=r.metric, used=f"{r.used:,.2f}", limit=f"{r.limit:,.0f}",
+                                    unit=r.unit, ttr=_dur(ttr), per_day=f"{r.used / ttr * 86400:,.2f}")})
     for prov, rs in quotas.items():
         vol = [r for r in rs if (r.window_secs or 0) > RATE_WINDOW_MAX] or rs
         projs = [_project(r, now) for r in vol]
@@ -1441,37 +1635,46 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
             p = min(dry, key=lambda p: p["runway"])
             lot = {"status": "conserve", "ttr": p["ttr"], "dry": p["ttr"] - p["runway"],
                    "metric": p["r"].metric, "leftover": p["leftover"], "runway": p["runway"],
-                   "what": f"{p['r'].metric} {p['left'] * 100:.0f}% libre : à sec dans ~{_dur(p['runway'])}, "
-                           f"reset dans {_dur(p['ttr'])} → ~{_dur(p['ttr'] - p['runway'])} sans {prov}"}
+                   "what": tr("{metric} {left}% free: runs dry in ~{runway}, reset in {ttr} "
+                              "→ ~{gap} without {provider}",
+                              metric=p["r"].metric, left=f"{p['left'] * 100:.0f}",
+                              runway=_dur(p["runway"]), ttr=_dur(p["ttr"]),
+                              gap=_dur(p["ttr"] - p["runway"]), provider=prov)}
         elif len(known) < len(projs):
             # No usable pace: fall back to plain EDF and say so.
             r = min((r for r in vol if r.reset_epoch), key=lambda r: r.reset_epoch, default=vol[0])
             ttr = r.reset_epoch - now if r.reset_epoch else float("inf")
+            free = f"{100 * (1 - r.used):.0f}"
             lot = {"status": "?", "ttr": ttr, "metric": r.metric,
-                   "what": f"{r.metric} {100 * (1 - r.used):.0f}% libre, "
-                           + (f"reset dans {_dur(ttr)}" if r.reset_epoch else "reset inconnu")
-                           + " (allure inconnue)"}
+                   "what": tr("{metric} {left}% free, reset in {ttr} (unknown pace)",
+                              metric=r.metric, left=free, ttr=_dur(ttr)) if r.reset_epoch else
+                           tr("{metric} {left}% free, reset unknown (unknown pace)",
+                              metric=r.metric, left=free)}
         else:
             p = min(known, key=lambda p: p["ttr"])
             if all(q["leftover"] > ON_TRACK_BAND for q in known):
                 need = p["left"] / p["ttr"]
                 lot = {"status": "burn", "ttr": p["ttr"], "metric": p["r"].metric,
                        "leftover": p["leftover"],
-                       "what": f"{p['r'].metric} : reset dans {_dur(p['ttr'])}, ~{p['leftover'] * 100:.0f}% "
-                               f"du plafond perdu à ton allure ({p['pace'] * 360000:.2f}%/h ; "
-                               f"tout utiliser = {need * 360000:.2f}%/h, ×{need / p['pace']:.1f})"}
+                       "what": tr("{metric}: reset in {ttr}, ~{leftover}% of the cap lost at your pace "
+                                  "({pace}%/h; using it all = {need}%/h, ×{ratio})",
+                                  metric=p["r"].metric, ttr=_dur(p["ttr"]),
+                                  leftover=f"{p['leftover'] * 100:.0f}", pace=f"{p['pace'] * 360000:.2f}",
+                                  need=f"{need * 360000:.2f}", ratio=f"{need / p['pace']:.1f}")}
             else:
                 lot = {"status": "on_track", "ttr": p["ttr"], "metric": p["r"].metric,
                        "leftover": p["leftover"],
-                       "what": f"{p['r'].metric} {p['left'] * 100:.0f}% libre, reset dans "
-                               f"{_dur(p['ttr'])} — au rythme"}
+                       "what": tr("{metric} {left}% free, reset in {ttr} — on track",
+                                  metric=p["r"].metric, left=f"{p['left'] * 100:.0f}",
+                                  ttr=_dur(p["ttr"]))}
         # Short windows only gate availability; flag them when they'd run dry first.
         for r in rs:
             if r in vol:
                 continue
             p = _project(r, now)
             if p and p["leftover"] < 0:
-                lot["what"] += f" ; {r.metric} épuisé dans ~{_dur(p['runway'])}"
+                lot["what"] += tr("; {metric} runs out in ~{runway}",
+                                  metric=r.metric, runway=_dur(p["runway"]))
         lot["prov"] = prov
         lots.append(lot)
     return lots
@@ -1501,26 +1704,26 @@ def advise(rows: list[Row], now: float | None = None) -> int:
     order = sorted((l for l in lots if l["status"] in ("burn", "?")), key=lambda l: l["ttr"])
     steady = sorted((l for l in lots if l["status"] == "on_track"), key=lambda l: l["ttr"])
     scarce = sorted((l for l in lots if l["status"] == "conserve"), key=lambda l: -l["dry"])
-    console.print("\n[bold]Conseil de routage[/bold] — la capacité qui expire le plus tôt d'abord "
-                  "(surplus projeté à ton allure actuelle) :\n")
+    console.print(tr("\n[bold]Routing advice[/bold] — earliest-expiring capacity first "
+                     "(surplus projected at your current pace):\n"))
     for i, l in enumerate(order, 1):
         color = "green" if l["status"] == "burn" else "yellow"
-        hint = PROVIDER_HINTS.get(l["prov"], "")
+        hint = tr(PROVIDER_HINTS[l["prov"]]) if l["prov"] in PROVIDER_HINTS else ""
         console.print(f"  {i}. [{color}]{l['prov']:<12}[/{color}] {l['what']}   [dim]{hint}[/dim]")
     if steady:
-        console.print("\n  [bold]Au rythme (pas de surplus à offrir) :[/bold]")
+        console.print(tr("\n  [bold]On track (no surplus to give):[/bold]"))
         for l in steady:
             console.print(f"     {l['prov']:<12} {l['what']}")
     if scarce:
-        console.print("\n  [bold red]À ménager[/bold red] (s'épuise avant le reset — garde-le pour "
-                      "ce que lui seul sait faire) :")
+        console.print(tr("\n  [bold red]Conserve[/bold red] (runs dry before the reset — keep it for "
+                         "what only it can do):"))
         for l in scarce:
             console.print(f"     [red]{l['prov']:<12}[/red] {l['what']}")
     # Lifetime spend is sunk, not capacity: only list what can still absorb overflow.
     paid = [r for r in rows if r.kind == "balance" and r.used is not None
             or r.kind == "spend" and r.used is not None and "total" not in r.metric.lower()]
     if paid:
-        console.print("\n  [dim]Payant (débordement seulement ; devises non additionnées) :[/dim]")
+        console.print(tr("\n  [dim]Paid (overflow only; currencies not added up):[/dim]"))
         for r in paid:
             console.print(f"     [dim]{r.provider:<12} {r.used:,.2f} {r.unit}  ({r.metric})[/dim]")
     for r in rows:
@@ -1530,22 +1733,24 @@ def advise(rows: list[Row], now: float | None = None) -> int:
     names = ", ".join(keep)
     if order:
         first = order[0]
-        msg = (f"\n  [bold green]→ Brûle d'abord {first['prov']}[/bold green] "
-               f"(expire dans {_dur(first['ttr'])}"
-               + (", allure inconnue" if first["status"] == "?" else "")
-               + ") : envoie-lui tout ce qu'il sait faire")
-        msg += f", y compris ce que tu donnerais à {names}." if names else "."
+        if first["status"] == "?":
+            msg = tr("\n  [bold green]→ Burn {provider} first[/bold green] (expires in {ttr}, unknown pace): "
+                     "send it everything it can do", provider=first["prov"], ttr=_dur(first["ttr"]))
+        else:
+            msg = tr("\n  [bold green]→ Burn {provider} first[/bold green] (expires in {ttr}): "
+                     "send it everything it can do", provider=first["prov"], ttr=_dur(first["ttr"]))
+        msg += tr(", including what you would give {names}.", names=names) if names else "."
         if names:
-            who = "ce que lui seul sait" if len(keep) == 1 else "ce qu'eux seuls savent"
-            msg += f" Ménage {names} pour {who} faire."
+            msg += (tr(" Conserve {names} for what only it can do.", names=names) if len(keep) == 1
+                    else tr(" Conserve {names} for what only they can do.", names=names))
         console.print(msg + "\n")
     elif steady:
-        console.print("\n  [bold]→ Aucun surplus qui expire[/bold] : route par fit de tâche vers "
-                      f"{', '.join(dict.fromkeys(l['prov'] for l in steady))} (au rythme)"
-                      + (f", ménage {names}." if names else ".") + "\n")
+        console.print(tr("\n  [bold]→ No expiring surplus[/bold]: route by task fit to {providers} (on track)",
+                         providers=", ".join(dict.fromkeys(l["prov"] for l in steady)))
+                      + (tr(", conserve {names}.", names=names) if names else ".") + "\n")
     else:
-        console.print("\n  [bold yellow]→ Aucun forfait n'a de surplus[/bold yellow] : réserve chacun à ce "
-                      "que lui seul sait faire ; déborde le reste sur l'API payante la moins chère.\n")
+        console.print(tr("\n  [bold yellow]→ No subscription has surplus[/bold yellow]: keep each for what "
+                         "only it can do; overflow the rest to the cheapest paid API.\n"))
     return 0
 
 
@@ -1643,8 +1848,9 @@ def alert(rows: list[Row], notify: bool = True) -> int:
         if r.kind == "credit" and r.used is not None and r.limit and r.reset_epoch:
             ttr = r.reset_epoch - now
             if "locked" not in r.note and r.used / r.limit >= CREDIT_LEFT_MIN and 0 < ttr <= CREDIT_TTR_MAX:
-                warns.append(f"⚠ {r.provider} · {r.metric}: {r.used:,.2f} {r.unit} "
-                             f"non dépensés, {r.reset}")
+                warns.append(tr("⚠ {provider} · {metric}: {left} {unit} unspent, {reset}",
+                                provider=r.provider, metric=r.metric, left=f"{r.used:,.2f}",
+                                unit=r.unit, reset=r.reset))
             continue
         if r.kind != "quota" or r.used is None or not r.reset_epoch:
             continue
@@ -1657,13 +1863,17 @@ def alert(rows: list[Row], notify: bool = True) -> int:
         p = _project(r, now)  # None while the pace is unknown: keep the level rule
         waste = p["leftover"] if p else (1 - r.used) * (used_pct < ALERT_USED_MAX)
         if waste >= ALERT_LEFTOVER_MIN and ttr <= ALERT_TTR_MAX:
-            warns.append(f"⚠ {r.provider} · {r.metric}: ~{waste * 100:.0f}% du plafond "
-                         f"perdu au reset, reset {r.reset}")
+            warns.append(tr("⚠ {provider} · {metric}: ~{waste}% of the cap lost at reset, reset {reset}",
+                            provider=r.provider, metric=r.metric, waste=f"{waste * 100:.0f}",
+                            reset=r.reset))
         elif p and p["leftover"] < 0 and ttr - p["runway"] >= ALERT_DRY_MIN:
-            warns.append(f"⚠ {r.provider} · {r.metric}: à sec dans ~{_dur(p['runway'])} à ton allure, "
-                         f"reset {r.reset} → ~{_dur(ttr - p['runway'])} sans {r.provider}")
+            warns.append(tr("⚠ {provider} · {metric}: runs dry in ~{runway} at your pace, reset {reset} "
+                            "→ ~{gap} without {provider}",
+                            provider=r.provider, metric=r.metric, runway=_dur(p["runway"]),
+                            reset=r.reset, gap=_dur(ttr - p["runway"])))
     # Missing data is not an all-clear.
-    warns += [f"⚠ {r.provider}: données indisponibles ({r.note})" for r in rows if r.kind == "error"]
+    warns += [tr("⚠ {provider}: data unavailable ({note})", provider=r.provider, note=r.note)
+              for r in rows if r.kind == "error"]
     if warns:
         for w in warns:
             print(w)
@@ -1671,11 +1881,11 @@ def alert(rows: list[Row], notify: bool = True) -> int:
         # current data even if it sits in the tray.
         if notify:
             taken = datetime.fromtimestamp(now).strftime("%H:%M")
-            _notify(f"Quota AI · relevé {taken}", "\n".join(warns))
+            _notify(tr("AI quota · snapshot {time}", time=taken), "\n".join(warns))
         return 1
     if notify:
         _withdraw_notification()
-    print("✓ rien ne sera perdu au reset ni à sec longtemps")
+    print(tr("✓ nothing will be lost at reset or run dry for long"))
     return 0
 
 

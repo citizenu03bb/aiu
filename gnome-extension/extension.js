@@ -83,11 +83,11 @@ export default class AiuExtension extends Extension {
             if (res.success) {
                 this._indicator.updateData(res.data);
             } else {
-                console.error(`[aiu-indicator] Erreur snapshot: ${res.error}`);
+                console.error(`[aiu-indicator] Snapshot failed: ${res.error}`);
                 this._indicator.updateData(null, { error: res.error });
             }
         } catch (err) {
-            console.error(`[aiu-indicator] Exception dans _fetch: ${err.message}`);
+            console.error(`[aiu-indicator] Exception in _fetch: ${err.message}`);
             if (this._indicator) {
                 this._indicator.updateData(null, { error: err.message });
             }

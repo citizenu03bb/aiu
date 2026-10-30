@@ -32,6 +32,10 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("PATH", str(tmp_path / "bin"))
     for name in PROVIDER_ENV:
         monkeypatch.delenv(name, raising=False)
+    # English messages whatever the developer's locale; French tests set AIU_LANG.
+    for name in ("AIU_LANG", "LC_ALL", "LC_MESSAGES"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("LANG", "C.UTF-8")
     # Resolved at import time from the real home.
     monkeypatch.setattr(aiu, "GEMINI_CREDS_PATH", home / ".gemini" / "oauth_creds.json")
     monkeypatch.setattr(aiu, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))

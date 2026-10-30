@@ -382,10 +382,12 @@ acceptable, but the escaping is not (M3).
   This happens at enable, every 300 s, and on each refresh click. Each run
   executes every `key_cmd`, may run `claude auth status` (L4) and scans
   `/proc` (H1).
-- "Ouvrir aiu dans le terminal" runs the fixed command line
+- "Open aiu in a terminal" runs the fixed command line
   `gnome-terminal -- bash -c "aiu; …"` (`menuView.js:170-178`). No data is
-  interpolated into it. Its `aiu` is resolved by bash's `PATH`, which can
-  differ from the one the panel uses.
+  interpolated into it, only the translated "Press Enter to close…" prompt,
+  quoted with `GLib.shell_quote` for bash and again for the command line
+  parser (since the English interface, task D). Its `aiu` is resolved by
+  bash's `PATH`, which can differ from the one the panel uses.
 - The web links are fixed `https://` URLs opened with
   `launch_default_for_uri` (`menuView.js:149-167`).
 - It makes no network calls of its own and writes no files.
