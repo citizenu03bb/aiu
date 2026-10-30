@@ -176,6 +176,85 @@ def test_no_usable_creds_file(http, content):
     assert aiu._gemini_access_token() is None and http.calls == []
 
 
+def test_refresh_writes_a_0600_file_and_keeps_other_fields(env_client, http):
+    write_creds(expires_in=-60, added_by_cli="keep me")
+    aiu.GEMINI_CREDS_PATH.chmod(0o644)
+    http.on("POST", TOKEN_URL, (200, REFRESHED))
+    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert read_creds()["added_by_cli"] == "keep me"
+    assert aiu.GEMINI_CREDS_PATH.stat().st_mode & 0o777 == 0o600
+    assert sorted(p.name for p in aiu.GEMINI_CREDS_PATH.parent.iterdir()) == [
+        ".oauth_creds.json.aiu-lock", "oauth_creds.json"]  # no temp file left
+
+
+def test_refresh_through_a_symlink_keeps_the_symlink(env_client, http, home):
+    # Dotfile managers link ~/.gemini/oauth_creds.json into their own tree.
+    write_creds(expires_in=-60)
+    real = home / "dotfiles" / "oauth_creds.json"
+    real.parent.mkdir()
+    aiu.GEMINI_CREDS_PATH.rename(real)
+    aiu.GEMINI_CREDS_PATH.symlink_to(real)
+    http.on("POST", TOKEN_URL, (200, REFRESHED))
+    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert aiu.GEMINI_CREDS_PATH.is_symlink()
+    assert json.loads(real.read_text())["access_token"] == "ya29.refreshed"
+
+
+@pytest.mark.parametrize("crash", [OSError(28, "No space left on device"), KeyboardInterrupt()])
+def test_interrupted_write_leaves_the_old_file_intact(env_client, http, monkeypatch, capsys, crash):
+    write_creds(expires_in=-60)
+    before = aiu.GEMINI_CREDS_PATH.read_bytes()
+    http.on("POST", TOKEN_URL, (200, REFRESHED))
+
+    def fsync(fd):  # the temp file is written, the rename has not happened yet
+        raise crash
+    monkeypatch.setattr(aiu.os, "fsync", fsync)
+    if isinstance(crash, OSError):  # logged, and the token still serves this run
+        assert aiu._gemini_access_token() == "ya29.refreshed"
+        err = capsys.readouterr().err
+        assert "kept for this run only" in err and "OSError" in err and "ya29" not in err
+    else:  # the run is killed mid-write
+        with pytest.raises(KeyboardInterrupt):
+            aiu._gemini_access_token()
+    assert aiu.GEMINI_CREDS_PATH.read_bytes() == before
+    assert [p.name for p in aiu.GEMINI_CREDS_PATH.parent.glob("*.tmp")] == []
+
+
+def test_refresh_does_not_write_a_file_owned_by_someone_else(env_client, http, monkeypatch, capsys):
+    before = write_creds(expires_in=-60)
+    http.on("POST", TOKEN_URL, (200, REFRESHED))
+    uid = aiu.GEMINI_CREDS_PATH.stat().st_uid
+    monkeypatch.setattr(aiu.os, "getuid", lambda: uid + 1)
+    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert read_creds() == before and "not owned by you" in capsys.readouterr().err
+
+
+def test_persist_rereads_the_file_under_the_lock(env_client):
+    # The user signed in again between aiu's read and its write: keep their new login.
+    before = write_creds(refresh="1//signed-in-again")
+    assert aiu._gemini_persist("1//fake-refresh", "ya29.refreshed", 0, None) == \
+        "signed in again meanwhile"
+    assert read_creds() == before
+
+
+def test_persist_waits_for_the_lock(env_client):
+    import fcntl
+    import os
+    import threading
+    write_creds()
+    lock = os.open(aiu.GEMINI_CREDS_PATH.with_name(".oauth_creds.json.aiu-lock"),
+                   os.O_CREAT | os.O_WRONLY, 0o600)
+    fcntl.flock(lock, fcntl.LOCK_EX)  # another aiu run is writing
+    t = threading.Thread(target=aiu._gemini_persist,
+                         args=("1//fake-refresh", "ya29.refreshed", 0, None))
+    t.start()
+    t.join(0.3)
+    assert t.is_alive() and read_creds()["access_token"] == "ya29.fake-access"
+    os.close(lock)
+    t.join(5)
+    assert read_creds()["access_token"] == "ya29.refreshed"
+
+
 # ---------------------------------------------------------------------------
 # OAuth probe (the desktop app is not running)
 # ---------------------------------------------------------------------------
@@ -233,6 +312,14 @@ def test_oauth_plan_name_on_first_row(no_desktop, http):
     assert pro.note == "Google AI Pro" and flash.note == ""
 
 
+def test_oauth_plan_from_current_tier(no_desktop, http):
+    write_creds()
+    http.on("POST", LOAD_URL, (200, LOAD))
+    http.on("POST", QUOTA_URL, (200, quota(bucket("gemini-2.5-pro", 0.5), bucket("gemini-2.5-flash", 0.5))))
+    pro, flash = aiu.probe_gemini({})
+    assert pro.note == "Gemini Code Assist" and flash.note == ""
+
+
 @pytest.mark.parametrize("load_reply", [(500, {"error": {"code": 500}}), httpx.ConnectError("offline")])
 def test_oauth_load_failure_still_reads_quota(no_desktop, http, load_reply):
     write_creds()
@@ -278,14 +365,15 @@ def test_oauth_rejected_and_no_client(no_desktop, http):
     assert http.to(TOKEN_URL) == []
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: a 403 that survives the refresh is reported as 401")
 def test_oauth_forbidden_twice(no_desktop, env_client, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (403, {"error": {"code": 403, "status": "PERMISSION_DENIED"}}))
     http.on("POST", TOKEN_URL, (200, REFRESHED))
     [row] = aiu.probe_gemini({})
-    assert "(401)" not in row.note
+    assert row.kind == "error" and "permission denied (403)" in row.note
+    assert "refresh token" not in row.note and "(401)" not in row.note
+    assert len(http.to(QUOTA_URL)) == 2 and len(http.to(TOKEN_URL)) == 1
 
 
 def test_oauth_unsupported_client(no_desktop, http):
@@ -323,23 +411,30 @@ def test_oauth_no_buckets_with_plan(no_desktop, http):
     assert row.note == "Google AI Pro: no quota buckets returned"
 
 
-@pytest.mark.xfail(strict=True, reason="probe bug: with no plan name the note starts with ': '")
 def test_oauth_no_buckets_without_plan(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (200, quota({"modelId": "gemini-2.5-pro", "remaining": 0.5})))
     [row] = aiu.probe_gemini({})
-    assert not row.note.startswith(":")
+    assert row.note == "Gemini Code Assist: no quota buckets returned"
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError,
-                   reason="probe bug: a 200 with a non-JSON body raises out of the probe")
-def test_oauth_non_json_body(no_desktop, http):
+def test_oauth_no_buckets_and_no_plan(no_desktop, http):
     write_creds()
-    http.on("POST", LOAD_URL, (200, LOAD))
-    http.on("POST", QUOTA_URL, (200, "<html>Google</html>"))
+    http.on("POST", LOAD_URL, (500, {"error": {"code": 500}}))
+    http.on("POST", QUOTA_URL, (200, {}))
     [row] = aiu.probe_gemini({})
-    assert row.kind == "error"
+    assert row.note == "no quota buckets returned"
+
+
+@pytest.mark.parametrize("body", ["<html>Google</html>", [], {"buckets": "pro"},
+                                  {"buckets": [{"modelId": "gemini-2.5-pro", "remainingFraction": "n/a"}]}])
+def test_oauth_non_json_body(no_desktop, http, body):
+    write_creds()
+    http.on("POST", LOAD_URL, (200, "<html>Google</html>"))
+    http.on("POST", QUOTA_URL, (200, body))
+    [row] = aiu.probe_gemini({})
+    assert row.kind == "error" and row.note == "malformed quota response (HTTP 200)"
 
 
 def test_oauth_no_creds(no_desktop, http):

@@ -525,7 +525,8 @@ def _gemini_oauth_client() -> tuple[str, str] | None:
 
 def _gemini_refresh(refresh_token: str) -> str | None:
     """Exchange the refresh token for a fresh access token and persist it back to
-    oauth_creds.json (Google does not rotate refresh tokens). Returns the new token."""
+    oauth_creds.json (Google does not rotate refresh tokens). Returns the new token,
+    which is good for this run even when it could not be saved."""
     client = _gemini_oauth_client()
     if not client:
         return None
@@ -539,18 +540,61 @@ def _gemini_refresh(refresh_token: str) -> str | None:
         at = j.get("access_token")
         if not at:
             return None
-        try:  # persist so the next call (and the CLIs) reuse it
-            creds = json.loads(GEMINI_CREDS_PATH.read_text())
-            creds["access_token"] = at
-            creds["expiry_date"] = int((time.time() + int(j.get("expires_in", 3600))) * 1000)
-            if j.get("id_token"):
-                creds["id_token"] = j["id_token"]
-            GEMINI_CREDS_PATH.write_text(json.dumps(creds, indent=2))
-        except Exception:
-            pass
-        return at
+        expiry = int((time.time() + int(j.get("expires_in", 3600))) * 1000)
     except Exception:
         return None
+    # persist so the next call (and the CLIs) reuse it
+    reason = _gemini_persist(refresh_token, at, expiry, j.get("id_token"))
+    if reason:
+        print(f"[aiu] gemini: refreshed token kept for this run only, "
+              f"{GEMINI_CREDS_PATH} left as is: {reason}", file=sys.stderr)
+    return at
+
+
+def _gemini_persist(refresh_token: str, access_token: str, expiry_ms: int,
+                    id_token: str | None) -> str | None:
+    """Store a refreshed token in oauth_creds.json without ever leaving it empty or
+    half-written: under a lock shared by every aiu run, re-read the file, change only
+    the token fields, write a 0600 temp file next to the real file (a symlink stays a
+    symlink) and rename it over. Returns why nothing was written, or None."""
+    import fcntl
+    import tempfile
+    target = Path(os.path.realpath(GEMINI_CREDS_PATH))
+    tmp = None
+    try:
+        if target.stat().st_uid != os.getuid():
+            return "not owned by you"
+        lock = os.open(target.with_name(f".{target.name}.aiu-lock"),
+                       os.O_CREAT | os.O_WRONLY, 0o600)
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            creds = json.loads(target.read_text())
+            if not isinstance(creds, dict):
+                return "not a JSON object"
+            if creds.get("refresh_token") != refresh_token:
+                return "signed in again meanwhile"
+            creds["access_token"] = access_token
+            creds["expiry_date"] = expiry_ms
+            if id_token:
+                creds["id_token"] = id_token
+            fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
+            with os.fdopen(fd, "w") as f:  # mkstemp: O_EXCL, mode 0600
+                f.write(json.dumps(creds, indent=2))
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp, target)
+            tmp = None
+        finally:
+            os.close(lock)  # releases the flock
+    except (OSError, ValueError) as e:
+        return type(e).__name__
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+    return None
 
 
 def _gemini_access_token(force: bool = False) -> str | None:
@@ -749,7 +793,12 @@ def probe_gemini(cfg: dict) -> list[Row]:
             if tr.status_code == 200:
                 j = tr.json()
                 project = j.get("cloudaicompanionProject")
-                plan = j.get("planName") or j.get("tier") or ""
+                # The tier the account is on, else the one it would get (Oct 2026
+                # responses carry {id, name} objects; planName is the older field).
+                allowed = [t for t in j.get("allowedTiers") or [] if isinstance(t, dict)]
+                tier = j.get("currentTier") or next((t for t in allowed if t.get("isDefault")),
+                                                    allowed[0] if allowed else {})
+                plan = j.get("planName") or (tier.get("name") if isinstance(tier, dict) else None) or ""
                 # Since Oct 2026 Google refuses the Gemini CLI client for individual
                 # accounts ("migrate to Antigravity"): the quota calls then 403.
                 if not j.get("currentTier"):
@@ -773,7 +822,13 @@ def probe_gemini(cfg: dict) -> list[Row]:
                 break
             continue
         break
-    if r is None or r.status_code in (401, 403):
+    if r is not None and r.status_code == 403:
+        # Google answers 401 for a bad or expired token, so a 403 the refresh and
+        # retry did not clear means the account or project may not read the quota.
+        return [Row("gemini", "—", "error",
+                    note="permission denied (403) — this account or its Code Assist project "
+                         "may not read the quota; open the Antigravity desktop app instead")]
+    if r is None or r.status_code == 401:
         if not _gemini_oauth_client():
             return [Row("gemini", "—", "error",
                         note="token expired and can't refresh: install gemini-cli or set "
@@ -782,17 +837,19 @@ def probe_gemini(cfg: dict) -> list[Row]:
                     note="auth rejected (401) — refresh token invalid, run `agy` to re-sign in")]
     if r.status_code != 200:
         return [Row("gemini", "—", "error", note=f"HTTP {r.status_code}")]
-    buckets = r.json().get("buckets", [])
     fam: dict[str, tuple[str, float, str | None]] = {}
-    for b in buckets:
-        frac = b.get("remainingFraction")
-        if frac is None:
-            continue
-        fid, label = _gemini_family(b.get("modelId", ""))
-        used_frac = 1.0 - float(frac)
-        # Select the most constrained (highest usage) bucket per family
-        if fid not in fam or used_frac > fam[fid][1]:
-            fam[fid] = (label, used_frac, b.get("resetTime"))
+    try:
+        for b in r.json().get("buckets") or []:
+            frac = b.get("remainingFraction")
+            if frac is None:
+                continue
+            fid, label = _gemini_family(b.get("modelId", ""))
+            used_frac = 1.0 - float(frac)
+            # Select the most constrained (highest usage) bucket per family
+            if fid not in fam or used_frac > fam[fid][1]:
+                fam[fid] = (label, used_frac, b.get("resetTime"))
+    except (ValueError, TypeError, AttributeError):
+        return [Row("gemini", "—", "error", note="malformed quota response (HTTP 200)")]
     order = {"pro": 0, "flash": 1, "flash_lite": 2}
     rows: list[Row] = []
     for fid in sorted(fam, key=lambda x: order.get(x, 9)):
@@ -803,7 +860,8 @@ def probe_gemini(cfg: dict) -> list[Row]:
                         note=plan if not rows else "",
                         reset_epoch=_iso_epoch(reset) if reset else None))
     if not rows:
-        rows.append(Row("gemini", "—", "quota", note=f"{plan}: no quota buckets returned".strip()))
+        rows.append(Row("gemini", "—", "quota",
+                        note=f"{plan}: no quota buckets returned" if plan else "no quota buckets returned"))
     return rows
 
 
