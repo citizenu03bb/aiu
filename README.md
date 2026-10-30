@@ -85,7 +85,7 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 | `openai`     | month-to-date USD spend      | an **Admin** API key (off unless you use the API) |
 | `deepseek`   | remaining balance            | a normal API key |
 | `openrouter` | total spend + remaining credits | a normal API key |
-| `gemini`     | Code Assist quota per model family | none — reads `~/.gemini/oauth_creds.json` (OAuth) |
+| `gemini`     | Gemini 5h + weekly quota     | none — the Antigravity desktop app must be open |
 | `mistral`    | monthly Vibe Code + API allowance (€ spent / € included) | the admin.mistral.ai **session cookie** (no API key works) |
 
 **`codex`** covers OpenAI usage that runs on a ChatGPT subscription (the Codex
@@ -137,9 +137,13 @@ command, stdout used) → `key_file` (file contents). `secrets.env` populates th
 elsewhere (e.g. `pass`, a CLI config).
 
 ### claude
-Nothing to configure. The OAuth token is read locally from
-`~/.claude/.credentials.json` (same source Claude Code uses). If you see
-"auth rejected", just run `claude` once to refresh the token.
+Nothing to configure, and no app needs to be open. The OAuth token is read
+locally from `~/.claude/.credentials.json` (same source Claude Code uses).
+Only the `claude` CLI rewrites that file: the desktop app keeps its own token,
+so the file goes stale 8h after the last CLI run. When it has expired, `aiu`
+runs `claude auth status`, which refreshes it without spending a request. That
+needs the `claude` CLI installed. Without it, run `claude` once when you see
+"token expired".
 
 Besides quotas, any dollar grant in the same response (an entry with
 `limit_dollars`, e.g. the cloud-session credit) shows up as a `credit` row:
@@ -169,32 +173,36 @@ key_env = "DEEPSEEK_API_KEY"
 Shows balance from `GET /user/balance` (granted + topped-up).
 
 ### gemini
-If you use the Gemini CLI signed in with a Google account (Code Assist /
-Google One AI Pro), usage is a **subscription quota**, not pay-per-token API
-spend — so there's nothing to bill and no BigQuery needed. `aiu` reads the same
-OAuth token the CLI stores in `~/.gemini/oauth_creds.json` and queries the
-internal Code Assist endpoint (`cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`),
-showing usage per model family (Pro / Flash / Flash-Lite).
+A Google account's Gemini usage (Antigravity, Google One AI Pro) is a
+**subscription quota**, not pay-per-token API spend, so there's nothing to bill
+and no BigQuery needed.
 
 ```toml
 [gemini]
 enabled = true
 ```
 
-Access tokens expire ~hourly; `aiu` **refreshes them itself** via the refresh
-token in `oauth_creds.json` and writes the fresh token back. Refreshing needs
+**Main source: the Antigravity desktop app, while it is open.** It runs a
+local language server on 127.0.0.1; `aiu` finds it in `/proc`, takes the CSRF
+token from its command line (or `~/.config/Antigravity/logs/main.log`) and asks
+it for the quota summary: 5-hour and weekly windows. When the app is closed,
+the row says so.
+
+**The `agy` CLI can't stand in for it** (checked Oct 2026). It keeps its login
+in the system keyring, not in `~/.gemini/oauth_creds.json`. It also runs its
+own local server, but that server's CSRF token never leaves the process's
+memory.
+
+**Fallback: Gemini CLI OAuth, now refused for individual accounts.** If
+`~/.gemini/oauth_creds.json` exists, `aiu` queries Code Assist
+(`cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`) per model family,
+refreshing the hourly access token itself and writing it back. Refreshing needs
 the Gemini CLI's public OAuth client, which `aiu` does not ship: it reads it
 from the installed `gemini` CLI bundle, or from `GEMINI_CLIENT_ID` /
-`GEMINI_CLIENT_SECRET` in your env file if you only have `agy`. So it never
-depends on a CLI having run recently,
-and incidentally keeps the file fresh for `agy` too. "auth rejected" only
-appears if the *refresh* token itself is invalid (then run `agy` to re-sign in).
-**Antigravity CLI migration (done):** the successor `agy` CLI installs under
-`~/.gemini/antigravity-cli/` and reuses this same `oauth_creds.json` + the
-account-level Code Assist quota pool — so this probe keeps working unchanged and
-covers `agy` usage too. (The Antigravity *desktop IDE* is a different beast:
-local language server on 127.0.0.1 + CSRF token, only readable while running —
-not implemented here.)
+`GEMINI_CLIENT_SECRET` in your env file. Since Oct 2026 Google answers
+`UNSUPPORTED_CLIENT` ("migrate to Antigravity") for "Gemini Code Assist for
+individuals", and the row says so. Paid Code Assist tiers may still work this
+way; that is untested.
 
 *(If instead you pay for the Gemini **API** per token, that cost lives only in
 Cloud Billing and would need a BigQuery export — not implemented here, since the
@@ -213,7 +221,8 @@ project is not affiliated with Anthropic, OpenAI or Google:
 - `claude`: Claude Code's OAuth usage endpoint (if it 404s after a Claude
   update, re-check it against the `onWatch` source);
 - `codex`: `chatgpt.com/backend-api/wham/usage`;
-- `gemini`: Code Assist's `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`.
+- `gemini`: the Antigravity desktop language server's `RetrieveUserQuotaSummary`
+  on 127.0.0.1, else Code Assist's `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`.
 
 Tokens and keys are read locally at run time and only ever sent to the
 provider they belong to. `aiu` stores no secret, has no telemetry, and makes

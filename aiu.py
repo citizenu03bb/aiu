@@ -22,8 +22,9 @@ Sources (each is a pluggable probe):
   - openai     : month-to-date USD spend via the Costs API (needs an Admin key).
   - deepseek   : remaining balance via /user/balance.
   - openrouter : total spend + remaining credits.
-  - gemini     : Gemini Code Assist quota per model family, OAuth token read
-                 from ~/.gemini/oauth_creds.json.
+  - gemini     : Gemini 5h / weekly quota from the Antigravity desktop app's local
+                 server while it runs; else Gemini CLI OAuth (~/.gemini/oauth_creds.json),
+                 which Google now refuses for individual accounts.
   - mistral    : monthly Vibe Code + API allowances (€ spent / € included), via
                  the admin console's tRPC API; needs the browser session cookie.
 
@@ -108,8 +109,8 @@ key_env = "MISTRAL_ADMIN_COOKIE"
 # Note: Cohere exposes NO aggregate usage/spend endpoint (dashboard only), so it
 # can't be polled as a simple number without local token accounting.
 
-# Gemini CLI signs in with Google OAuth (Code Assist / Google One AI Pro) ->
-# subscription quota, token read from ~/.gemini/oauth_creds.json. No key needed.
+# Gemini (Antigravity / Google One AI Pro) -> subscription quota, read from the
+# Antigravity desktop app while it is open. No key needed.
 [gemini]
 enabled = false
 """
@@ -485,10 +486,12 @@ def probe_openrouter(cfg: dict) -> list[Row]:
 # Probe: Gemini Code Assist (Google One / AI Pro subscription quota via OAuth)
 # The Gemini CLI signs in with Google OAuth — usage is a subscription quota, not
 # pay-per-token API spend. Read the same token the CLI uses and hit the internal
-# Code Assist quota endpoint. The Antigravity CLI (`agy`, the Gemini CLI successor)
-# installs under ~/.gemini/antigravity-cli/ and SHARES this same oauth_creds.json +
-# account-level Code Assist quota pool, so this one probe covers both CLIs.
-# (The Antigravity *IDE/desktop* app is different: local language server + CSRF.)
+# Code Assist quota endpoint. Since Oct 2026 Google refuses that client for
+# individual accounts (UNSUPPORTED_CLIENT), so for them the Antigravity desktop
+# app's local language server (+ CSRF token from its command line) is the only
+# source, read first below. The `agy` CLI keeps its login in the system keyring,
+# not in oauth_creds.json, and its own local server's CSRF token never leaves
+# memory, so aiu can't read quota through agy.
 # ---------------------------------------------------------------------------
 GEMINI_CA_BASE = "https://cloudcode-pa.googleapis.com"
 GEMINI_CREDS_PATH = Path(os.path.expanduser("~/.gemini/oauth_creds.json"))
@@ -728,9 +731,10 @@ def probe_gemini(cfg: dict) -> list[Row]:
     token = _gemini_access_token()
     if not token:
         return [Row("gemini", "—", "error",
-                    note="no token in ~/.gemini/oauth_creds.json (open Antigravity to view quota)")]
+                    note="Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback "
+                         "— open Antigravity to read the quota")]
     r = None
-    project, plan = None, ""
+    project, plan, unsupported = None, "", None
     for attempt in (1, 2):
         headers = {
             "Authorization": f"Bearer {token}",
@@ -746,6 +750,12 @@ def probe_gemini(cfg: dict) -> list[Row]:
                 j = tr.json()
                 project = j.get("cloudaicompanionProject")
                 plan = j.get("planName") or j.get("tier") or ""
+                # Since Oct 2026 Google refuses the Gemini CLI client for individual
+                # accounts ("migrate to Antigravity"): the quota calls then 403.
+                if not j.get("currentTier"):
+                    unsupported = next((t.get("tierName") or t.get("tierId") for t in
+                                        j.get("ineligibleTiers") or []
+                                        if t.get("reasonCode") == "UNSUPPORTED_CLIENT"), None)
         except Exception:
             pass
         try:
@@ -753,6 +763,10 @@ def probe_gemini(cfg: dict) -> list[Row]:
                            json=({"project": project} if project else {}), timeout=20)
         except Exception as e:
             return [Row("gemini", "—", "error", note=f"network: {e}")]
+        if unsupported and r.status_code == 403:
+            return [Row("gemini", "—", "error",
+                        note=f"Google no longer accepts the Gemini CLI sign-in for {unsupported} "
+                             "— open the Antigravity desktop app to read the quota")]
         if r.status_code in (401, 403) and attempt == 1:  # force one refresh + retry
             token = _gemini_access_token(force=True)
             if not token:
