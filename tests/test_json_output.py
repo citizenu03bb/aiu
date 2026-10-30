@@ -51,8 +51,10 @@ def trpc(payload):
 
 PROVIDERS = ("claude", "codex", "openai", "deepseek", "openrouter", "gemini", "mistral")
 KEY_ENV = {"openai": "OPENAI_ADMIN_KEY", "deepseek": "DEEPSEEK_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
+# claude.read_token: these scenarios read Claude through the token, as MAIN
+# did; MAIN ignores the option. The plugin's file is tested in test_probe_claude.
 CONFIG = "".join(f"[{name}]\nenabled = true\n" + (f'key_env = "{KEY_ENV[name]}"\n' if name in KEY_ENV else "")
-                 + "\n" for name in PROVIDERS)
+                 + ("read_token = true\n" if name == "claude" else "") + "\n" for name in PROVIDERS)
 
 
 def answers(home, http, monkeypatch):

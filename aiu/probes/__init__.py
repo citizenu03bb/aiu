@@ -12,7 +12,9 @@ from aiu.rows import Row
 class Probe(Protocol):
     """A provider module. NAME is its config section, OPTIONS the settings
     `aiu config` shows and sets for it (name -> (type, default when the file
-    does not set it)), and probe(cfg) reads that section and returns its rows."""
+    does not set it)), and probe(cfg) reads that section and returns its rows.
+    A module may also have NOTICES, option -> what `aiu config set` prints
+    when that bool option is turned on (looked up in aiu.i18n like any message)."""
     NAME: str
     OPTIONS: dict[str, tuple[str, object]]
 

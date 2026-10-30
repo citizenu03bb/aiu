@@ -1,5 +1,9 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Probe: Claude Max."""
+"""Probe: Claude Max. Read from what Claude Code itself reports, written by the
+aiu-claude-usage plugin (claude-code-plugin/) to a file in aiu's state
+directory. Reading Claude Code's own OAuth token and calling the usage
+endpoint with it is an opt-in (claude.read_token): Anthropic's terms say
+developers may not collect, store, or intermediate Claude.ai credentials."""
 from __future__ import annotations
 
 import json
@@ -12,9 +16,10 @@ from pathlib import Path
 import httpx
 
 from aiu.i18n import tr
-from aiu.probes.common import _humanize_reset, _iso_epoch, _json_object, _malformed_note, _network_note
+from aiu.probes.common import (_humanize_reset, _humanize_reset_unix, _iso_epoch, _json_object,
+                               _malformed_note, _network_note)
 from aiu.rows import Row
-from aiu.util import _writable_by_others
+from aiu.util import _writable_by_others, state_dir
 
 
 ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
@@ -22,6 +27,9 @@ CLAUDE_QUOTA_LABELS = {
     "five_hour": "5-Hour Limit",
     "seven_day": "Weekly (all models)",
     "seven_day_sonnet": "Weekly Sonnet",
+    "seven_day_opus": "Weekly Opus",
+    "seven_day_oauth_apps": "Weekly OAuth Apps",
+    "seven_day_cowork": "Weekly Cowork",
     "monthly_limit": "Monthly Limit",
     "extra_usage": "Extra Usage",
 }
@@ -29,6 +37,9 @@ CLAUDE_WINDOW = {  # window length in seconds, for advise/alert
     "five_hour": 5 * 3600,
     "seven_day": 7 * 86400,
     "seven_day_sonnet": 7 * 86400,
+    "seven_day_opus": 7 * 86400,
+    "seven_day_oauth_apps": 7 * 86400,
+    "seven_day_cowork": 7 * 86400,
     "monthly_limit": 30 * 86400,
     "extra_usage": 30 * 86400,
 }
@@ -118,7 +129,113 @@ def _refresh_claude_token(cfg: dict | None = None) -> bool:
     return ok
 
 
+# The plugin's file: docs/json-schema.md, "claude-usage.json".
+CLAUDE_USAGE_FILE = "claude-usage.json"
+CLAUDE_USAGE_MAX_BYTES = 64 * 1024  # a bigger file is not the plugin's
+CLAUDE_USAGE_MAX_WINDOWS = 32
+# Claude Code writes after a turn that moved a window by a whole point, so a
+# reading only ages while Claude Code is idle; usage from claude.ai or another
+# machine meanwhile is not in it. Older than this, a row says how old it is,
+# and the reading is used only while one of its windows has yet to reset.
+CLAUDE_USAGE_STALE = 3600
+CLAUDE_PLUGIN_INSTALL = "/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu"
+
+
+def _iso_time(v) -> float | None:
+    return _iso_epoch(v) if isinstance(v, str) and len(v) <= 64 else None
+
+
+def _read_claude_usage() -> dict | None:
+    """The plugin's last reading, {"written_at": epoch, "windows": [(kind,
+    percent, reset epoch or None)]} for the windows aiu has a label for, or None
+    when the file is missing, too big, not JSON, not schema 1 from claude-code
+    in every field, or holds no such window."""
+    path = state_dir() / CLAUDE_USAGE_FILE
+    try:
+        if not path.is_file():  # nor a FIFO left there to hang the probe
+            return None
+        with open(path, "rb") as f:
+            raw = f.read(CLAUDE_USAGE_MAX_BYTES + 1)
+        if len(raw) > CLAUDE_USAGE_MAX_BYTES:
+            return None
+        data = json.loads(raw)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("schema") != 1 or data.get("source") != "claude-code":
+        return None
+    written = _iso_time(data.get("written_at"))
+    limits = data.get("rate_limits")
+    if written is None or written > time.time() + 300 or not isinstance(limits, list) \
+            or len(limits) > CLAUDE_USAGE_MAX_WINDOWS:
+        return None
+    windows = []
+    for w in limits:
+        if not isinstance(w, dict):
+            return None
+        kind, pct, reset = w.get("kind"), w.get("percent_used"), w.get("resets_at")
+        if not isinstance(kind, str) or not 0 < len(kind) <= 100:
+            return None
+        if not isinstance(pct, (int, float)) or isinstance(pct, bool) or not 0 <= pct <= 1000:
+            return None
+        if reset is not None and _iso_time(reset) is None:
+            return None
+        if kind in CLAUDE_QUOTA_LABELS:  # not, e.g., a gateway's spend_limit
+            windows.append((kind, float(pct), _iso_time(reset) if reset is not None else None))
+    return {"written_at": written, "windows": windows} if windows else None
+
+
+def _ago(secs: float) -> str:
+    m = int(secs) // 60
+    d, h = divmod(m // 60, 24)
+    return f"{d}d {h}h" if d else f"{h}h {m % 60}m" if h else f"{m}m"
+
+
+def _claude_usage_rows(reading: dict) -> list[Row] | None:
+    """Rows from the plugin's reading, or None when it is too old to use: past
+    CLAUDE_USAGE_STALE with every window reset since. A window that reset since
+    the reading is at 0 % with its next reset unknown."""
+    now = time.time()
+    age = max(0.0, now - reading["written_at"])
+    stale = age > CLAUDE_USAGE_STALE
+    note = f"Claude Code reading from {_ago(age)} ago" if stale else ""
+    rows, ahead = [], False
+    for kind, pct, reset in reading["windows"]:
+        window = CLAUDE_WINDOW.get(kind)
+        passed = reset <= now if reset is not None else bool(window and age >= window)
+        ahead |= reset is not None and not passed
+        rows.append(Row("claude", CLAUDE_QUOTA_LABELS[kind], "quota",
+                        used=0.0 if passed else pct / 100.0, limit=1.0, unit="%",
+                        reset=None if passed else _humanize_reset_unix(reset),
+                        note=note, reset_epoch=None if passed else reset, window_secs=window))
+    return None if stale and not ahead else rows
+
+
 def probe_claude(cfg: dict) -> list[Row]:
+    """The plugin's reading first; the token read only with claude.read_token,
+    and then only for what the reading lacks (credits, other windows)."""
+    reading = _read_claude_usage()
+    rows = _claude_usage_rows(reading) if reading else None
+    if not cfg.get("read_token"):
+        if rows:
+            return rows
+        if reading:
+            age = _ago(max(0.0, time.time() - reading["written_at"]))
+            return [Row("claude", "—", "error",
+                        note=f"last Claude Code reading is {age} old: use Claude Code to take "
+                             "a new one (or set claude.read_token = true)")]
+        return [Row("claude", "—", "error",
+                    note=f"no reading from Claude Code: install its aiu plugin "
+                         f"({CLAUDE_PLUGIN_INSTALL}), or set claude.read_token = true")]
+    token_rows = _probe_claude_token(cfg)
+    if not rows:
+        return token_rows
+    have = {r.metric for r in rows}
+    return rows + [r for r in token_rows if r.metric not in have]
+
+
+def _probe_claude_token(cfg: dict) -> list[Row]:
+    """Claude Code's stored OAuth token, refreshed by `claude auth status` when
+    stale, sent to the usage endpoint the Claude apps read. Opt-in only."""
     token, expires_at = _read_claude_token()
     if token and expires_at and expires_at / 1000 < time.time() + 60 and _refresh_claude_token(cfg):
         token, expires_at = _read_claude_token()
@@ -199,6 +316,15 @@ def _claude_credits(data: dict, warn: str) -> list[Row]:
 
 
 # The Probe protocol (aiu.probes): what collect() and `aiu config` read.
+# NOTICES: what `aiu config set` prints when an option is turned on.
 NAME = "claude"
-OPTIONS = {"enabled": ("bool", False), "claude_cmd": ("string", None)}
+OPTIONS = {"enabled": ("bool", False), "read_token": ("bool", False),
+           "claude_cmd": ("string", None)}
 probe = probe_claude
+NOTICES = {"read_token": (
+    "aiu now reads Claude Code's sign-in token (~/.claude/.credentials.json) and sends it to "
+    "Anthropic's usage endpoint, as the Claude apps do. Anthropic's terms say: \"developers may "
+    "not collect, store, or intermediate Claude.ai credentials or session tokens\" "
+    "(code.claude.com/docs/en/legal-and-compliance). The aiu-claude-usage plugin for Claude Code "
+    "needs no token: /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu. "
+    "To turn this off: aiu config set claude.read_token false")}

@@ -14,6 +14,11 @@
           "value": true,
           "source": "file"
         },
+        "read_token": {
+          "type": "bool",
+          "value": false,
+          "source": "default"
+        },
         "claude_cmd": {
           "type": "string",
           "value": null,
