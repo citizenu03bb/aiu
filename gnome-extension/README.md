@@ -32,11 +32,11 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
   - **Advice**: from the `advice` field of `aiu --json`: burn first the subscription (or credit) whose surplus expires first, and keep for later the ones that would run dry before their reset.
   - **Errors in full**: every probe error or expired token, with what to run to fix it.
   - **Refresh button**, plus an automatic refresh every 5 minutes, or at the interval set in the preferences (and when the menu opens and the data is over 2 minutes old).
-  - **Shortcuts**: open `aiu` in a terminal, and links to the AI web consoles (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek).
+  - **Shortcuts**: open `aiu` in a terminal, links to the AI web consoles (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek), and **Preferences…**.
 
 ## Preferences
 
-Open them from the Extensions app, or with:
+Open them with **⚙️ Preferences…** at the bottom of the panel menu, from the Extensions app, or with:
 
 ```bash
 gnome-extensions prefs aiu-indicator@citizenu03bb.github.io

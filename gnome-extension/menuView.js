@@ -186,6 +186,11 @@ export class MenuView {
         this._addWebLink(webSubmenu, 'DeepSeek Platform', 'https://platform.deepseek.com/');
         this._addWebLink(webSubmenu, 'OpenRouter Activity', 'https://openrouter.ai/activity');
         this._menu.addMenuItem(webSubmenu);
+
+        // The preferences window (prefs.js), also under the Extensions app's gear
+        const prefsItem = new PopupMenu.PopupMenuItem(_('⚙️ Preferences…'));
+        prefsItem.connect('activate', () => this._callbacks.onPreferences?.());
+        this._menu.addMenuItem(prefsItem);
     }
 
     /** Caps the data section so the whole menu fits in the monitor's work area. */
