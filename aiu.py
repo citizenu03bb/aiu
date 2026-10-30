@@ -2412,7 +2412,11 @@ def config_main(args: argparse.Namespace) -> int:
 # extension does. No key, cookie or decrypted value is printed or written
 # anywhere but the keyring; a locked database is read from a private copy.
 # ---------------------------------------------------------------------------
-MISTRAL_COOKIE_HOSTS = ("admin.mistral.ai", ".admin.mistral.ai")
+# The hosts whose cookies a browser sends to admin.mistral.ai (RFC 6265 domain
+# match): its own host-only cookies, and domain cookies for it or a parent.
+# Mistral's Ory session and CSRF token are set on .mistral.ai. Not other
+# subdomains (auth., console., chat.), and not a host-only mistral.ai.
+MISTRAL_COOKIE_HOSTS = ("admin.mistral.ai", ".admin.mistral.ai", ".mistral.ai")
 MISTRAL_KEYRING = ("service", "aiu", "provider", "mistral")
 MISTRAL_KEYRING_LABEL = "aiu mistral cookie"
 MISTRAL_KEY_CMD = "secret-tool lookup " + " ".join(MISTRAL_KEYRING)
@@ -2569,7 +2573,7 @@ def _chromium_cookies(browser: str, profile: str | None) -> tuple[str, list[tupl
     def read(con):
         partitioned = " AND top_frame_site_key = ''" if "top_frame_site_key" in _columns(con, "cookies") else ""
         return con.execute("SELECT host_key, name, value, encrypted_value, path, expires_utc "
-                           "FROM cookies WHERE host_key IN (?, ?)" + partitioned,
+                           "FROM cookies WHERE host_key IN (?, ?, ?)" + partitioned,
                            MISTRAL_COOKIE_HOSTS).fetchall()
 
     rows = _read_cookie_db(db, read)
@@ -2669,7 +2673,7 @@ def _firefox_cookies(profile: str | None) -> tuple[str, list[tuple]]:
         # plain browsing context only.
         plain = " AND originAttributes = ''" if "originAttributes" in _columns(con, "moz_cookies") else ""
         return con.execute("SELECT name, value, path, expiry FROM moz_cookies "
-                           "WHERE host IN (?, ?)" + plain, MISTRAL_COOKIE_HOSTS).fetchall()
+                           "WHERE host IN (?, ?, ?)" + plain, MISTRAL_COOKIE_HOSTS).fetchall()
 
     # expiry is in seconds, or milliseconds in recent versions.
     return prof.name, [(n, v, p, (e / 1000 if e > 1e11 else e) if e else None)

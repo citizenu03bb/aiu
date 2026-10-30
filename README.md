@@ -131,7 +131,8 @@ aiu config set mistral.enabled true
 aiu --only mistral                            # check it
 ```
 
-`cookie import` reads the `admin.mistral.ai` cookies (that host only) from one
+`cookie import` reads the cookies a browser sends to `admin.mistral.ai` (its own
+and the `.mistral.ai` ones that hold the session, no other subdomain) from one
 browser profile (`Default`, or Firefox's default profile; pick another with
 `--profile NAME`, a directory like `Profile 1` or the name the browser shows),
 stores them with `secret-tool` (label *aiu mistral cookie*), and sets

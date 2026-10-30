@@ -161,7 +161,8 @@ def chromium_db(path: Path, cookies: list[tuple], version: int = 24) -> Path:
 
 def mistral_rows(password: bytes, version: bytes, prefix: bool, expires=FAR) -> list[tuple]:
     rows = []
-    for host, cookie in ((HOST, SESSION), (f".{HOST}", CSRF)):
+    # As Mistral sets them: the Ory session on the parent domain.
+    for host, cookie in ((".mistral.ai", SESSION), (f".{HOST}", CSRF)):
         name, value = cookie.split("=", 1)
         rows.append((host, name, "", encrypt(value, password, version, host, prefix), "/", expires))
     return rows
@@ -171,8 +172,10 @@ def other_rows() -> list[tuple]:
     """Cookies of other sites: decrypting any of them fails, so a test that
     passes never read them."""
     junk = b"v11" + b"\x00" * 32
-    return [(".mistral.ai", "parent", "", junk, "/", FAR),
+    return [("mistral.ai", "apex", "", junk, "/", FAR),  # host-only: not sent to admin.
             ("chat.mistral.ai", "chat", "", junk, "/", FAR),
+            ("auth.mistral.ai", "__Host-ory_kratos_browser", "", junk, "/", FAR),
+            ("console.mistral.ai", "csrftoken", "", junk, "/", FAR),
             ("admin.mistral.ai.example.com", "lookalike", "", junk, "/", FAR),
             ("x.admin.mistral.ai", "sub", "", junk, "/", FAR),
             ("google.com", "SID", "", junk, "/", FAR),
@@ -390,8 +393,8 @@ def firefox_db(path: Path, cookies: list[tuple], wal: bool = False):
 
 def firefox_rows(expiry=int(FAR)) -> list[tuple]:
     rows = [(host, *cookie.split("=", 1), "/", expiry, "")
-            for host, cookie in ((HOST, SESSION), (f".{HOST}", CSRF))]
-    return rows + [(".mistral.ai", "parent", "p", "/", expiry, ""),
+            for host, cookie in ((".mistral.ai", SESSION), (f".{HOST}", CSRF))]
+    return rows + [("mistral.ai", "apex", "a", "/", expiry, ""),
                    ("chat.mistral.ai", "chat", "c", "/", expiry, ""),
                    (HOST, "container", "k", "/", expiry, "^userContextId=2")]
 
