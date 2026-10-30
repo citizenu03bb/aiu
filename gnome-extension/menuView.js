@@ -48,12 +48,16 @@ function progressBar(frac, colorClass) {
     });
     track.add_child(fill);
     const clamped = Math.max(0, Math.min(1, frac));
+    // Only once the track is on screen: reading the width of an actor that is
+    // not in the stage logs "st_widget_get_theme_node called on … not in the stage".
     const sync = () => {
+        if (!track.get_stage()) {
+            return;
+        }
         const w = Math.round(track.width * clamped);
         fill.width = clamped > 0 ? Math.max(3, w) : 0;
     };
     track.connect('notify::width', sync);
-    sync();
     return track;
 }
 
