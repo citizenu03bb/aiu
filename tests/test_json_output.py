@@ -1,13 +1,15 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """`aiu --json` prints what it printed before the split into a package (ROADMAP
-wave 7, task O), plus the `"schema": 1` line of task P: every probe answers
+wave 7, task O), plus the fields added since (since_main): every probe answers
 from recorded replies, the clock is frozen, and the output is compared with a
 fixture and, where git history has it, with the last single-file aiu.py (MAIN)
 run side by side. No network.
 
-MAIN printed no schema: the fixtures hold its output with `"schema": 1` added
-as the first key (with_schema), and the side-by-side test compares the package
-with MAIN's output plus that same line, so any other difference still fails.
+MAIN printed no schema and no `early_pace`: the fixtures hold its output with
+`"schema": 1` added as the first key (task P) and `"early_pace": false` after
+each lot's `pace_from_history` (wave 7, task Q: no lot here is young enough to
+be true), and the side-by-side test compares the package with MAIN's output
+plus those same lines (since_main), so any other difference still fails.
 
 tests/fixtures/snapshot.json is the contract with the GNOME extension
 (docs/json-schema.md): the package's output when most providers answer and two
@@ -19,6 +21,7 @@ To record the fixtures again (MAIN's output plus the schema, and snapshot.json):
 import importlib.util
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -169,10 +172,12 @@ def frozen(monkeypatch):
     time.tzset()
 
 
-def with_schema(out: str) -> str:
-    """MAIN's output with the one line task P adds: `"schema": 1` as the first key."""
-    assert out.startswith("{\n") and '"schema"' not in out
-    return out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
+def since_main(out: str) -> str:
+    """MAIN's output with the lines added since: `"schema": 1` as the first key
+    (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q)."""
+    assert out.startswith("{\n") and '"schema"' not in out and '"early_pace"' not in out
+    out = out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
+    return re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
 
 
 def run(monkeypatch, capsys, home, tmp_path, main, local_quota):
@@ -227,7 +232,7 @@ def test_json_matches_the_recorded_output(monkeypatch, capsys, home, http, tmp_p
         _, recorded, _ = run(monkeypatch, capsys, home, tmp_path, old.main,
                              (old, "_query_local_quota_summary"))
         fixture.parent.mkdir(exist_ok=True)
-        fixture.write_text(with_schema(recorded))
+        fixture.write_text(since_main(recorded))
     assert code == 0 and err == ""
     assert out == fixture.read_text()
     snap = json.loads(out)
@@ -246,7 +251,7 @@ def test_json_matches_main_side_by_side(monkeypatch, capsys, home, http, tmp_pat
     before = run(monkeypatch, capsys, home, tmp_path, old.main, (old, "_query_local_quota_summary"))
     after = run_package(monkeypatch, capsys, home, tmp_path)
     code, out, err = before
-    assert after == (code, with_schema(out), err)
+    assert after == (code, since_main(out), err)
 
 
 def test_snapshot_fixture_is_current(monkeypatch, capsys, home, http, tmp_path, frozen):

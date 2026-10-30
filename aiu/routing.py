@@ -25,6 +25,10 @@ PROVIDER_HINTS = {
 # projected to be left at reset if you keep the pace of the current period.
 RATE_WINDOW_MAX = 6 * 3600   # windows this short are rate limits (5h); longer = volume budgets
 PACE_MIN_FRAC = 0.10         # trust a window's pace once 10% of it has elapsed
+# ...but before that, with no history, a pace this many times the sustainable one
+# (used >= ratio x elapsed fraction) with at least this much used means "runs dry".
+EARLY_FAST_RATIO = 2.0
+EARLY_FAST_MIN_USED = 0.05
 ON_TRACK_BAND = 0.05         # projected leftover within ±5% of the cap counts as on track
 
 
@@ -62,24 +66,30 @@ def _project(r: Row, now: float, hist: list[dict] | None = None) -> dict | None:
     Under PACE_MIN_FRAC elapsed that pace is noise, so the history fills in: the
     first PACE_MIN_FRAC of the window is assumed to hold what is used so far plus
     the past windows' pace for the rest of it. That blend slides from the history
-    alone at the reset to the window's own pace at PACE_MIN_FRAC."""
+    alone at the reset to the window's own pace at PACE_MIN_FRAC.
+    With no history, a young window gets no pace (None) unless it is clearly
+    running dry: used >= EARLY_FAST_RATIO x the elapsed fraction and >=
+    EARLY_FAST_MIN_USED. It is then projected at its own pace, flagged "early";
+    at that pace it runs at least a whole cap short, so it always conserves."""
     if r.used is None or not r.reset_epoch or not r.window_secs:
         return None
     ttr = r.reset_epoch - now
     elapsed = r.window_secs - ttr
     if ttr <= 0:
         return None
-    from_history = elapsed < PACE_MIN_FRAC * r.window_secs
-    if from_history:
-        past = _history_pace(r, hist)
-        if past is None:
-            return None
+    young = elapsed < PACE_MIN_FRAC * r.window_secs
+    past = _history_pace(r, hist) if young else None
+    if past is not None:
         head = PACE_MIN_FRAC * r.window_secs
         pace = (r.used + past * (head - max(elapsed, 0))) / head
+    elif young and not (elapsed > 0 and r.used >= EARLY_FAST_MIN_USED
+                        and r.used >= EARLY_FAST_RATIO * elapsed / r.window_secs):
+        return None                            # slow early use proves nothing
     else:
         pace = r.used / elapsed                # fraction of the cap per second
     left = 1.0 - r.used
-    return {"r": r, "ttr": ttr, "pace": pace, "left": left, "history": from_history,
+    return {"r": r, "ttr": ttr, "pace": pace, "left": left,
+            "history": past is not None, "early": young and past is None,
             "leftover": left - pace * ttr,     # > 0: expires unused ; < 0: runs dry first
             "runway": left / pace if pace else float("inf")}
 
@@ -87,7 +97,8 @@ def _project(r: Row, now: float, hist: list[dict] | None = None) -> dict | None:
 def _lots(rows: list[Row], now: float, hist: list[dict] | None = None) -> list[dict]:
     """One routing lot per subscription (its volume windows) and per promo credit.
     status: burn (surplus expires unused) | ? (pace unknown) | on_track | conserve (runs dry).
-    hist: past readings (load_history), for windows too young to have their own pace."""
+    hist: past readings (load_history), for windows too young to have their own pace;
+    without it a young window used fast already is conserve ("early", see _project)."""
     lots, quotas = [], {}
     for r in rows:
         if r.kind == "quota" and r.used is not None and r.metric != "Extra Usage":
@@ -146,6 +157,9 @@ def _lots(rows: list[Row], now: float, hist: list[dict] | None = None) -> list[d
         lot["history"] = lot["status"] != "?" and any(q["history"] for q in known)
         if lot["history"]:
             lot["what"] += tr(" (pace from past windows)")
+        lot["early"] = lot["status"] != "?" and any(q["early"] for q in known)
+        if lot["early"]:
+            lot["what"] += tr(" (early, fast pace)")
         # Short windows only gate availability; flag them when they'd run dry first.
         for r in rs:
             if r in vol:
@@ -175,6 +189,8 @@ def route_order(rows: list[Row], now: float | None = None,
              "runway_secs": round(l["runway"]) if "runway" in l else None,
              # the pace of a window that just reset, borrowed from the ones before it
              "pace_from_history": l.get("history", False),
+             # a young window with no history, already used fast enough to run dry
+             "early_pace": l.get("early", False),
              "detail": l["what"]} for l in lots]
 
 

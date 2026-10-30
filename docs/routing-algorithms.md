@@ -85,8 +85,10 @@ idea when they put the milk that expires soonest at the front of the shelf.
 - For the first 10% of a window (about 17 h of a week) the window's own
   pace is not trusted. `aiu` then borrows the pace of the windows before it
   from a small history file (see [Usage history](#usage-history) below), and
-  says so: "(pace from past windows)". With no history yet, the subscription
-  is shown as "unknown pace" and falls back to plain earliest-reset-first.
+  says so: "(pace from past windows)". With no history yet, a window already
+  used fast is flagged **conserve** (see [Early, fast pace](#early-fast-pace)
+  below); otherwise the subscription is shown as "unknown pace" and falls
+  back to plain earliest-reset-first.
 - It assumes the 5-hour windows rarely block you. When one is about to run
   out, the output says so.
 - Task fit stays your call. The ranking says where to send work a
@@ -214,6 +216,38 @@ two runs racing lose at most one reading, which the next run writes again.
 without running it, the "previous" window is older, and a reading taken early
 in a window describes only its start. It still ignores weekday swings within
 a window.
+
+## Early, fast pace
+
+Without history, a young window's own pace is too noisy to say "burn": 3% in
+the first hours proves nothing about what will be left on reset day. Using
+quota fast early is different: the Claude week seen on 31 October 2026 was at
+12% used after 3.3% of the window, about 3.6 times the pace that would last
+the week. That is running dry whatever the next days look like, and "unknown
+pace" hid it.
+
+**The rule.** Under 10% of a window, with no usable history, the window is
+**conserve** when both hold:
+
+- used ≥ 2 × the fraction of the window that has passed
+  (`EARLY_FAST_RATIO`), and
+- used ≥ 5% of the cap (`EARLY_FAST_MIN_USED`), so a few requests in the
+  first minutes are not enough.
+
+Both bounds count: exactly 5% used after exactly 2.5% of the window is
+conserve; 4.99% after 2.5% is not (under 5%), nor is 5% after 2.6% (under
+twice the pace). Anything slower stays "unknown pace".
+When the history gives a pace, it keeps priority exactly as before: the rule
+applies only where `aiu` would otherwise have no pace at all.
+
+**What is projected.** The window's own pace (used ÷ time passed), as from
+the 10% mark on. At twice the sustainable pace that projects at least a whole
+cap short at the reset, so the lot is always conserve, and its runway ("runs
+dry in ~…") and gap come from the same pace. The advice adds "(early, fast
+pace)" to that line, `--json` sets `"early_pace": true` on the lot, and
+`aiu --alert` warns that the window runs dry, with the same marker. The
+5-hour windows go through the same projection, so the "runs out in ~…"
+note on a subscription can now appear in the first half hour of one.
 
 ### Possible next steps
 

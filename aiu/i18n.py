@@ -76,6 +76,7 @@ FR = {
     "{metric} {left}% free, reset in {ttr} — on track":
         "{metric} {left}% libre, reset dans {ttr} — au rythme",
     " (pace from past windows)": " (allure tirée des fenêtres passées)",
+    " (early, fast pace)": " (début de fenêtre, allure rapide)",
     "; {metric} runs out in ~{runway}": " ; {metric} épuisé dans ~{runway}",
     "\n[bold]Routing advice[/bold] — earliest-expiring capacity first "
     "(surplus projected at your current pace):\n":
