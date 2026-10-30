@@ -2,7 +2,8 @@
 
 Review of `aiu.py`, `consult.py` and `gnome-extension/` at commit `875a8d3`,
 before the project is announced (ROADMAP wave 1, task C). Line numbers refer
-to that commit.
+to that commit; the findings below are kept as written then. Where each one
+stands in v0.1.0, and which function holds the fix today, is in **Status**.
 
 **Method.** I read the code only. I made no calls to providers and used no real
 credentials. Three behaviours were checked locally with fake values:
@@ -15,6 +16,28 @@ credentials. Three behaviours were checked locally with fake values:
 the GNOME extension expose or run, and injection and path issues in all of
 these. Fixes are out of scope here. They belong to the follow-up wave, one PR
 per coherent group, in severity order.
+
+## Status in v0.1.0
+
+Every finding was addressed in ROADMAP wave 2 (#6 to #12). Two leave a
+documented residual risk.
+
+| ID | Status | Fixed in | Where now |
+|----|--------|----------|-----------|
+| H1 | Fixed | #7 | `_query_local_quota_summary`: only sockets of a user-owned Antigravity `language_server`, its own CSRF token, no port spray, no `verify=False` |
+| M1 | Fixed | #8, #9 | `resolve_key` keeps the first line and refuses control characters; probes write their own words into notes and `collect` redacts token-like text (`_redact`) |
+| M2 | Fixed | #6 | `_gemini_persist`: `flock`, temp file 0600, `fsync`, `os.replace`; nothing written if the refresh token changed meanwhile |
+| M3 | Fixed | #7 | `render_html` escapes every value and sets `default-src 'none'` |
+| L1 | Fixed | #8, #12 | `load_config` drops every `key_cmd` when the config or its directory is someone else's or writable by others (group write is accepted for the user's private group: `_writable_by_others`) |
+| L2 | Fixed | #8, #11 | `load_env_file` reads only the names the config uses, parses like a shell, warns on a readable file, and exports nothing. A launcher that sources `~/.env` (as older installs did) undoes this: run `aiu.py` directly |
+| L3 | Documented | #8 | The cookie still lives in `~/.env` or a keyring; the README *Secrets* section says it is a full console session and recommends `key_cmd` with `secret-tool` |
+| L4 | Fixed, one residual | #10, #12 | `_refresh_claude_token` runs `claude` only from known locations or `claude_cmd`, never one others can write, and backs off for an hour after a failure. A race with an interactive `claude` over the same refresh token is not addressed |
+| L5 | Fixed | #10 | `AiuClient` kills `aiu` on cancel and disable, with a 120 s watchdog |
+| L6 | Fixed, one residual | #10 | `consult` feeds `codex` and `pi` on stdin; `agy` has no documented stdin mode and still gets the prompt as the value of `-p` |
+
+The two bugs found outside the security scope (the `--config` parent
+directory, inline comments in `~/.env`) were fixed in #8. I3 was updated in
+#14 for the translated terminal prompt.
 
 ## Summary
 
@@ -438,6 +461,8 @@ but H1 also reaches non-user listeners (containers, other services) and
 accepts forged replies, so it stays a finding.
 
 ## Suggested order of fixes
+
+Followed in ROADMAP wave 2: E (1), F and H (2), G (3), H (4), I (5).
 
 1. H1 and M3 together: query only verified local ports, and escape the HTML.
 2. M1 with the `resolve_key` part of L2: keep the first line of a key, stop

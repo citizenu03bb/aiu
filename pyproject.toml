@@ -8,7 +8,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "aiu"
-version = "0.1.0"
+dynamic = ["version"]
 description = "One local snapshot of every AI subscription/quota you pay for, with routing advice"
 readme = "README.md"
 license = "GPL-3.0-or-later"
@@ -28,3 +28,6 @@ consult = "consult:main"
 
 [tool.setuptools]
 py-modules = ["aiu", "consult"]
+
+[tool.setuptools.dynamic]
+version = {attr = "aiu.__version__"}
