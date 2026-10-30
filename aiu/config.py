@@ -89,7 +89,9 @@ key_env = "MISTRAL_ADMIN_COOKIE"
 # can't be polled as a simple number without local token accounting.
 
 # Gemini (Antigravity / Google One AI Pro) -> subscription quota, read from the
-# Antigravity desktop app while it is open. No key needed.
+# Antigravity desktop app while it is open (closed: the row says to open it).
+# No key needed. aiu does not use the Gemini CLI's sign-in: Google's terms
+# forbid other programs from piggybacking on it.
 [gemini]
 enabled = false
 """
@@ -164,7 +166,9 @@ key_env = "MISTRAL_ADMIN_COOKIE"
 # de bord seulement), donc impossible de le relever sans compter les jetons soi-même.
 
 # Gemini (Antigravity / Google One AI Pro) -> quota d'abonnement, lu dans
-# l'application de bureau Antigravity tant qu'elle est ouverte. Pas de clé.
+# l'application de bureau Antigravity tant qu'elle est ouverte (fermée : la
+# ligne dit de l'ouvrir). Pas de clé. aiu n'utilise pas la connexion du Gemini
+# CLI : les conditions de Google interdisent aux autres programmes de s'en servir.
 [gemini]
 enabled = false
 """

@@ -70,7 +70,7 @@
       "limit": null,
       "unit": "",
       "reset": null,
-      "note": "Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback \u2014 open Antigravity to read the quota",
+      "note": "Antigravity desktop app not running \u2014 open it to read the Gemini quota",
       "reset_epoch": null,
       "window_secs": null
     },

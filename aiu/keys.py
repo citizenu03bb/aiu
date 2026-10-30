@@ -53,7 +53,7 @@ def resolve_key(cfg: dict, name: str) -> str | None:
 
 
 _ENV_LINE_RE = re.compile(r"\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*=(.*)")
-_ENV_ALWAYS = ("MISTRAL_ADMIN_COOKIE", "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET")
+_ENV_ALWAYS = ("MISTRAL_ADMIN_COOKIE",)
 
 
 def _env_value(v: str) -> str | None:
@@ -87,8 +87,7 @@ def _env_value(v: str) -> str | None:
 
 def load_env_file(config: dict) -> dict[str, str]:
     """Read from ~/.env (override with AIU_ENV_FILE) only the names the config
-    refers to: each `key_env`, the Mistral cookie and the Gemini CLI OAuth
-    client. Returns them; the caller puts them in ENV_FILE, not os.environ."""
+    refers to: each `key_env` and the Mistral cookie. Returns them; the caller puts them in ENV_FILE, not os.environ."""
     path = Path(os.path.expanduser(os.environ.get("AIU_ENV_FILE", "~/.env")))
     if not path.is_file():
         return {}

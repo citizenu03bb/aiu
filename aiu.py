@@ -23,8 +23,7 @@ Sources (each is a pluggable probe):
   - deepseek   : remaining balance via /user/balance.
   - openrouter : total spend + remaining credits.
   - gemini     : Gemini 5h / weekly quota from the Antigravity desktop app's local
-                 server while it runs; else Gemini CLI OAuth (~/.gemini/oauth_creds.json),
-                 which Google now refuses for individual accounts.
+                 server while it runs (nothing else: open Antigravity to read it).
   - mistral    : monthly Vibe Code + API allowances (€ spent / € included), via
                  the admin console's tRPC API; needs the browser session cookie.
 

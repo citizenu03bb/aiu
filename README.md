@@ -187,8 +187,7 @@ and the warning does not quote it.
 
 **`~/.env`** (override with `AIU_ENV_FILE=/path`) is read by `aiu` itself. It
 takes only the names the config refers to (each `key_env`, plus
-`MISTRAL_ADMIN_COOKIE`, `GEMINI_CLIENT_ID` and `GEMINI_CLIENT_SECRET`) and
-ignores every other line, so a `HTTPS_PROXY` or `LD_PRELOAD` meant for another
+`MISTRAL_ADMIN_COOKIE`) and ignores every other line, so a `HTTPS_PROXY` or `LD_PRELOAD` meant for another
 tool changes nothing. Variables already in your environment win. The keys are
 kept inside `aiu`, not exported, so `key_cmd` and the other commands `aiu` runs
 don't see them.
@@ -402,27 +401,33 @@ and no BigQuery needed.
 enabled = true
 ```
 
-**Main source: the Antigravity desktop app, while it is open.** It runs a
-local language server on 127.0.0.1; `aiu` finds it in `/proc`, takes the CSRF
-token from its command line (or `~/.config/Antigravity/logs/main.log`) and asks
-it for the quota summary: 5-hour and weekly windows. When the app is closed,
-the row says so.
+**The only source: the Antigravity desktop app, while it is open.** It runs
+a local language server on 127.0.0.1; `aiu` finds it in `/proc` (only your own
+Antigravity process and its loopback ports), takes the CSRF token from its
+command line (or `~/.config/Antigravity/logs/main.log`) and asks it for the
+quota summary: 5-hour and weekly windows. When the app is closed, the row says
+to open it, and `aiu` makes no network call for Gemini.
 
 **The `agy` CLI can't stand in for it** (checked Oct 2026). It keeps its login
 in the system keyring, not in `~/.gemini/oauth_creds.json`. It also runs its
 own local server, but that server's CSRF token never leaves the process's
 memory.
 
-**Fallback: Gemini CLI OAuth, now refused for individual accounts.** If
-`~/.gemini/oauth_creds.json` exists, `aiu` queries Code Assist
-(`cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`) per model family,
-refreshing the hourly access token itself and writing it back. Refreshing needs
-the Gemini CLI's public OAuth client, which `aiu` does not ship: it reads it
-from the installed `gemini` CLI bundle, or from `GEMINI_CLIENT_ID` /
-`GEMINI_CLIENT_SECRET` in your env file. Since Oct 2026 Google answers
-`UNSUPPORTED_CLIENT` ("migrate to Antigravity") for "Gemini Code Assist for
-individuals", and the row says so. Paid Code Assist tiers may still work this
-way; that is untested.
+**No more Gemini CLI fallback (wave 8, task S).** Up to v0.5.0, with
+Antigravity closed, `aiu` read `~/.gemini/oauth_creds.json`, refreshed that
+token with the Gemini CLI's OAuth client and asked Code Assist
+(`cloudcode-pa.googleapis.com`) for the quota. The
+[Gemini CLI FAQ](https://geminicli.com/docs/resources/faq) calls third-party
+software that piggybacks on the Gemini CLI's OAuth sign-in a "direct
+violation" of Google's terms that "may be grounds for immediate suspension",
+so that path is gone. `aiu` no longer reads or rewrites
+`~/.gemini/oauth_creds.json`, no longer looks for the Gemini CLI's OAuth
+client, and ignores `GEMINI_CLIENT_ID` / `GEMINI_CLIENT_SECRET` (you can delete
+them from `~/.env`). **If you relied on that fallback**, your Gemini row now
+says "Antigravity desktop app not running — open it to read the Gemini quota"
+until you open Antigravity. Signing in with OAuth on a Google Cloud project of
+your own would not help: it reaches the Gemini API's per-project quotas, not
+the Google AI plan used through Antigravity.
 
 *(If instead you pay for the Gemini **API** per token, that cost lives only in
 Cloud Billing and would need a BigQuery export — not implemented here, since the
@@ -448,13 +453,12 @@ project is not affiliated with Anthropic, OpenAI or Google:
   calls nothing;
 - `codex`: `chatgpt.com/backend-api/wham/usage`;
 - `gemini`: the Antigravity desktop language server's `RetrieveUserQuotaSummary`
-  on 127.0.0.1, else Code Assist's `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`.
+  on 127.0.0.1, and nothing else.
 
 Tokens and keys are read locally at run time and only ever sent to the
 provider they belong to. `aiu` stores no secret (except in the keyring, when
 you run `aiu cookie import` or `aiu login`), has no telemetry, and makes
-no other network call. The `gemini` probe refreshes its access token and
-writes it back to `~/.gemini/oauth_creds.json`, like the Gemini CLI does.
+no other network call. No probe writes to another program's files.
 
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.

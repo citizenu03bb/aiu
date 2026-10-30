@@ -41,9 +41,9 @@ function runContract(client) {
         ['claude', 'Weekly Sonnet', 5, '', 'in 2d23h'],
         ['codex', '5-Hour Limit', 20, 'plus', 'in 50m'],
         ['codex', 'Weekly Limit', 90, '', 'in 4d23h'],
-        ['gemini', 'Gemini Pro', 25, 'Gemini Code Assist', 'in 19h50m'],
-        ['gemini', 'Gemini Flash', 10, '', 'in 19h50m'],
-        ['gemini', 'Gemini Flash Lite', 0, '', 'in 19h50m'],
+        ['gemini', '5-Hour Limit', 25, '', 'in 1h50m'],
+        ['gemini', 'Weekly Limit', 2, '', 'in 6d19h'],
+        ['gemini', 'Image generation', 0, '', null],
     ], 'contract: quotas');
     // The bars show used_pct; `used` is only the fallback for a row without it.
     const pctOnly = client._processData({ ...raw, rows: raw.rows.map(r => ({ ...r, used: null })) });
@@ -61,13 +61,13 @@ function runContract(client) {
         ['mistral', 'session rejected (307) — copy a fresh Cookie header from admin.mistral.ai'],
     ], 'contract: errors');
     assertEqual(data.routing.map(l => [l.provider, l.metric, l.status, l.ttr_secs, l.leftover, l.runway_secs]), [
-        ['gemini', 'Gemini Pro', '?', 72000, null, null],
         ['claude', 'Weekly (all models)', 'burn', 259200, 0.3, null],
+        ['gemini', 'Weekly Limit', '?', 590400, null, null],
         ['claude', 'Cloud Credit', 'burn', 864000, null, null],
         ['codex', 'Weekly Limit', 'conserve', 432000, -2.15, 19200],
     ], 'contract: advice lots');
     assertEqual([data.statusColor, data.worstQuotaPct, needsSetup(data)], ['critical', 90, false], 'contract: status');
-    assertEqual(data.advice, '💡 Burn Gemini first\nGemini Pro: reset in 20h00m (unknown pace)\nConserve: Codex',
+    assertEqual(data.advice, '💡 Burn Claude first\nWeekly (all models): ~30% lost at reset in 3d0h\nConserve: Codex',
         'contract: advice');
 
     // An aiu older than the schema field prints none: that is schema 1.

@@ -2,7 +2,8 @@
 """Interface language: English, or French when AIU_LANG (else the locale) says
 so. Messages are written in English and looked up in FR by their exact text.
 Probe notes, metric names and --json keys stay English: they are data, and
-some (a credit's "locked: ..." note) are matched on."""
+some (a credit's "locked: ..." note) are matched on. The exception is a note
+that only tells the user what to do, like Gemini's "open Antigravity"."""
 from __future__ import annotations
 
 import os
@@ -32,12 +33,6 @@ FR = {
         "aiu : claude_cmd {path} n'est pas un fichier exécutable",
     "aiu: not running {path}: writable by other users":
         "aiu : {path} non lancé : d'autres utilisateurs peuvent l'écrire",
-    "[aiu] gemini: refreshed token kept for this run only, {path} left as is: {reason}":
-        "[aiu] gemini : jeton rafraîchi gardé pour cette exécution seulement, "
-        "{path} laissé tel quel : {reason}",
-    "not owned by you": "il ne t'appartient pas",
-    "not a JSON object": "ce n'est pas un objet JSON",
-    "signed in again meanwhile": "nouvelle connexion entre-temps",
     "[aiu] {path}:{line}: {name} has unmatched quotes, ignored ({file} values must fit on one line)":
         "[aiu] {path}:{line} : guillemets non appariés pour {name}, ignoré "
         "(une valeur de {file} doit tenir sur une seule ligne)",
@@ -56,6 +51,9 @@ FR = {
     "Usage": "Utilisation",
     "Resets / note": "Reset / note",
     "{used}/{limit} {unit} left": "{used}/{limit} {unit} restants",
+    # probe notes that only tell the user what to do
+    "Antigravity desktop app not running — open it to read the Gemini quota":
+        "application de bureau Antigravity fermée — ouvre-la pour lire le quota Gemini",
     # --advise
     "deep reasoning / agentic": "raisonnement profond / agentique",
     "volume / throwaway tasks (Flash)": "volume / tâches jetables (Flash)",
