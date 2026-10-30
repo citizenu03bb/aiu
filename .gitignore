@@ -8,3 +8,8 @@ __pycache__/
 .pytest_cache/
 # packed extension
 *.shell-extension.zip
+# Python packaging and uv run from the repo root
+*.egg-info/
+build/
+dist/
+uv.lock

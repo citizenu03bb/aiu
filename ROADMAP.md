@@ -67,6 +67,9 @@ Ground rules for every task:
 - CLI: `--advise` and `--alert` messages, error notes, the starter config.
 - GNOME extension: gettext with `fr` translations; labels, badges, advice.
 - Docs in English, with the French UI mentioned as an option.
+- Refresh the README "Development" section and the extension's Make
+  command list after B: `make test` needs only gjs, `make test-live` needs
+  `aiu`, and `pack` and `clean` are new.
 
 **Why after wave 1:** it touches strings in almost every file, so it would
 conflict with A, B and C, and A's tests guard it against regressions.
@@ -85,5 +88,7 @@ severity, one PR per coherent group.
   can be estimated right after a reset, when the current window has less than
   10% elapsed and is shown as "unknown pace" (SPARE's main idea in
   docs/routing-algorithms.md).
+- **Versioning.** Tie the `pyproject.toml` version and the extension's
+  `metadata.json` version to the release tag.
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
   starts to matter which kind of work gets the spare quota.
