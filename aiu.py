@@ -232,30 +232,33 @@ def probe_claude(cfg: dict) -> list[Row]:
     try:
         r = httpx.get(ANTHROPIC_USAGE_URL, headers=headers, timeout=30)
     except Exception as e:
-        return [Row("claude", "—", "error", note=f"{warn}network: {e}")]
+        return [Row("claude", "—", "error", note=warn + _network_note(e))]
     if r.status_code in (401, 403):
         return [Row("claude", "—", "error",
                     note=f"{warn}auth rejected ({r.status_code}) — run `claude` to refresh")]
     if r.status_code != 200:
         return [Row("claude", "—", "error", note=f"{warn}HTTP {r.status_code}")]
-    data = r.json()
     rows: list[Row] = []
-    for key, label in CLAUDE_QUOTA_LABELS.items():
-        entry = data.get(key)
-        if not entry or entry.get("utilization") is None:
-            continue
-        if entry.get("is_enabled") is False:
-            continue
-        reset = entry.get("resets_at")
-        reset_h = _humanize_reset(reset) if reset else None
-        # API reports utilization already as a 0-100 percentage (Claude console
-        # "1% used" == API value 1.0). Store as a 0-1 fraction internally.
-        rows.append(Row("claude", label, "quota",
-                        used=float(entry["utilization"]) / 100.0, limit=1.0, unit="%",
-                        reset=reset_h, note=warn.strip(),
-                        reset_epoch=_iso_epoch(reset) if reset else None,
-                        window_secs=CLAUDE_WINDOW.get(key)))
-    rows.extend(_claude_credits(data, warn))
+    try:
+        data = _json_object(r)
+        for key, label in CLAUDE_QUOTA_LABELS.items():
+            entry = data.get(key)
+            if not entry or entry.get("utilization") is None:
+                continue
+            if entry.get("is_enabled") is False:
+                continue
+            reset = entry.get("resets_at")
+            reset_h = _humanize_reset(reset) if reset else None
+            # API reports utilization already as a 0-100 percentage (Claude console
+            # "1% used" == API value 1.0). Store as a 0-1 fraction internally.
+            rows.append(Row("claude", label, "quota",
+                            used=float(entry["utilization"]) / 100.0, limit=1.0, unit="%",
+                            reset=reset_h, note=warn.strip(),
+                            reset_epoch=_iso_epoch(reset) if reset else None,
+                            window_secs=CLAUDE_WINDOW.get(key)))
+        rows.extend(_claude_credits(data, warn))
+    except Exception as e:
+        return [Row("claude", "—", "error", note=warn + _malformed_note(e))]
     if not rows:
         rows.append(Row("claude", "—", "quota", note=f"{warn}no active quotas reported"))
     return rows
@@ -271,13 +274,18 @@ def _claude_credits(data: dict, warn: str) -> list[Row]:
     for key, entry in data.items():
         if not isinstance(entry, dict) or entry.get("limit_dollars") is None:
             continue
+        label = CLAUDE_CREDIT_LABELS.get(key, f"Credit ({key})")
         limit = float(entry["limit_dollars"])
         left = entry.get("remaining_dollars")
-        if left is None:
-            left = limit - float(entry.get("used_dollars") or 0)
+        if left is None and entry.get("used_dollars") is not None:
+            left = limit - float(entry["used_dollars"])
+        if left is None:  # unknown spend: never assume the grant is untouched
+            rows.append(Row("claude", label, "error",
+                            note=warn + "malformed response: no `remaining_dollars` or `used_dollars`"))
+            continue
         reset = entry.get("resets_at")
         note = warn + (f"locked: {entry['locked_reason']}" if entry.get("locked_reason") else "")
-        rows.append(Row("claude", CLAUDE_CREDIT_LABELS.get(key, f"Credit ({key})"), "credit",
+        rows.append(Row("claude", label, "credit",
                         used=round(float(left), 2), limit=limit, unit="USD",
                         reset=f"expires {_humanize_reset(reset)}" if reset else None,
                         note=note.strip(),
@@ -318,32 +326,39 @@ def probe_codex(cfg: dict) -> list[Row]:
     try:
         r = httpx.get(CODEX_USAGE_URL, headers=headers, timeout=15)
     except Exception as e:
-        return [Row("codex", "—", "error", note=f"network: {e}")]
+        return [Row("codex", "—", "error", note=_network_note(e))]
     if r.status_code in (401, 403):
         return [Row("codex", "—", "error",
                     note=f"auth rejected ({r.status_code}) — run `codex` to refresh")]
     if r.status_code != 200:
         return [Row("codex", "—", "error", note=f"HTTP {r.status_code}")]
-    data = r.json()
-    plan = data.get("plan_type", "")
-    rl = data.get("rate_limit", {}) or {}
     rows: list[Row] = []
-    for key, win in (("primary_window", rl.get("primary_window")),
-                     ("secondary_window", rl.get("secondary_window"))):
-        if not win or win.get("used_percent") is None:
-            continue
-        secs = win.get("limit_window_seconds") or 0
-        label = "5-Hour Limit" if secs and secs <= 6 * 3600 else \
-                "Weekly Limit" if secs else key
-        rows.append(Row("codex", label, "quota",
-                        used=float(win["used_percent"]) / 100.0, limit=1.0, unit="%",
-                        reset=_humanize_reset_unix(win.get("reset_at")),
-                        note=plan if not rows else "",
-                        reset_epoch=float(win["reset_at"]) if win.get("reset_at") else None,
-                        window_secs=int(secs) or None))
-    credits = (data.get("credits") or {}).get("balance")
-    if isinstance(credits, (int, float)):
-        rows.append(Row("codex", "Credits", "balance", used=round(float(credits), 2), unit="USD"))
+    try:
+        data = _json_object(r)
+        plan = data.get("plan_type", "")
+        rl = data.get("rate_limit", {}) or {}
+        for key, win in (("primary_window", rl.get("primary_window")),
+                         ("secondary_window", rl.get("secondary_window"))):
+            if not win or win.get("used_percent") is None:
+                continue
+            secs = win.get("limit_window_seconds") or 0
+            label = "5-Hour Limit" if secs and secs <= 6 * 3600 else \
+                    "Weekly Limit" if secs else key
+            rows.append(Row("codex", label, "quota",
+                            used=float(win["used_percent"]) / 100.0, limit=1.0, unit="%",
+                            reset=_humanize_reset_unix(win.get("reset_at")),
+                            note=plan if not rows else "",
+                            reset_epoch=float(win["reset_at"]) if win.get("reset_at") else None,
+                            window_secs=int(secs) or None))
+        # The Codex CLI decodes `balance` as a string ("9.99"); take a number too.
+        credits = (data.get("credits") or {}).get("balance")
+    except Exception as e:
+        return [Row("codex", "—", "error", note=_malformed_note(e))]
+    if isinstance(credits, (int, float, str)) and not isinstance(credits, bool) and credits != "":
+        try:
+            rows.append(Row("codex", "Credits", "balance", used=round(float(credits), 2), unit="USD"))
+        except ValueError:
+            rows.append(Row("codex", "Credits", "error", note="malformed response: `balance` is not a number"))
     if not rows:
         rows.append(Row("codex", "—", "quota", note=f"plan {plan}: no active windows"))
     return rows
@@ -392,34 +407,35 @@ def probe_openai(cfg: dict) -> list[Row]:
     if not key:
         return [Row("openai", "Spend (MTD)", "error", note="no admin key (set OPENAI_ADMIN_KEY)")]
     start = _month_start_epoch()
-    try:
-        total = 0.0
-        page = None
-        for _ in range(12):  # safety bound on pagination
-            params = {"start_time": start, "bucket_width": "1d", "limit": 31}
-            if page:
-                params["page"] = page
+    total = 0.0
+    page = None
+    for _ in range(12):  # safety bound on pagination
+        params = {"start_time": start, "bucket_width": "1d", "limit": 31}
+        if page:
+            params["page"] = page
+        try:
             r = httpx.get(
                 "https://api.openai.com/v1/organizations/costs",
                 headers={"Authorization": f"Bearer {key}"},
                 params=params, timeout=30,
             )
-            if r.status_code in (401, 403):
-                return [Row("openai", "Spend (MTD)", "error",
-                            note=f"auth rejected ({r.status_code}) — needs an ADMIN key")]
-            if r.status_code != 200:
-                return [Row("openai", "Spend (MTD)", "error", note=f"HTTP {r.status_code}")]
-            body = r.json()
-            for bucket in body.get("data", []):
-                for res in bucket.get("results", []):
-                    amt = res.get("amount", {})
-                    total += float(amt.get("value", 0) or 0)
-            if body.get("has_more") and body.get("next_page"):
-                page = body["next_page"]
-            else:
-                break
-    except Exception as e:
-        return [Row("openai", "Spend (MTD)", "error", note=f"network: {e}")]
+        except Exception as e:
+            return [Row("openai", "Spend (MTD)", "error", note=_network_note(e))]
+        if r.status_code in (401, 403):
+            return [Row("openai", "Spend (MTD)", "error",
+                        note=f"auth rejected ({r.status_code}) — needs an ADMIN key")]
+        if r.status_code != 200:
+            return [Row("openai", "Spend (MTD)", "error", note=f"HTTP {r.status_code}")]
+        try:
+            body = _json_object(r)
+            for bucket in _need(body, "data", list):
+                for res in _need(bucket, "results", list):
+                    total += float(_need(res, "amount", dict).get("value") or 0)
+            page = body.get("next_page") if body.get("has_more") else None
+        except Exception as e:
+            return [Row("openai", "Spend (MTD)", "error", note=_malformed_note(e))]
+        if not page:
+            break
     return [Row("openai", "Spend (MTD)", "spend", used=round(total, 2), unit="USD")]
 
 
@@ -436,20 +452,24 @@ def probe_deepseek(cfg: dict) -> list[Row]:
             headers={"Authorization": f"Bearer {key}"}, timeout=30,
         )
     except Exception as e:
-        return [Row("deepseek", "Balance", "error", note=f"network: {e}")]
+        return [Row("deepseek", "Balance", "error", note=_network_note(e))]
     if r.status_code in (401, 403):
         return [Row("deepseek", "Balance", "error", note=f"auth rejected ({r.status_code})")]
     if r.status_code != 200:
         return [Row("deepseek", "Balance", "error", note=f"HTTP {r.status_code}")]
-    data = r.json()
     rows = []
-    for info in data.get("balance_infos", []):
-        rows.append(Row(
-            "deepseek", f"Balance ({info.get('currency','?')})", "balance",
-            used=float(info.get("total_balance", 0) or 0),
-            unit=info.get("currency", ""),
-            note="" if data.get("is_available") else "account not available",
-        ))
+    try:
+        data = _json_object(r)
+        for info in _need(data, "balance_infos", list):
+            rows.append(Row(
+                "deepseek", f"Balance ({info.get('currency','?')})", "balance",
+                used=float(_need(info, "total_balance")),
+                unit=info.get("currency", ""),
+                # Only an explicit false: a dropped flag is no reason to alarm.
+                note="account not available" if data.get("is_available") is False else "",
+            ))
+    except Exception as e:
+        return [Row("deepseek", "Balance", "error", note=_malformed_note(e))]
     if not rows:
         rows.append(Row("deepseek", "Balance", "balance", note="no balance info returned"))
     return rows
@@ -468,14 +488,17 @@ def probe_openrouter(cfg: dict) -> list[Row]:
             headers={"Authorization": f"Bearer {key}"}, timeout=30,
         )
     except Exception as e:
-        return [Row("openrouter", "Credits", "error", note=f"network: {e}")]
+        return [Row("openrouter", "Credits", "error", note=_network_note(e))]
     if r.status_code in (401, 403):
         return [Row("openrouter", "Credits", "error", note=f"auth rejected ({r.status_code})")]
     if r.status_code != 200:
         return [Row("openrouter", "Credits", "error", note=f"HTTP {r.status_code}")]
-    d = r.json().get("data", {})
-    total = float(d.get("total_credits", 0) or 0)
-    used = float(d.get("total_usage", 0) or 0)
+    try:
+        d = _need(_json_object(r), "data", dict)
+        total = float(_need(d, "total_credits"))
+        used = float(_need(d, "total_usage"))
+    except Exception as e:
+        return [Row("openrouter", "Credits", "error", note=_malformed_note(e))]
     return [
         Row("openrouter", "Spend (total)", "spend", used=round(used, 2), unit="USD"),
         Row("openrouter", "Remaining", "balance", used=round(total - used, 2), unit="USD"),
@@ -836,7 +859,13 @@ def _mistral_trpc(proc: str, payload: dict, cookie: str) -> dict:
     if r.is_redirect or r.status_code in (401, 403):  # no session -> login redirect
         raise PermissionError(r.status_code)
     r.raise_for_status()
-    return r.json()["result"]["data"]["json"]
+    try:
+        data = _json_object(r)["result"]["data"]["json"]
+    except (KeyError, TypeError):
+        raise Malformed("not a tRPC result") from None
+    if not isinstance(data, dict):
+        raise Malformed("not a tRPC result")
+    return data
 
 
 def _mistral_spend(groups: list[dict], prices: list[dict]) -> tuple[dict[str, float], int]:
@@ -872,10 +901,17 @@ def probe_mistral(cfg: dict) -> list[Row]:
         prices = _mistral_trpc("usage.prices", {"json": {"workspaceId": None}}, cookie)
     except PermissionError as e:
         return [Row("mistral", "—", "error",
-                    note=f"session rejected ({e}) — copy a fresh Cookie header from admin.mistral.ai")]
+                    note=f"session rejected ({e.args[0]}) — copy a fresh Cookie header from admin.mistral.ai")]
+    except httpx.HTTPStatusError as e:
+        return [Row("mistral", "—", "error", note=f"HTTP {e.response.status_code}")]
+    except Malformed as e:
+        return [Row("mistral", "—", "error", note=_malformed_note(e))]
     except Exception as e:
-        return [Row("mistral", "—", "error", note=f"network: {e}")]
-    spend, unpriced = _mistral_spend(usage.get("groups") or [], prices.get("prices") or [])
+        return [Row("mistral", "—", "error", note=_network_note(e))]
+    try:
+        spend, unpriced = _mistral_spend(usage.get("groups") or [], prices.get("prices") or [])
+    except Exception as e:
+        return [Row("mistral", "—", "error", note=_malformed_note(e))]
     warn = (f" ; {unpriced} unpriced group(s)" if unpriced else "") + \
            (" ; partial (more pages)" if (usage.get("metadata") or {}).get("hasMore") else "")
     rows = []
@@ -890,6 +926,62 @@ def probe_mistral(cfg: dict) -> list[Row]:
                         reset_epoch=reset.timestamp(),
                         window_secs=int((reset - start).total_seconds())))
     return rows
+
+
+# ---------------------------------------------------------------------------
+# Probe errors. A note never quotes an exception: httpx puts the offending
+# header value, key included, into its message. Notes say what failed in our
+# own words, and collect() redacts anything token-like that still gets in.
+# ---------------------------------------------------------------------------
+class Malformed(ValueError):
+    """A 200 whose body is not the shape the probe reads. The message is a
+    fixed text of ours, so it can go into a note."""
+
+
+def _json_object(r: httpx.Response) -> dict:
+    try:
+        data = r.json()
+    except ValueError:
+        raise Malformed("not JSON") from None
+    if not isinstance(data, dict):
+        raise Malformed("not a JSON object")
+    return data
+
+
+def _need(d, key: str, kind: type | tuple[type, ...] = (int, float, str)):
+    """d[key], present and of `kind`: a renamed field is an error, never a zero."""
+    v = d.get(key) if isinstance(d, dict) else None
+    if not isinstance(v, kind) or isinstance(v, bool):
+        raise Malformed(f"no `{key}`")
+    return v
+
+
+def _network_note(e: Exception) -> str:
+    if isinstance(e, httpx.LocalProtocolError):  # e.g. a key with a newline in it
+        return "invalid request header (check the key for extra lines)"
+    if isinstance(e, httpx.TimeoutException):
+        return "network: timed out"
+    if isinstance(e, httpx.ConnectError):
+        return "network: cannot connect"
+    return f"network: {type(e).__name__}"
+
+
+def _malformed_note(e: Exception) -> str:
+    if isinstance(e, Malformed):
+        return f"malformed response: {e}"
+    return f"malformed response ({type(e).__name__})"
+
+
+_SECRET_RE = re.compile(
+    r"(?i)\b(?:bearer|basic)\s+\S+"  # an Authorization header value
+    r"|\bsk-[\w-]+"                  # API keys: sk-…, sk-ant-…, sk-or-v1-…
+    r"|\b[\w.-]+=[^\s;,]{8,}"        # cookie pairs
+    r"|[\w.~+/-]{32,}=*"             # long opaque strings: JWTs, OAuth tokens
+)
+
+
+def _redact(text: str) -> str:
+    return _SECRET_RE.sub("[redacted]", text)
 
 
 PROBES = {
@@ -952,7 +1044,13 @@ def collect(config: dict, only: set[str] | None) -> list[Row]:
                 continue
         elif not cfg.get("enabled"):
             continue
-        rows.extend(probe(cfg))
+        try:  # one broken provider must not take the whole run down
+            got = probe(cfg)
+        except Exception as e:
+            got = [Row(name, "—", "error", note=f"probe failed ({type(e).__name__})")]
+        for r in got:
+            r.note = _redact(r.note)
+        rows.extend(got)
     return rows
 
 

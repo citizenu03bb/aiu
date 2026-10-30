@@ -146,8 +146,7 @@ def test_server_error(creds, http):
 def test_network_error(creds, http):
     http.on("GET", URL, httpx.ConnectError("Temporary failure in name resolution"))
     [row] = aiu.probe_claude({})
-    assert row.kind == "error" and row.note.startswith("network: ")
-    assert "name resolution" in row.note
+    assert row.kind == "error" and row.note == "network: cannot connect"
 
 
 def test_no_quota_reported(creds, http):
@@ -219,9 +218,33 @@ def test_expired_token_refreshed_by_cli(home, http, tmp_path):
     assert rows[0].note == ""
 
 
-@pytest.mark.xfail(strict=True, raises=ValueError,
-                   reason="probe bug: a 200 with a non-JSON body raises out of the probe")
 def test_non_json_body(creds, http):
     http.on("GET", URL, (200, "<html>Service temporarily unavailable</html>"))
     [row] = aiu.probe_claude({})
-    assert row.kind == "error"
+    assert row.kind == "error" and row.note == "malformed response: not JSON"
+
+
+@pytest.mark.parametrize("body", [[], {"five_hour": 37}, {"five_hour": {"utilization": "n/a"}}])
+def test_malformed_body(creds, http, body):
+    http.on("GET", URL, (200, body))
+    [row] = aiu.probe_claude({})
+    assert row.kind == "error" and row.note.startswith("malformed response")
+
+
+def test_credit_without_spend_is_an_error(creds, http):
+    # Neither remaining_dollars nor used_dollars: not a full grant left.
+    http.on("GET", URL, (200, usage(iguana_necktie={"limit_dollars": 100.0, "resets_at": iso(86400)})))
+    rows = by_metric(aiu.probe_claude({}))
+    assert rows["5-Hour Limit"].kind == "quota"
+    credit = rows["Cloud Credit"]
+    assert credit.kind == "error" and credit.used is None
+    assert credit.note == "malformed response: no `remaining_dollars` or `used_dollars`"
+
+
+def test_bad_header_never_quotes_the_token(home, http):
+    # h11 quotes the whole header value in its message (security review, M1).
+    write_creds(home, token="sk-ant-oat01-SECRET\nlogin: me@example.com")
+    http.on("GET", URL, httpx.LocalProtocolError(
+        "Illegal header value b'Bearer sk-ant-oat01-SECRET\\nlogin: me@example.com'"))
+    [row] = aiu.probe_claude({})
+    assert row.kind == "error" and "SECRET" not in row.note and "example.com" not in row.note
