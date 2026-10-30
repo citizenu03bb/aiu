@@ -4,6 +4,47 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
+const DISPLAY_NAMES = {
+    claude_max: 'Claude Max',
+    codex: 'Codex',
+    gemini: 'Gemini',
+    deepseek: 'DeepSeek',
+    openrouter: 'OpenRouter',
+    openai: 'OpenAI',
+};
+
+export function displayName(provider) {
+    return DISPLAY_NAMES[provider] || provider;
+}
+
+/** Compact French duration: 3h08, 4j22h, 12min. */
+export function formatDuration(secs) {
+    const s = Math.max(0, Math.floor(secs));
+    const d = Math.floor(s / 86400);
+    const h = Math.floor((s % 86400) / 3600);
+    const m = Math.floor((s % 3600) / 60);
+    if (d) return `${d}j${h}h`;
+    if (h) return `${h}h${String(m).padStart(2, '0')}`;
+    return `${m}min`;
+}
+
+/**
+ * Time to a row's reset, recomputed from reset_epoch so it stays right while
+ * the menu sits open; falls back to aiu's English text, translated.
+ */
+export function resetText(row, nowSecs = Date.now() / 1000) {
+    if (typeof row.reset_epoch === 'number') {
+        const ttr = row.reset_epoch - nowSecs;
+        return ttr > 0 ? `dans ${formatDuration(ttr)}` : 'passé, relevé à rafraîchir';
+    }
+    if (!row.reset) return null;
+    return row.reset
+        .replace(/^expires in /, 'dans ')
+        .replace(/^in /, 'dans ')
+        .replace(/^now$/, 'passé, relevé à rafraîchir')
+        .replace(/(\d+)d /g, '$1j ');
+}
+
 export class AiuClient {
     constructor() {
         this._cancellable = null;
@@ -104,102 +145,92 @@ export class AiuClient {
     _processData(raw) {
         const rows = raw.rows || [];
         const capturedAt = raw.captured_at || new Date().toISOString();
+        const routing = Array.isArray(raw.advice) ? raw.advice : [];
 
-        // Categorize rows
         const quotas = [];
         const balances = [];
         const errors = [];
-
         let worstQuotaPct = 0;
-        let hasCriticalQuota = false;
-        let hasWarningQuota = false;
-        let hasError = false;
 
         for (const row of rows) {
             if (row.kind === 'error') {
                 errors.push(row);
-                hasError = true;
             } else if (row.kind === 'quota') {
+                // An unreadable quota stays unknown (null), never "0% used".
                 const usedPct = typeof row.used_pct === 'number'
                     ? row.used_pct
-                    : (typeof row.used === 'number' ? Math.round(row.used * 1000) / 10 : 0);
-
-                const item = {
-                    ...row,
-                    used_pct: usedPct,
-                };
-                quotas.push(item);
-
-                if (usedPct > worstQuotaPct) {
+                    : (typeof row.used === 'number' ? Math.round(row.used * 1000) / 10 : null);
+                quotas.push({ ...row, used_pct: usedPct });
+                if (usedPct !== null && usedPct > worstQuotaPct) {
                     worstQuotaPct = usedPct;
-                }
-                if (usedPct >= 95) {
-                    hasCriticalQuota = true;
-                } else if (usedPct >= 75) {
-                    hasWarningQuota = true;
                 }
             } else if (row.kind === 'balance' || row.kind === 'spend' || row.kind === 'credit') {
                 balances.push(row);
             }
         }
 
-        // Compute overall status color
-        let statusColor = 'normal';
-        if (hasError || hasCriticalQuota) {
-            statusColor = 'critical';
-        } else if (hasWarningQuota) {
-            statusColor = 'warning';
-        }
-
-        // Routing advice comes from aiu itself (earliest-expiring surplus first)
-        const advice = this._generateAdvice(raw.advice);
-
         return {
             capturedAt,
             quotas,
             balances,
             errors,
-            statusColor,
+            routing,
+            statusColor: this._statusColor(quotas, errors, routing),
             worstQuotaPct,
-            advice,
+            advice: this._generateAdvice(routing),
         };
     }
 
-    _formatDuration(secs) {
-        const s = Math.max(0, Math.floor(secs));
-        const d = Math.floor(s / 86400);
-        const h = Math.floor((s % 86400) / 3600);
-        const m = Math.floor((s % 3600) / 60);
-        if (d) return `${d}j${h}h`;
-        if (h) return `${h}h${String(m).padStart(2, '0')}`;
-        return `${m}min`;
+    /**
+     * Panel dot = "is there something to act on?"
+     * critical: a probe failed or a window is (nearly) exhausted right now;
+     * warning: free subscription quota will be lost at a reset within 24h.
+     */
+    _statusColor(quotas, errors, routing) {
+        if (errors.length > 0 || quotas.some(q => q.used_pct !== null && q.used_pct >= 95)) {
+            return 'critical';
+        }
+        const expiringSoon = routing.some(l => l.status === 'burn' && l.leftover !== null
+            && typeof l.ttr_secs === 'number' && l.ttr_secs <= 24 * 3600);
+        return expiringSoon ? 'warning' : 'normal';
     }
 
     /**
      * Summarize aiu's "advice" list (already in routing order: burn / unknown
-     * pace by deadline, then on_track, then conserve) into one line.
+     * pace by deadline, then on_track, then conserve). First line is the
+     * headline, the following lines are details.
      */
     _generateAdvice(lots) {
         if (!Array.isArray(lots) || lots.length === 0) {
             return null;
         }
 
-        const keep = [...new Set(lots.filter(l => l.status === 'conserve').map(l => l.provider))];
-        const spare = keep.length ? ` · ménage ${keep.join(', ')}` : '';
+        const keep = [...new Set(lots.filter(l => l.status === 'conserve').map(l => displayName(l.provider)))];
+        const spare = keep.length ? `À ménager : ${keep.join(', ')}` : null;
         const first = lots[0];
+        const lines = [];
 
         if (first.status === 'burn' || first.status === '?') {
-            const when = typeof first.ttr_secs === 'number'
-                ? ` expire dans ${this._formatDuration(first.ttr_secs)}`
-                : '';
-            const unsure = first.status === '?' ? ' (allure inconnue)' : '';
-            return `💡 Brûle d'abord ${first.provider} : ${first.metric}${when}${unsure}${spare}`;
+            lines.push(`💡 Brûle d'abord ${displayName(first.provider)}`);
+            const when = typeof first.ttr_secs === 'number' ? formatDuration(first.ttr_secs) : null;
+            let detail = first.metric;
+            if (first.status === '?') {
+                detail += when ? ` : reset dans ${when} (allure inconnue)` : ' (allure inconnue)';
+            } else if (typeof first.leftover === 'number') {
+                detail += ` : ~${Math.round(first.leftover * 100)} % perdu au reset${when ? ` dans ${when}` : ''}`;
+            } else if (when) {
+                detail += ` : expire dans ${when}`;
+            }
+            lines.push(detail);
+        } else if (first.status === 'on_track') {
+            lines.push('💡 Pas de surplus qui expire : route par fit de tâche');
+        } else {
+            lines.push("💡 Aucun forfait n'a de surplus");
+            lines.push("Réserve chacun à ce que lui seul sait faire, déborde sur l'API payante");
         }
-
-        if (first.status === 'on_track') {
-            return `💡 Pas de surplus qui expire : route par fit de tâche${spare}`;
+        if (spare && first.status !== 'conserve') {
+            lines.push(spare);
         }
-
-        return `💡 Aucun forfait n'a de surplus : réserve chacun à ce que lui seul sait faire, déborde sur l'API payante`;
+        return lines.join('\n');
     }
 }

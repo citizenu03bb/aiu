@@ -30,7 +30,8 @@
 
 /* Menu content */
 .aiu-menu-box {
-    min-width: 330px;
+    /* Fixed width: long lines wrap instead of stretching (or cutting) the menu. */
+    width: 380px;
     padding: 6px 4px;
     spacing: 8px;
 }
@@ -48,7 +49,7 @@
 .aiu-section-label {
     font-size: 0.75em;
     font-weight: 700;
-    color: rgba(255, 255, 255, 0.45);
+    color: rgba(255, 255, 255, 0.6);
     text-transform: uppercase;
     margin-top: 6px;
     margin-bottom: 2px;
@@ -96,6 +97,46 @@
     color: rgba(255, 255, 255, 0.55);
 }
 
+.aiu-metric-reset.burn {
+    color: #8ff0a4;
+}
+
+.aiu-metric-reset.conserve {
+    color: #ffbe6f;
+}
+
+.aiu-quota-row {
+    margin-top: 4px;
+}
+
+/* Routing status badge (from aiu's advice) */
+.aiu-badge {
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.75em;
+    font-weight: 700;
+}
+
+.aiu-badge.burn {
+    background-color: rgba(51, 209, 122, 0.2);
+    color: #8ff0a4;
+}
+
+.aiu-badge.on-track {
+    background-color: rgba(53, 132, 228, 0.2);
+    color: #99c1f1;
+}
+
+.aiu-badge.conserve {
+    background-color: rgba(255, 120, 0, 0.2);
+    color: #ffbe6f;
+}
+
+.aiu-badge.unknown {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+}
+
 /* Progress bar */
 .aiu-track {
     background-color: rgba(255, 255, 255, 0.12);
@@ -122,6 +163,18 @@
     background-color: #e01b24;
 }
 
+.aiu-fill.orange {
+    background-color: #ff7800;
+}
+
+.aiu-fill.blue {
+    background-color: #3584e4;
+}
+
+.aiu-fill.grey {
+    background-color: #9a9996;
+}
+
 /* Balance & Spend row */
 .aiu-balance-row {
     spacing: 8px;
@@ -133,6 +186,11 @@
     color: #8ff0a4;
 }
 
+/* Lifetime spend is history, not money you still have. */
+.aiu-currency-val.spend {
+    color: rgba(255, 255, 255, 0.6);
+}
+
 /* Advice & Alert banners */
 .aiu-advice-box {
     background-color: rgba(53, 132, 228, 0.14);
@@ -140,6 +198,11 @@
     border-radius: 8px;
     padding: 8px 10px;
     spacing: 4px;
+}
+
+.aiu-advice-title {
+    font-weight: 700;
+    color: #99c1f1;
 }
 
 .aiu-advice-text {
