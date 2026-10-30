@@ -200,13 +200,24 @@ with every other task, and A's tests guard it against regressions.
 **Files:** `aiu.py`, `consult.py`, `gnome-extension/`, `README.md`, `docs/`.
 **Done when:** CI is green, both languages render, and A's tests still pass.
 
+## Release v0.1.0
+
+- One version: `aiu.__version__` is the source, `pyproject.toml` reads it,
+  the extension's `version-name` repeats it (`tests/test_version.py`), and
+  `aiu --version` prints it.
+- On a `v*` tag, the release workflow fails unless the tag is
+  `v<__version__>` and matches `version-name`, then attaches the extension zip.
+- `docs/security-review.md` records where each finding stands.
+- Left to the maintainer: upload the zip to extensions.gnome.org.
+
+To cut the next release: bump `__version__` and `version-name`, merge, then
+tag `v<version>` on `main`.
+
 ## Later
 
 - **Snapshot history.** Keep a small local history of readings so the pace
   can be estimated right after a reset, when the current window has less than
   10% elapsed and is shown as "unknown pace" (SPARE's main idea in
   docs/routing-algorithms.md).
-- **Versioning.** Tie the `pyproject.toml` version and the extension's
-  `metadata.json` version to the release tag.
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
   starts to matter which kind of work gets the spare quota.

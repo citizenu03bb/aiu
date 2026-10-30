@@ -60,6 +60,10 @@ from pathlib import Path
 
 import httpx
 
+# The release version: pyproject.toml reads it, and a v<version> tag must match it
+# (tests/test_version.py, .github/workflows/release.yml).
+__version__ = "0.1.0"
+
 CONFIG_DIR = Path(os.path.expanduser("~/.config/ai-usage"))
 CONFIG_PATH = CONFIG_DIR / "config.toml"
 PRICES_PATH = CONFIG_DIR / "prices.toml"
@@ -1894,6 +1898,7 @@ def alert(rows: list[Row], notify: bool = True) -> int:
 # ---------------------------------------------------------------------------
 def main() -> int:
     ap = argparse.ArgumentParser(description="One snapshot of every AI subscription you pay for.")
+    ap.add_argument("--version", action="version", version=f"aiu {__version__}")
     ap.add_argument("--config", default=str(CONFIG_PATH))
     ap.add_argument("--only", help="comma-separated provider subset (ignores enabled flags)")
     ap.add_argument("--json", action="store_true", help="emit JSON")
