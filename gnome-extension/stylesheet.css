@@ -1,0 +1,224 @@
+/* aiu-indicator styling */
+
+.aiu-panel-box {
+    spacing: 3px;
+}
+
+.aiu-status-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 3px;
+    margin-top: 5px;
+    margin-left: 1px;
+}
+
+.aiu-status-dot.normal {
+    background-color: #33d17a;
+}
+
+.aiu-status-dot.warning {
+    background-color: #f6d32d;
+}
+
+.aiu-status-dot.critical {
+    background-color: #e01b24;
+}
+
+.aiu-status-dot.unknown {
+    background-color: #9a9996;
+}
+
+/* Menu content */
+.aiu-menu-box {
+    /* Fixed width: long lines wrap instead of stretching (or cutting) the menu. */
+    width: 380px;
+    padding: 6px 4px;
+    spacing: 8px;
+}
+
+.aiu-header-title {
+    font-weight: 700;
+    font-size: 1.1em;
+}
+
+.aiu-header-time {
+    font-size: 0.82em;
+    color: rgba(255, 255, 255, 0.6);
+}
+
+.aiu-section-label {
+    font-size: 0.75em;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.6);
+    text-transform: uppercase;
+    margin-top: 6px;
+    margin-bottom: 2px;
+}
+
+/* Provider card */
+.aiu-card {
+    background-color: rgba(255, 255, 255, 0.06);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 6px;
+}
+
+.aiu-provider-header {
+    spacing: 6px;
+}
+
+.aiu-provider-name {
+    font-weight: 700;
+    font-size: 0.95em;
+}
+
+.aiu-pill {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.75em;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.aiu-metric-name {
+    font-size: 0.85em;
+    color: rgba(255, 255, 255, 0.8);
+}
+
+.aiu-metric-detail {
+    font-size: 0.82em;
+    font-weight: 600;
+    font-family: monospace;
+}
+
+.aiu-metric-reset {
+    font-size: 0.78em;
+    color: rgba(255, 255, 255, 0.55);
+}
+
+.aiu-metric-reset.burn {
+    color: #8ff0a4;
+}
+
+.aiu-metric-reset.conserve {
+    color: #ffbe6f;
+}
+
+.aiu-quota-row {
+    margin-top: 4px;
+}
+
+/* Routing status badge (from aiu's advice) */
+.aiu-badge {
+    border-radius: 4px;
+    padding: 1px 6px;
+    font-size: 0.75em;
+    font-weight: 700;
+}
+
+.aiu-badge.burn {
+    background-color: rgba(51, 209, 122, 0.2);
+    color: #8ff0a4;
+}
+
+.aiu-badge.on-track {
+    background-color: rgba(53, 132, 228, 0.2);
+    color: #99c1f1;
+}
+
+.aiu-badge.conserve {
+    background-color: rgba(255, 120, 0, 0.2);
+    color: #ffbe6f;
+}
+
+.aiu-badge.unknown {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: rgba(255, 255, 255, 0.75);
+}
+
+/* Progress bar */
+.aiu-track {
+    background-color: rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    height: 6px;
+    margin-top: 2px;
+    margin-bottom: 4px;
+}
+
+.aiu-fill {
+    border-radius: 3px;
+    height: 6px;
+}
+
+.aiu-fill.green {
+    background-color: #33d17a;
+}
+
+.aiu-fill.yellow {
+    background-color: #f6d32d;
+}
+
+.aiu-fill.red {
+    background-color: #e01b24;
+}
+
+.aiu-fill.orange {
+    background-color: #ff7800;
+}
+
+.aiu-fill.blue {
+    background-color: #3584e4;
+}
+
+.aiu-fill.grey {
+    background-color: #9a9996;
+}
+
+/* Balance & Spend row */
+.aiu-balance-row {
+    spacing: 8px;
+}
+
+.aiu-currency-val {
+    font-family: monospace;
+    font-weight: 700;
+    color: #8ff0a4;
+}
+
+/* Lifetime spend is history, not money you still have. */
+.aiu-currency-val.spend {
+    color: rgba(255, 255, 255, 0.6);
+}
+
+/* Advice & Alert banners */
+.aiu-advice-box {
+    background-color: rgba(53, 132, 228, 0.14);
+    border: 1px solid rgba(53, 132, 228, 0.35);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 4px;
+}
+
+.aiu-advice-title {
+    font-weight: 700;
+    color: #99c1f1;
+}
+
+.aiu-advice-text {
+    font-size: 0.85em;
+    color: #99c1f1;
+}
+
+.aiu-alert-box {
+    background-color: rgba(224, 27, 36, 0.14);
+    border: 1px solid rgba(224, 27, 36, 0.35);
+    border-radius: 8px;
+    padding: 8px 10px;
+    spacing: 4px;
+}
+
+.aiu-alert-text {
+    font-size: 0.82em;
+    color: #ff7b63;
+}

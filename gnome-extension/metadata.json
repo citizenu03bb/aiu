@@ -1,0 +1,8 @@
+{
+  "name": "AI Usage (aiu)",
+  "description": "Snapshot et suivi des quotas & soldes IA (Claude, Codex, Gemini, DeepSeek, OpenRouter) dans la barre GNOME",
+  "uuid": "aiu-indicator@citizenu03bb.github.io",
+  "shell-version": ["45", "46", "47", "48", "49", "50", "50.1", "51"],
+  "version": 1,
+  "url": "https://github.com/citizenu03bb/aiu-indicator"
+}

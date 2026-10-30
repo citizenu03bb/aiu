@@ -1,0 +1,20 @@
+# Build / package artifacts
+*.zip
+*.tar.gz
+*.tar.xz
+
+# Editor & OS files
+.DS_Store
+*~
+*.swp
+*.bak
+.vscode/
+.idea/
+
+# Node / JS
+node_modules/
+.npm/
+
+# Antigravity / local scratch
+.system_generated/
+scratch/
