@@ -157,8 +157,11 @@ enabled = true
 ```
 
 Access tokens expire ~hourly; `aiu` **refreshes them itself** via the refresh
-token in `oauth_creds.json` (using the Gemini CLI's public OAuth client) and
-writes the fresh token back — so it never depends on a CLI having run recently,
+token in `oauth_creds.json` and writes the fresh token back. Refreshing needs
+the Gemini CLI's public OAuth client, which `aiu` does not ship: it reads it
+from the installed `gemini` CLI bundle, or from `GEMINI_CLIENT_ID` /
+`GEMINI_CLIENT_SECRET` in your env file if you only have `agy`. So it never
+depends on a CLI having run recently,
 and incidentally keeps the file fresh for `agy` too. "auth rejected" only
 appears if the *refresh* token itself is invalid (then run `agy` to re-sign in).
 **Antigravity CLI migration (done):** the successor `agy` CLI installs under

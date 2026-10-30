@@ -461,21 +461,43 @@ def probe_openrouter(cfg: dict) -> list[Row]:
 GEMINI_CA_BASE = "https://cloudcode-pa.googleapis.com"
 GEMINI_CREDS_PATH = Path(os.path.expanduser("~/.gemini/oauth_creds.json"))
 GEMINI_TOKEN_URL = "https://oauth2.googleapis.com/token"
-# Public OAuth client of the Gemini CLI (baked into the open-source CLI, not a
-# user secret). Override via env if Google ever rotates it.
-GEMINI_CLIENT_ID = (os.environ.get("GEMINI_CLIENT_ID")
-                    or "GEMINI_CLI_OAUTH_CLIENT_ID_REMOVED")
-GEMINI_CLIENT_SECRET = (os.environ.get("GEMINI_CLIENT_SECRET")
-                        or "GEMINI_CLI_OAUTH_CLIENT_SECRET_REMOVED")
+# Refreshing the token needs the Gemini CLI's public "installed app" OAuth client.
+# It is not a user secret, but it is Google's to publish, not ours: take it from
+# the environment, else read it out of the locally installed Gemini CLI bundle.
+# The bundle holds several Google client IDs; only the named constants are the CLI's.
+_GEMINI_CLIENT_ID_RE = re.compile(r'OAUTH_CLIENT_ID\s*=\s*"([^"]+\.apps\.googleusercontent\.com)"')
+_GEMINI_CLIENT_SECRET_RE = re.compile(r'OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"')
+
+
+def _gemini_oauth_client() -> tuple[str, str] | None:
+    cid, secret = os.environ.get("GEMINI_CLIENT_ID"), os.environ.get("GEMINI_CLIENT_SECRET")
+    if cid and secret:
+        return cid, secret
+    cli = shutil.which("gemini")
+    if not cli:
+        return None
+    bundle = Path(os.path.realpath(cli)).parent   # .../@google/gemini-cli/bundle
+    for f in sorted(bundle.glob("*.js")):
+        try:
+            text = f.read_text(errors="ignore")
+        except OSError:
+            continue
+        m_id, m_secret = _GEMINI_CLIENT_ID_RE.search(text), _GEMINI_CLIENT_SECRET_RE.search(text)
+        if m_id and m_secret:
+            return m_id.group(1), m_secret.group(1)
+    return None
 
 
 def _gemini_refresh(refresh_token: str) -> str | None:
     """Exchange the refresh token for a fresh access token and persist it back to
     oauth_creds.json (Google does not rotate refresh tokens). Returns the new token."""
+    client = _gemini_oauth_client()
+    if not client:
+        return None
     try:
         r = httpx.post(GEMINI_TOKEN_URL, data={
             "grant_type": "refresh_token", "refresh_token": refresh_token,
-            "client_id": GEMINI_CLIENT_ID, "client_secret": GEMINI_CLIENT_SECRET}, timeout=20)
+            "client_id": client[0], "client_secret": client[1]}, timeout=20)
         if r.status_code != 200:
             return None
         j = r.json()
@@ -706,6 +728,10 @@ def probe_gemini(cfg: dict) -> list[Row]:
             continue
         break
     if r is None or r.status_code in (401, 403):
+        if not _gemini_oauth_client():
+            return [Row("gemini", "—", "error",
+                        note="token expired and can't refresh: install gemini-cli or set "
+                             "GEMINI_CLIENT_ID / GEMINI_CLIENT_SECRET")]
         return [Row("gemini", "—", "error",
                     note="auth rejected (401) — refresh token invalid, run `agy` to re-sign in")]
     if r.status_code != 200:
