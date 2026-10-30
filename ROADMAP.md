@@ -61,7 +61,11 @@ Merged on 2026-10-30: A in #4, B in #1 (follow-up #3), C in #2.
 **Files:** `docs/security-review.md` only. No code changes.
 **Done when:** the report lists findings by severity, each with a proposed fix.
 
-## Wave 2: fixes from wave 1, in parallel
+## Wave 2: done
+
+Merged on 2026-10-30: E in #7, F in #9, G in #6, H in #8 (follow-up #11),
+I in #10. #12 lets the permission checks of H and I accept group write by
+the user's private group (umask 002). Every `xfail` is gone.
 
 Fixes for the probe bugs A pinned as strict `xfail` tests and the findings in
 [docs/security-review.md](docs/security-review.md). Bug numbers (A1–A8) are
@@ -173,7 +177,7 @@ yields the bare key.
 **Done when:** CI is green and the extension leaves no `aiu` process behind
 after disable.
 
-## Wave 3: after wave 2 is merged
+## Wave 3: in progress
 
 ### D. English interface
 
@@ -185,6 +189,8 @@ after disable.
 - Refresh the README "Development" section and the extension's Make
   command list after B: `make test` needs only gjs, `make test-live` needs
   `aiu`, and `pack` and `clean` are new.
+- `load_env_file`: a quoted value that spans several lines is reported as
+  "unmatched quotes"; say that `~/.env` values must fit on one line.
 
 **Why last:** it touches strings in almost every file, so it would conflict
 with every other task, and A's tests guard it against regressions.
