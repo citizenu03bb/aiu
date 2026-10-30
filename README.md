@@ -124,11 +124,28 @@ HuggingFace `whoami-v2` gives plan status (free/PRO) but no spend counter.
 local token accounting (routing calls through a proxy). Left out by design.
 
 ### Secrets
-`aiu` reads your single key file — `~/.env` by default (override with
-`AIU_ENV_FILE=/path`). The script loads it itself at startup (vars already in
-your environment win), so `./aiu.py` and the `aiu` wrapper behave identically.
-No separate secrets file to keep in sync. Both `export KEY=v` and bare `KEY=v`
-lines work. Add whatever you have:
+Each provider is enabled with `enabled = true` in the config, and its key is
+resolved at runtime, in priority order:
+
+1. `key_env`: a variable from your environment, else from `~/.env`;
+2. `key_cmd`: a shell command; the first line of its stdout is the key;
+3. `key_file`: a file; its first line is the key.
+
+Only the first line of a value counts (a `pass` entry often holds more lines
+after the password). A value that still holds control characters is refused,
+and the warning does not quote it.
+
+**`~/.env`** (override with `AIU_ENV_FILE=/path`) is read by `aiu` itself. It
+takes only the names the config refers to (each `key_env`, plus
+`MISTRAL_ADMIN_COOKIE`, `GEMINI_CLIENT_ID` and `GEMINI_CLIENT_SECRET`) and
+ignores every other line, so a `HTTPS_PROXY` or `LD_PRELOAD` meant for another
+tool changes nothing. Variables already in your environment win. The keys are
+kept inside `aiu`, not exported, so `key_cmd` and the other commands `aiu` runs
+don't see them; the Gemini CLI's public OAuth client is the one exception.
+Values are read like a shell reads them, without `$` expansion: `export KEY=v`
+and bare `KEY=v` both work, an unquoted value stops at ` #`, `'...'` is
+literal, and a line whose quotes don't match is skipped with a warning. `aiu`
+warns when other users can read the file: `chmod 600 ~/.env`.
 
 ```sh
 DEEPSEEK_API_KEY=sk-...
@@ -137,11 +154,35 @@ OPENAI_ADMIN_KEY=sk-admin-...   # Costs API needs an ADMIN key, not a normal sk-
 MISTRAL_ADMIN_COOKIE='...'      # whole Cookie header from admin.mistral.ai; quotes required, it expires
 ```
 
-Each provider is enabled with `enabled = true` in the config. Keys are resolved
-at runtime, in priority order: `key_env` (env var name) → `key_cmd` (shell
-command, stdout used) → `key_file` (file contents). `secrets.env` populates the
-`key_env` route; use `key_cmd`/`key_file` instead if a key already lives
-elsewhere (e.g. `pass`, a CLI config).
+**Prefer a keyring to `~/.env`.** The file is plain text, often shared with
+docker-compose or other scripts. `key_cmd` can read the key from the GNOME
+keyring or `pass` instead:
+
+```sh
+secret-tool store --label='aiu openai' service aiu provider openai
+```
+```toml
+[openai]
+enabled = true
+key_cmd = "secret-tool lookup service aiu provider openai"
+```
+
+**What each one can do.** Treat these like `~/.bashrc`: anyone who can write
+them can run code as you.
+
+- `key_cmd` is a shell command (`sh -c`). It runs on every `aiu` run: every
+  5 minutes and on each refresh with the GNOME extension, twice a day with
+  the timer. A command that unlocks a keyring or a GPG key can prompt that
+  often. It inherits `aiu`'s environment, its stderr is discarded, and when it
+  fails `aiu` moves on to `key_file`, so a broken command only shows as "no
+  key". Like OpenSSH, `aiu` ignores every `key_cmd`, with a warning, when the
+  config file or its directory is not yours or can be written by group or
+  others. It writes the starter config `0600` in a `0700` directory.
+- `~/.env` can only supply the names above, and only as keys sent to their
+  own provider over TLS.
+- `MISTRAL_ADMIN_COOKIE` is a whole admin.mistral.ai session, not a read-only
+  key: until it expires it can create API keys and change billing. Keep it in
+  a keyring (`key_cmd` in `[mistral]`) rather than in `~/.env`.
 
 ### claude
 Nothing to configure, and no app needs to be open. The OAuth token is read
