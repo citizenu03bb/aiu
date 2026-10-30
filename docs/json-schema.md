@@ -89,6 +89,7 @@ The routing order (`aiu --advise`): `burn` and `?` by deadline, then
 | `leftover` | number, fraction of the cap left at the reset at the current pace (< 0: runs dry first) | yes | extension |
 | `runway_secs` | integer, seconds until a `conserve` lot runs dry | yes | extension |
 | `pace_from_history` | boolean | no | not read |
+| `early_pace` | boolean: true on a `conserve` lot whose window is under 10% elapsed, with no history, and already used fast (see `docs/routing-algorithms.md`) | no | not read |
 | `detail` | string, a sentence in English | no | consult |
 
 ## `aiu config show --json`

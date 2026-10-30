@@ -226,6 +226,7 @@
       "leftover": null,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Gemini Pro 75% free, reset in 20h00m (unknown pace)"
     },
     {
@@ -236,6 +237,7 @@
       "leftover": 0.183,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Weekly Limit: reset in 1d0h, ~18% of the cap lost at your pace (0.49%/h; using it all = 1.25%/h, \u00d72.6)"
     },
     {
@@ -246,6 +248,7 @@
       "leftover": 0.3,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Weekly (all models): reset in 3d0h, ~30% of the cap lost at your pace (0.42%/h; using it all = 0.83%/h, \u00d72.0)"
     },
     {
@@ -256,6 +259,7 @@
       "leftover": 0.816,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Vibe Monthly: reset in 5d16h, ~82% of the cap lost at your pace (0.02%/h; using it all = 0.62%/h, \u00d725.2)"
     },
     {
@@ -266,6 +270,7 @@
       "leftover": null,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Cloud Credit 31.50/50 USD, expires in 10d0h (\u22483.15 USD/day to use it all)"
     }
   ]

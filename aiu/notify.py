@@ -142,7 +142,8 @@ def alert(rows: list[Row], notify: bool = True, hist: list[dict] | None = None) 
             warns.append(tr("⚠ {provider} · {metric}: runs dry in ~{runway} at your pace, reset {reset} "
                             "→ ~{gap} without {provider}",
                             provider=r.provider, metric=r.metric, runway=_dur(p["runway"]),
-                            reset=r.reset, gap=_dur(ttr - p["runway"])))
+                            reset=r.reset, gap=_dur(ttr - p["runway"]))
+                         + (tr(" (early, fast pace)") if p["early"] else ""))
     # Missing data is not an all-clear.
     warns += [tr("⚠ {provider}: data unavailable ({note})", provider=r.provider, note=r.note)
               for r in rows if r.kind == "error"]

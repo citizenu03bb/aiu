@@ -192,8 +192,9 @@ def test_history_lets_a_young_window_conserve():
 
 def test_alert_uses_the_history_too(capsys):
     hist = past_week(1.0, at=3 * D)
-    assert notify.alert([weekly(.05)], notify=False) == 0
-    assert notify.alert([weekly(.05)], notify=False, hist=hist) == 1
+    # 3% after 2 hours: under EARLY_FAST_MIN_USED, so only the history gives a pace.
+    assert notify.alert([weekly(.03)], notify=False) == 0
+    assert notify.alert([weekly(.03)], notify=False, hist=hist) == 1
     assert "runs dry" in capsys.readouterr().out
 
 

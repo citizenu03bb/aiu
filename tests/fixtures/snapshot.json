@@ -200,6 +200,7 @@
       "leftover": null,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Gemini Pro 75% free, reset in 20h00m (unknown pace)"
     },
     {
@@ -210,6 +211,7 @@
       "leftover": 0.3,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Weekly (all models): reset in 3d0h, ~30% of the cap lost at your pace (0.42%/h; using it all = 0.83%/h, \u00d72.0)"
     },
     {
@@ -220,6 +222,7 @@
       "leftover": null,
       "runway_secs": null,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Cloud Credit 31.50/50 USD, expires in 10d0h (\u22483.15 USD/day to use it all)"
     },
     {
@@ -230,6 +233,7 @@
       "leftover": -2.15,
       "runway_secs": 19200,
       "pace_from_history": false,
+      "early_pace": false,
       "detail": "Weekly Limit 10% free: runs dry in ~5h19m, reset in 5d0h \u2192 ~4d18h without codex"
     }
   ]
