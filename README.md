@@ -26,8 +26,8 @@ tells you to send flexible work to the burn windows (and promo credits) that
 expire **first**, and to keep conserve subscriptions for what only they can do.
 Remaining headroom alone is not the signal: 16% left that resets in 6h is worth
 using now, 30% left that must last 5 days is not. Earliest-deadline-first is
-optimal for work any subscription can do (proof:
-`../aiu-algo-recomandation/ADVISE_ALGORITHM.md`). `aiu --json` carries the same
+optimal for work any subscription can do (why this rule:
+[docs/routing-algorithms.md](docs/routing-algorithms.md)). `aiu --json` carries the same
 ordering under `"advice"`, which `consult auto` uses.
 `aiu --alert` flags long windows projected to lose ≥5% of their cap at a reset
 within 48h, windows projected to sit empty ≥24h before their reset, promo
