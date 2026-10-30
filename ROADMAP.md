@@ -250,6 +250,19 @@ screen, the whole menu fits and the data section scrolls.
 **Done when:** CI is green and `--advise` shows a projected pace right after a
 reset when the history holds the previous window.
 
+## Release v0.3.0: first run
+
+Released on 2026-10-30, before the first upload to extensions.gnome.org.
+
+- Without `aiu`, the panel explains what it needs and shows the install
+  command (uv, else pipx) with Copy command, Install guide and Check again
+  buttons, instead of a raw error. It never installs anything itself.
+- When `aiu` reads nothing yet, an Open config box sits above the probe notes.
+- Both states keep the dot grey. Checked in an isolated headless GNOME Shell.
+- The extensions.gnome.org description says up front that `aiu` is required.
+
+Left to the maintainer: upload the v0.3.0 zip to extensions.gnome.org.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
