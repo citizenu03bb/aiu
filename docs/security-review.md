@@ -30,10 +30,13 @@ documented residual risk.
 | M3 | Fixed | #7 | `render_html` escapes every value and sets `default-src 'none'` |
 | L1 | Fixed | #8, #12 | `load_config` drops every `key_cmd` when the config or its directory is someone else's or writable by others (group write is accepted for the user's private group: `_writable_by_others`) |
 | L2 | Fixed | #8, #11 | `load_env_file` reads only the names the config uses, parses like a shell, warns on a readable file, and exports nothing. A launcher that sources `~/.env` (as older installs did) undoes this: run `aiu.py` directly |
-| L3 | Documented | #8 | The cookie still lives in `~/.env` or a keyring; the README *Secrets* section says it is a full console session and recommends `key_cmd` with `secret-tool` |
+| L3 | Fixed, one residual | #8, #31 | `aiu cookie import mistral` (`cookie_import`) copies the `admin.mistral.ai` cookies from one browser profile into the keyring (`secret-tool store`, value on stdin) and sets `key_cmd`; nothing else touches the disk. Residual: it is still a full console session, readable by any process of the user that can query the unlocked keyring, and the manual `~/.env` copy remains as a fallback |
 | L4 | Fixed, one residual | #10, #12 | `_refresh_claude_token` runs `claude` only from known locations or `claude_cmd`, never one others can write, and backs off for an hour after a failure. A race with an interactive `claude` over the same refresh token is not addressed |
 | L5 | Fixed | #10 | `AiuClient` kills `aiu` on cancel and disable, with a 120 s watchdog |
 | L6 | Fixed, one residual | #10 | `consult` feeds `codex` and `pi` on stdin; `agy` has no documented stdin mode and still gets the prompt as the value of `-p` |
+
+L3 was taken further in ROADMAP wave 6 (task N), after v0.4.1: see its
+status note at the end of the L3 finding.
 
 The two bugs found outside the security scope (the `--config` parent
 directory, inline comments in `~/.env`) were fixed in #8. I3 was updated in
@@ -315,6 +318,36 @@ stops it from following a login redirect.
 `key_cmd` with a keyring (`secret-tool lookup …`) over `~/.env`. Keep only
 the session cookie the tRPC calls need, if one is enough, rather than the
 whole header. Never export it to `os.environ` (L2).
+
+**Status (wave 6, task N).** `aiu cookie import mistral --browser
+chrome|chromium|brave|firefox [--profile NAME]` replaces the DevTools copy:
+
+- Run by the user only. No probe, `--json`, `--alert` or the GNOME extension
+  calls it (a test checks the extension's sources).
+- Reads only cookies whose host is exactly `admin.mistral.ai` or
+  `.admin.mistral.ai`, from the plain browsing context (no container tabs or
+  partitioned cookies), unexpired, whose path covers `/api/local-trpc/`. The
+  code cannot tell which of them the tRPC calls need, so it keeps all of them
+  rather than guess at one session cookie.
+- Chromium family: only the named browser's Safe Storage secret
+  (`secret-tool lookup xdg:schema chrome_libsecret_os_crypt_password_v2
+  application chrome|chromium|brave`, then the v1 schema), looked up only
+  when a v11 value needs it; v10 uses Chromium's fixed `peanuts`. AES comes
+  from the optional `cryptography` package: `openssl enc` would need the key
+  on its command line (`-K`, readable in `/proc`), and its password modes
+  (`-pass fd:`, `-kfile`) cannot reproduce Chromium's key, whose 9-byte salt
+  OpenSSL truncates to 8.
+- The cookie database is opened in place with `mode=ro&immutable=1`; with a
+  non-empty `-wal` or `-journal`, or when SQLite reports it busy, it is copied
+  (0600 files in a `TemporaryDirectory`, 0700) and the copy is removed.
+- The header goes to `secret-tool store --label='aiu mistral cookie' service
+  aiu provider mistral` on stdin, never in argv; `aiu config set` then points
+  `mistral.key_cmd` at it, with its trust check (when refused, the command to
+  run is printed). The command warns when `MISTRAL_ADMIN_COOKIE` would still
+  win (`key_env` is read before `key_cmd`).
+- Errors name the missing piece (no profile, no cookies, expired, no Safe
+  Storage entry, locked keyring, no `secret-tool`, no `cryptography`) and
+  never print a cookie, a key or `secret-tool`'s stderr.
 
 ### L4. The stale-token refresh runs whichever `claude` is on `PATH`
 
