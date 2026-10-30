@@ -1,0 +1,33 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  gnome-extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gnome-extension
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GJS
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs
+      - name: Test and pack
+        run: make test pack
+      - name: Attach the zip to the GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          zip=$(ls *.shell-extension.zip)
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            gh release upload "$TAG" "$zip" --clobber
+          else
+            gh release create "$TAG" "$zip" --verify-tag --generate-notes
+          fi

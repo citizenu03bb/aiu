@@ -14,6 +14,19 @@ jobs:
       - name: Tests (synthetic snapshots, no network)
         run: uv run --python 3.12 --with pytest --with httpx --with rich pytest -q tests
 
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: pipx install provides aiu and consult
+        run: |
+          pipx install .
+          aiu --help
+          consult --help
+      - name: aiu.py still runs standalone with uv
+        run: ./aiu.py --help
+
   gnome-extension:
     runs-on: ubuntu-latest
     defaults:
@@ -21,7 +34,16 @@ jobs:
         working-directory: gnome-extension
     steps:
       - uses: actions/checkout@v4
+      - name: Install GJS
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs
       - name: JS syntax and metadata
-        run: |
-          node --check extension.js indicator.js menuView.js aiuClient.js tests/test_aiuClient.js
-          python3 -m json.tool metadata.json > /dev/null
+        run: make check
+      - name: Unit tests (offline; the live aiu test runs only locally)
+        run: make test
+      - name: Pack for extensions.gnome.org
+        run: make pack
+      - uses: actions/upload-artifact@v4
+        with:
+          name: aiu-indicator-shell-extension
+          path: gnome-extension/*.shell-extension.zip
+          if-no-files-found: error
