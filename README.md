@@ -14,6 +14,19 @@ aiu --only claude_max     # subset, ignores enabled flags
 watch -n 60 aiu           # poor man's live view
 ```
 
+## Install
+Needs [`uv`](https://docs.astral.sh/uv/) (the script declares its own
+dependencies) and Python ≥ 3.11.
+
+```bash
+git clone https://github.com/citizenu03bb/aiu.git
+ln -s "$PWD/aiu/aiu.py" ~/.local/bin/aiu
+ln -s "$PWD/aiu/consult.py" ~/.local/bin/consult   # optional, see consult.py
+```
+
+The repository also ships a **GNOME Shell panel indicator** that shows the
+same snapshot and routing advice: see [gnome-extension/](gnome-extension/README.md).
+
 ## Strategy: maximize the flat-fee subscriptions
 Claude Max, ChatGPT/Codex, and Google One (Gemini) are **flat fees** — marginal
 use is free and unused quota **resets to waste**. DeepSeek/OpenRouter are
@@ -164,8 +177,29 @@ Write a `probe_<name>(cfg) -> list[Row]` function, register it in `PROBES`, add
 a `[<name>]` block to the config template. A `Row` is provider/metric/kind
 (`quota|spend|balance|credit`) + `used`/`limit`/`unit`/`reset`/`note`.
 
+## Unofficial endpoints & privacy
+The subscription probes call **undocumented** endpoints, the same ones the
+vendors' own CLIs use. They can change or break without notice, and this
+project is not affiliated with Anthropic, OpenAI or Google:
+
+- `claude_max`: Claude Code's OAuth usage endpoint (if it 404s after a Claude
+  update, re-check it against the `onWatch` source);
+- `codex`: `chatgpt.com/backend-api/wham/usage`;
+- `gemini`: Code Assist's `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`.
+
+Tokens and keys are read locally at run time and only ever sent to the
+provider they belong to. `aiu` stores no secret, has no telemetry, and makes
+no other network call. The `gemini` probe refreshes its access token and
+writes it back to `~/.gemini/oauth_creds.json`, like the Gemini CLI does.
+
 ## Notes / limits
-- `claude_max` uses an **unofficial** OAuth-usage endpoint (the one Claude Code
-  itself calls). It can change without notice; if it 404s after a Claude update,
-  re-check the endpoint against the `onWatch` source.
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
+
+## Development
+```bash
+uv run --with pytest --with httpx --with rich pytest -q tests   # CLI, no network
+make -C gnome-extension check test                              # extension (test needs gjs + aiu)
+```
+
+## License
+GPL-3.0-or-later, see [LICENSE](LICENSE).

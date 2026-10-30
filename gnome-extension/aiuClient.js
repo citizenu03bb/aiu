@@ -62,13 +62,7 @@ export class AiuClient {
             return [pathBin, '--json'];
         }
 
-        const aiuScript = GLib.build_filenamev([home, 'Projects', 'ai-usage', 'aiu.py']);
-        if (GLib.file_test(aiuScript, GLib.FileTest.EXISTS)) {
-            const python = GLib.find_program_in_path('python3') || 'python3';
-            return [python, aiuScript, '--json'];
-        }
-
-        throw new Error("Impossible de localiser 'aiu' dans ~/.local/bin/aiu ou ~/Projects/ai-usage/aiu.py");
+        throw new Error("Impossible de localiser 'aiu' (ni ~/.local/bin/aiu, ni dans le PATH)");
     }
 
     cancel() {

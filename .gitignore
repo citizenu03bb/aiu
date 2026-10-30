@@ -5,3 +5,6 @@ __pycache__/
 .env
 *.log
 *.tmp
+.pytest_cache/
+# packed extension
+*.shell-extension.zip

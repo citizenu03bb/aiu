@@ -6,6 +6,7 @@
 #     "rich>=13.7",
 # ]
 # ///
+# SPDX-License-Identifier: GPL-3.0-or-later
 """
 aiu — one local snapshot of every AI subscription/quota you pay for.
 
@@ -16,10 +17,13 @@ Sources (each is a pluggable probe):
                  except the authenticated call to Anthropic. Also reports promo
                  dollar credits (e.g. the cloud-session credit) found in the same
                  response.
+  - codex      : ChatGPT/Codex subscription quotas (5h / weekly), OAuth token
+                 read from ~/.codex/auth.json.
   - openai     : month-to-date USD spend via the Costs API (needs an Admin key).
   - deepseek   : remaining balance via /user/balance.
-  - gemini     : month-to-date USD spend via your BigQuery billing export
-                 (needs google-cloud-bigquery + a service-account JSON; lazy import).
+  - openrouter : total spend + remaining credits.
+  - gemini     : Gemini Code Assist quota per model family, OAuth token read
+                 from ~/.gemini/oauth_creds.json.
 
 Usage:
   ./aiu.py                 # pretty table

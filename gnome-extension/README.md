@@ -1,5 +1,6 @@
 # AI Usage Indicator (`aiu-indicator`)
 
+Extension GNOME Shell, livrée avec [`aiu`](../README.md) dont elle affiche la sortie `aiu --json`.
 Extension GNOME Shell (compatible GNOME 45 à 51+, testée sur GNOME Shell 50.1 Wayland) plaçant une icône discrète à côté de la date et de l'heure dans la barre supérieure, présentant l'ensemble des données et quotas agrégés par `aiu`.
 
 ## Fonctionnalités
@@ -7,12 +8,12 @@ Extension GNOME Shell (compatible GNOME 45 à 51+, testée sur GNOME Shell 50.1 
 - **Emplacement central** : Intégration dans le bloc central du panneau (`_centerBox`, index 1) immédiatement à droite de l'horloge.
 - **Exécution 100% asynchrone & non-bloquante** : Interrogation en arrière-plan via `Gio.Subprocess` sans aucun freeze ni blocage de l'interface GNOME.
 - **Statut visuel d'un coup d'œil** :
-  - Pastille verte : tous les quotas sont sous contrôle.
-  - Pastille jaune : au moins un quota approche de la saturation (≥ 75%).
-  - Pastille rouge : quota saturé (≥ 95%) ou alerte d'authentification / jeton expiré (ex: Claude 401).
+  - Pastille verte : rien à faire.
+  - Pastille jaune : du quota gratuit sera perdu à un reset dans les 24 h (à utiliser).
+  - Pastille rouge : une fenêtre est saturée (≥ 95 %) ou un relevé a échoué (ex. jeton Claude expiré).
 - **Menu complet et soigné** :
-  - **Forfaits & Quotas** : Barres de progression dynamiques avec code couleur, pourcentages et compte à rebours de reset (ex: `in 49m`).
-  - **Soldes & Consommation** : DeepSeek, OpenRouter, soldes en USD et métriques de dépenses.
+  - **Forfaits** : dans l'ordre de routage, avec un badge (à brûler / au rythme / à ménager), des barres à l'échelle colorées selon ce qu'il faut en faire, et le compte à rebours du reset (ex. `Reset dans 4h27 · à sec dans ~11h33`).
+  - **Crédits & API payantes** : crédits offerts avec leur expiration, soldes prépayés, et dépense historique (grisée).
   - **Conseil d'arbitrage** : reprend le champ `advice` de `aiu --json` — brûle d'abord le forfait (ou crédit) dont le surplus expire le plus tôt, et signale ceux à ménager parce qu'ils seront à sec avant leur reset.
   - **Alertes explicites** : Affichage sans omission des erreurs ou jetons expirés avec instruction de rafraîchissement.
   - **Bouton d'actualisation instantanée** et actualisation automatique toutes les 5 minutes (ou à l'ouverture du menu si > 2 min).
@@ -20,11 +21,14 @@ Extension GNOME Shell (compatible GNOME 45 à 51+, testée sur GNOME Shell 50.1 
 
 ## Installation
 
+Prérequis : la commande `aiu` dans `~/.local/bin` ou le `PATH` (voir le [README principal](../README.md#install)).
+
 ```bash
-git clone https://github.com/citizenu03bb/aiu-indicator.git ~/Projects/aiu-indicator
-cd ~/Projects/aiu-indicator
-make install
+cd gnome-extension   # depuis votre clone du dépôt aiu
+make install         # puis déconnexion / reconnexion (Wayland)
 ```
+
+GNOME Shell garde le JavaScript d'une extension en mémoire pour toute la session : après une mise à jour, déconnectez-vous puis reconnectez-vous (`make reload` ne recharge pas les modules).
 
 ## Commandes Make
 

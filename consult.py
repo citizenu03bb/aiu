@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
 """consult — delegate ONE self-contained sub-task to another AI subscription/CLI.
 
 Usage:

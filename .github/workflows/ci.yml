@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - name: Tests (synthetic snapshots, no network)
+        run: uv run --python 3.12 --with pytest --with httpx --with rich pytest -q tests
+
+  gnome-extension:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: gnome-extension
+    steps:
+      - uses: actions/checkout@v4
+      - name: JS syntax and metadata
+        run: |
+          node --check extension.js indicator.js menuView.js aiuClient.js tests/test_aiuClient.js
+          python3 -m json.tool metadata.json > /dev/null
