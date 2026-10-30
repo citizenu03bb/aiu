@@ -4,6 +4,9 @@ Which `claude` runs, and how often (L4 in docs/security-review.md)."""
 import os
 import sys
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import aiu  # noqa: E402
@@ -94,6 +97,23 @@ def test_missing_claude_cmd_falls_back_to_nothing(tmp_path, capsys):
     assert runs(known) == [] and "not an executable file" in capsys.readouterr().err
 
 
+def test_runs_binary_its_private_group_can_write(monkeypatch, tmp_path):
+    """A umask 002 install (~/.local/bin is 0775, group = the user's own) still runs."""
+    monkeypatch.setattr(aiu, "_private_group", lambda gid: True)
+    cli = fake_claude(tmp_path / "bin" / "claude")
+    os.chmod(cli.parent, 0o775)
+    cli.chmod(0o775)
+    assert aiu._refresh_claude_token({}) is True and runs(cli) == [f"{cli} auth status"]
+
+
+def test_skips_binary_a_shared_group_can_write(monkeypatch, tmp_path, capsys):
+    monkeypatch.setattr(aiu, "_private_group", lambda gid: False)
+    cli = fake_claude(tmp_path / "bin" / "claude")
+    cli.chmod(0o775)
+    assert aiu._refresh_claude_token({}) is False
+    assert runs(cli) == [] and "writable by other users" in capsys.readouterr().err
+
+
 def test_skips_binary_others_can_write(tmp_path, capsys):
     cli = fake_claude(tmp_path / "bin" / "claude")
     cli.chmod(0o777)
@@ -132,3 +152,28 @@ def test_success_clears_the_backoff(home, tmp_path, monkeypatch):
     assert not (home / ".cache" / "aiu" / "claude-refresh-failed").exists()
     assert aiu._refresh_claude_token({}) is True
     assert len(runs(cli)) == 3
+
+
+def fake_accounts(monkeypatch, groups, users):
+    """groups: {gid: (name, members)}, users: {name: primary gid}; we are "me"."""
+    def getgrgid(gid):
+        if gid not in groups:
+            raise KeyError(gid)
+        return SimpleNamespace(gr_name=groups[gid][0], gr_mem=groups[gid][1])
+    pw = [SimpleNamespace(pw_name=n, pw_gid=g) for n, g in users.items()]
+    monkeypatch.setattr(aiu.grp, "getgrgid", getgrgid)
+    monkeypatch.setattr(aiu.pwd, "getpwuid", lambda uid: pw[0])
+    monkeypatch.setattr(aiu.pwd, "getpwall", lambda: pw)
+
+
+@pytest.mark.parametrize("groups, users, private", [
+    ({1000: ("me", [])}, {"me": 1000}, True),
+    ({1000: ("me", ["me"])}, {"me": 1000}, True),
+    ({1000: ("me", ["bob"])}, {"me": 1000}, False),          # another member
+    ({1000: ("me", [])}, {"me": 1000, "bob": 1000}, False),  # bob's primary group too
+    ({1000: ("staff", [])}, {"me": 1000}, False),            # not named after us
+    ({}, {"me": 1000}, False),                               # unknown gid
+])
+def test_private_group(monkeypatch, groups, users, private):
+    fake_accounts(monkeypatch, groups, users)
+    assert aiu._private_group(1000) is private

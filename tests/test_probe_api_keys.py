@@ -496,13 +496,25 @@ def test_load_config_keeps_key_cmd_when_private(tmp_path, capsys):
     (0o600, 0o770, "cfg is writable by group or others"),
     (0o600, 0o1777, "cfg is writable by group or others"),
 ])
-def test_load_config_refuses_key_cmd_when_writable(tmp_path, capsys, mode, dir_mode, why):
+def test_load_config_refuses_key_cmd_when_writable(monkeypatch, tmp_path, capsys,
+                                                   mode, dir_mode, why):
+    monkeypatch.setattr(aiu, "_private_group", lambda gid: False)
     path = write_config(tmp_path / "cfg" / "config.toml", mode, dir_mode)
     config = aiu.load_config(path)
     assert "key_cmd" not in config["openai"]
     assert config["openai"]["key_env"] == "OPENAI_ADMIN_KEY"  # the rest still applies
     err = capsys.readouterr().err
     assert "key_cmd ignored for openai" in err and why in err
+
+
+def test_load_config_keeps_key_cmd_for_private_group(monkeypatch, tmp_path, capsys):
+    """Group write by the user's own private group (umask 002) is not "others"."""
+    monkeypatch.setattr(aiu, "_private_group", lambda gid: True)
+    path = write_config(tmp_path / "cfg" / "config.toml", 0o664, 0o775)
+    assert aiu.load_config(path)["openai"]["key_cmd"] == "echo sk-x"
+    assert capsys.readouterr().err == ""
+    path.chmod(0o666)
+    assert "key_cmd" not in aiu.load_config(path)["openai"]
 
 
 def test_load_config_refuses_key_cmd_through_symlink(tmp_path, capsys):

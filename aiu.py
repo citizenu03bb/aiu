@@ -43,8 +43,10 @@ from __future__ import annotations
 
 import argparse
 import glob
+import grp
 import json
 import os
+import pwd
 import re
 import shutil
 import subprocess
@@ -149,6 +151,24 @@ class Row:
 # and never exported to os.environ, so key_cmd and other children don't see them.
 ENV_FILE: dict[str, str] = {}
 _CONTROL_RE = re.compile(r"[\x00-\x1f\x7f-\x9f]")
+
+
+def _private_group(gid: int) -> bool:
+    """True for the user's private group: named after the user, with no other
+    member and no other user's primary group (umask 002 setups, as on Ubuntu)."""
+    try:
+        user = pwd.getpwuid(os.getuid()).pw_name
+        g = grp.getgrgid(gid)
+    except KeyError:
+        return False
+    return (g.gr_name == user and set(g.gr_mem) <= {user}
+            and not any(u.pw_gid == gid and u.pw_name != user for u in pwd.getpwall()))
+
+
+def _writable_by_others(st: os.stat_result) -> bool:
+    """Whether someone besides the user can write it. Group write counts only when
+    the group is not the user's private one, as Debian's OpenSSH StrictModes does."""
+    return bool(st.st_mode & 0o002 or (st.st_mode & 0o020 and not _private_group(st.st_gid)))
 
 
 def resolve_key(cfg: dict, name: str) -> str | None:
@@ -259,7 +279,7 @@ def _refresh_claude_token(cfg: dict | None = None) -> bool:
             continue
         # The link, its target and both directories: none writable by others.
         try:
-            safe = all((st.st_uid in (0, os.getuid()) and not st.st_mode & 0o022)
+            safe = all((st.st_uid in (0, os.getuid()) and not _writable_by_others(st))
                        for st in (os.stat(p) for p in {path.parent, real, real.parent}))
         except OSError:
             safe = False
@@ -1225,7 +1245,8 @@ def load_env_file(config: dict) -> dict[str, str]:
 def load_config(path: Path) -> dict:
     """Read the config, writing the template (0600, in a 0700 directory) on
     first run. Like OpenSSH, ignore every key_cmd when the file or its directory
-    belongs to someone else or can be written by group or others."""
+    belongs to someone else or can be written by others (group write is fine for
+    the user's private group)."""
     if not path.is_file():
         path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
         try:
@@ -1245,7 +1266,7 @@ def load_config(path: Path) -> dict:
         st = p.stat()
         if st.st_uid != os.getuid():
             unsafe.append(f"{p} is not yours")
-        elif st.st_mode & 0o022:
+        elif _writable_by_others(st):
             unsafe.append(f"{p} is writable by group or others")
     cmds = [name for name, s in config.items() if isinstance(s, dict) and "key_cmd" in s]
     if unsafe and cmds:
