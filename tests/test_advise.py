@@ -1,13 +1,17 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Routing advice (SURPLUS-EDF) and alert rules on synthetic snapshots — no network."""
+import shutil
+import subprocess
 import sys
+import time
+from datetime import datetime
 from pathlib import Path
 
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import aiu  # noqa: E402
-from aiu import Row  # noqa: E402
+from aiu import notify, routing  # noqa: E402
+from aiu.rows import Row  # noqa: E402
 
 NOW = 1793350914.544  # 2026-10-30 09:01:54 UTC, the snapshot in docs/routing-algorithms.md
 H, D, W5, WK = 3600, 86400, 5 * 3600, 7 * 86400
@@ -15,7 +19,7 @@ H, D, W5, WK = 3600, 86400, 5 * 3600, 7 * 86400
 
 def quota(provider, metric, used, ttr, window):
     return Row(provider, metric, "quota", used=used, limit=1.0, unit="%",
-               reset=f"in {aiu._dur(ttr)}", reset_epoch=NOW + ttr, window_secs=window)
+               reset=f"in {routing._dur(ttr)}", reset_epoch=NOW + ttr, window_secs=window)
 
 
 def credit(left, ttr, note=""):
@@ -38,7 +42,7 @@ SNAPSHOT = [
 
 @pytest.fixture(autouse=True)
 def frozen_clock(monkeypatch):
-    monkeypatch.setattr(aiu.time, "time", lambda: NOW)
+    monkeypatch.setattr(time, "time", lambda: NOW)
 
 
 class Calls(list):
@@ -53,11 +57,11 @@ def no_desktop(monkeypatch, tmp_path):
 
     def fake_run(argv, **_kw):
         calls.append(argv)
-        return aiu.subprocess.CompletedProcess(argv, fake_run.returncode, "", "")
+        return subprocess.CompletedProcess(argv, fake_run.returncode, "", "")
 
     fake_run.returncode = 0
-    monkeypatch.setattr(aiu.subprocess, "run", fake_run)
-    monkeypatch.setattr(aiu.time, "sleep", lambda _s: None)
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    monkeypatch.setattr(time, "sleep", lambda _s: None)
     monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
     calls.run = fake_run
     return calls
@@ -65,7 +69,7 @@ def no_desktop(monkeypatch, tmp_path):
 
 
 def statuses(rows):
-    return [(a["provider"], a["metric"], a["status"]) for a in aiu.route_order(rows, NOW)]
+    return [(a["provider"], a["metric"], a["status"]) for a in routing.route_order(rows, NOW)]
 
 
 def test_snapshot_burns_claude_first_and_conserves_the_others():
@@ -78,7 +82,7 @@ def test_snapshot_burns_claude_first_and_conserves_the_others():
 
 
 def test_advice_carries_leftover_and_runway():
-    lots = {a["metric"] + a["provider"]: a for a in aiu.route_order(SNAPSHOT, NOW)}
+    lots = {a["metric"] + a["provider"]: a for a in routing.route_order(SNAPSHOT, NOW)}
     claude = lots["Weekly (all models)claude"]
     assert claude["leftover"] == pytest.approx(0.11, abs=0.01)
     assert claude["runway_secs"] is None
@@ -107,16 +111,16 @@ def test_on_track_and_rows_without_window_length():
 
 def test_locked_or_expired_credit_is_not_routed():
     rows = [credit(50, D, note="locked: pending"), credit(50, -60)]
-    assert aiu.route_order(rows, NOW) == []
+    assert routing.route_order(rows, NOW) == []
 
 
 def test_extra_usage_is_paid_overage_not_free_quota():
     rows = [quota("claude", "Extra Usage", .1, 20 * D, 30 * D)]
-    assert aiu.route_order(rows, NOW) == []
+    assert routing.route_order(rows, NOW) == []
 
 
 def test_alert_on_snapshot(capsys, no_desktop):
-    assert aiu.alert(SNAPSHOT, notify=False) == 1
+    assert notify.alert(SNAPSHOT, notify=False) == 1
     assert no_desktop == []
     out = capsys.readouterr().out
     assert "claude · Weekly (all models): ~11% of the cap lost at reset" in out
@@ -127,54 +131,54 @@ def test_alert_on_snapshot(capsys, no_desktop):
 
 def test_alert_reports_probe_errors_and_skips_locked_credit(capsys):
     rows = [Row("codex", "—", "error", note="HTTP 500"), credit(50, D, note="locked: x")]
-    assert aiu.alert(rows, notify=False) == 1
+    assert notify.alert(rows, notify=False) == 1
     out = capsys.readouterr().out
     assert "codex: data unavailable (HTTP 500)" in out
     assert "Cloud Credit" not in out
 
 
 def test_alert_all_clear(capsys):
-    assert aiu.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)], notify=False) == 0
+    assert notify.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)], notify=False) == 0
 
 
-TAKEN = aiu.datetime.fromtimestamp(NOW).strftime("%H:%M")
+TAKEN = datetime.fromtimestamp(NOW).strftime("%H:%M")
 
 
 def test_notification_replaces_one_gtk_notification(monkeypatch, no_desktop, tmp_path):
-    monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
-    aiu.alert(SNAPSHOT)
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    notify.alert(SNAPSHOT)
     (argv,) = no_desktop
     assert argv[:9] == ["gdbus", "call", "--session", "--dest", "org.gtk.Notifications",
                         "--object-path", "/org/gtk/Notifications", "--method",
                         "org.gtk.Notifications.AddNotification"]
-    assert argv[9:11] == [aiu.APP_ID, aiu.NOTIFICATION_ID]   # same id every run = replace
+    assert argv[9:11] == [notify.APP_ID, notify.NOTIFICATION_ID]   # same id every run = replace
     assert f"'title': <'AI quota · snapshot {TAKEN}'>" in argv[11]
     # GNOME only accepts notifications from an app it knows
-    assert (tmp_path / "applications" / f"{aiu.APP_ID}.desktop").is_file()
+    assert (tmp_path / "applications" / f"{notify.APP_ID}.desktop").is_file()
 
 
 def test_falls_back_to_notify_send_outside_gnome(monkeypatch, no_desktop):
-    monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
     no_desktop.run.returncode = 1          # e.g. no org.gtk.Notifications service
-    aiu.alert(SNAPSHOT)
+    notify.alert(SNAPSHOT)
     assert no_desktop[-1][:4] == ["notify-send", "-a", "aiu", f"AI quota · snapshot {TAKEN}"]
 
 
 def test_all_clear_withdraws_the_previous_alert(monkeypatch, no_desktop):
-    monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
-    aiu.alert(SNAPSHOT)                    # creates the .desktop entry
+    monkeypatch.setattr(shutil, "which", lambda name: f"/usr/bin/{name}")
+    notify.alert(SNAPSHOT)                    # creates the .desktop entry
     no_desktop.clear()
-    assert aiu.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)]) == 0
+    assert notify.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)]) == 0
     (argv,) = no_desktop
-    assert argv[8:] == ["org.gtk.Notifications.RemoveNotification", aiu.APP_ID, aiu.NOTIFICATION_ID]
+    assert argv[8:] == ["org.gtk.Notifications.RemoveNotification", notify.APP_ID, notify.NOTIFICATION_ID]
 
 
 def test_gvariant_string_escaping():
-    assert aiu._gvariant_str("l'été\\x\nok") == "'l\\'été\\\\x\\nok'"
+    assert notify._gvariant_str("l'été\\x\nok") == "'l\\'été\\\\x\\nok'"
 
 
 def test_advise_renders_without_error(capsys):
-    assert aiu.advise(SNAPSHOT, NOW) == 0
+    assert routing.advise(SNAPSHOT, NOW) == 0
     out = " ".join(capsys.readouterr().out.split())   # undo rich's line wrapping
     assert "Burn claude first" in out
     assert "Conserve codex, gemini for what only they can do." in out
@@ -183,13 +187,13 @@ def test_advise_renders_without_error(capsys):
 
 def test_advise_and_alert_in_french(monkeypatch, capsys):
     monkeypatch.setenv("AIU_LANG", "fr")
-    aiu.advise(SNAPSHOT, NOW)
+    routing.advise(SNAPSHOT, NOW)
     out = " ".join(capsys.readouterr().out.split())
     assert "Conseil de routage" in out and "Brûle d'abord claude" in out
     assert "Ménage codex, gemini pour ce qu'eux seuls savent faire." in out
     assert "Weekly Limit 19% libre : à sec dans" in out
     assert "raisonnement profond / agentique" in out
-    assert aiu.alert(SNAPSHOT, notify=False) == 1
+    assert notify.alert(SNAPSHOT, notify=False) == 1
     out = capsys.readouterr().out
     assert "claude · Weekly (all models): ~11% du plafond perdu au reset" in out
     assert "Cloud Credit: 98.46 USD non dépensés" in out
@@ -198,10 +202,10 @@ def test_advise_and_alert_in_french(monkeypatch, capsys):
 
 def test_french_advice_detail_keeps_the_routing():
     """Only the wording changes with the language, never the order or statuses."""
-    english = aiu.route_order(SNAPSHOT, NOW)
+    english = routing.route_order(SNAPSHOT, NOW)
     with pytest.MonkeyPatch.context() as mp:
         mp.setenv("AIU_LANG", "fr")
-        french = aiu.route_order(SNAPSHOT, NOW)
+        french = routing.route_order(SNAPSHOT, NOW)
     strip = lambda lots: [{k: v for k, v in l.items() if k != "detail"} for l in lots]
     assert strip(french) == strip(english)
     assert "libre" in french[2]["detail"] and "free" in english[2]["detail"]

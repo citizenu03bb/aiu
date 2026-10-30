@@ -5,8 +5,10 @@
   client lookup (environment, installed Gemini CLI bundle, neither), and the
   Code Assist quota endpoints."""
 import builtins
+import glob
 import io
 import json
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -16,11 +18,11 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import aiu  # noqa: E402
+from aiu.probes import gemini  # noqa: E402
 
-LOAD_URL = aiu.GEMINI_CA_BASE + "/v1internal:loadCodeAssist"
-QUOTA_URL = aiu.GEMINI_CA_BASE + "/v1internal:retrieveUserQuota"
-TOKEN_URL = aiu.GEMINI_TOKEN_URL
+LOAD_URL = gemini.GEMINI_CA_BASE + "/v1internal:loadCodeAssist"
+QUOTA_URL = gemini.GEMINI_CA_BASE + "/v1internal:retrieveUserQuota"
+TOKEN_URL = gemini.GEMINI_TOKEN_URL
 SUMMARY = "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
 CLIENT = ("123456-fake.apps.googleusercontent.com", "GOCSPX-not-a-real-secret")
 
@@ -61,28 +63,28 @@ def env_client(monkeypatch):
 def test_client_from_environment(env_client, tmp_path):
     install_cli(tmp_path, {"chunk-AAA.js": 'OAUTH_CLIENT_ID = "1-cli.apps.googleusercontent.com"\n'
                                            'OAUTH_CLIENT_SECRET = "cli"\n'})
-    assert aiu._gemini_oauth_client() == CLIENT  # the environment wins over the CLI
+    assert gemini._gemini_oauth_client() == CLIENT  # the environment wins over the CLI
 
 
 def test_client_from_installed_cli(tmp_path):
     install_cli(tmp_path, {"chunk-AAA.js": DECOY_CHUNK, "chunk-BBB.js": CLI_CHUNK})
-    assert aiu._gemini_oauth_client() == CLIENT
+    assert gemini._gemini_oauth_client() == CLIENT
 
 
 def test_client_half_set_environment_uses_cli(monkeypatch, tmp_path):
     monkeypatch.setenv("GEMINI_CLIENT_ID", "only-the-id.apps.googleusercontent.com")
     install_cli(tmp_path, {"chunk-BBB.js": CLI_CHUNK})
-    assert aiu._gemini_oauth_client() == CLIENT
+    assert gemini._gemini_oauth_client() == CLIENT
 
 
 def test_client_cli_without_constants(tmp_path):
     install_cli(tmp_path, {"chunk-AAA.js": DECOY_CHUNK})
-    assert aiu._gemini_oauth_client() is None
+    assert gemini._gemini_oauth_client() is None
 
 
 def test_client_neither(monkeypatch):
     monkeypatch.setenv("GEMINI_CLIENT_SECRET", "secret-without-id")
-    assert aiu._gemini_oauth_client() is None
+    assert gemini._gemini_oauth_client() is None
 
 
 # ---------------------------------------------------------------------------
@@ -94,13 +96,13 @@ def write_creds(token="ya29.fake-access", expires_in=3000, refresh="1//fake-refr
              "expiry_date": int((time.time() + expires_in) * 1000), **extra}
     if refresh:
         creds["refresh_token"] = refresh
-    aiu.GEMINI_CREDS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    aiu.GEMINI_CREDS_PATH.write_text(json.dumps(creds))
+    gemini.GEMINI_CREDS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    gemini.GEMINI_CREDS_PATH.write_text(json.dumps(creds))
     return creds
 
 
 def read_creds():
-    return json.loads(aiu.GEMINI_CREDS_PATH.read_text())
+    return json.loads(gemini.GEMINI_CREDS_PATH.read_text())
 
 
 REFRESHED = {"access_token": "ya29.refreshed", "expires_in": 3599, "token_type": "Bearer",
@@ -109,14 +111,14 @@ REFRESHED = {"access_token": "ya29.refreshed", "expires_in": 3599, "token_type":
 
 def test_fresh_token_is_used_as_is(http):
     write_creds()
-    assert aiu._gemini_access_token() == "ya29.fake-access"
+    assert gemini._gemini_access_token() == "ya29.fake-access"
     assert http.calls == []
 
 
 def test_expired_token_is_refreshed_and_persisted(env_client, http):
     write_creds(expires_in=-60)
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert gemini._gemini_access_token() == "ya29.refreshed"
     [call] = http.calls
     assert call.data == {"grant_type": "refresh_token", "refresh_token": "1//fake-refresh",
                          "client_id": CLIENT[0], "client_secret": CLIENT[1]}
@@ -129,20 +131,20 @@ def test_expired_token_is_refreshed_and_persisted(env_client, http):
 def test_near_expiry_is_refreshed(env_client, http):
     write_creds(expires_in=30)  # inside the 60s buffer
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert gemini._gemini_access_token() == "ya29.refreshed"
 
 
 def test_refresh_with_cli_bundle_client(tmp_path, http):
     install_cli(tmp_path, {"chunk-BBB.js": CLI_CHUNK})
     write_creds(expires_in=-60)
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert gemini._gemini_access_token() == "ya29.refreshed"
     assert http.calls[0].data["client_id"] == CLIENT[0]
 
 
 def test_expired_without_client_keeps_old_token(http):
     write_creds(expires_in=-60)
-    assert aiu._gemini_access_token() == "ya29.fake-access"
+    assert gemini._gemini_access_token() == "ya29.fake-access"
     assert http.calls == [] and read_creds()["access_token"] == "ya29.fake-access"
 
 
@@ -153,37 +155,37 @@ def test_expired_without_client_keeps_old_token(http):
 def test_failed_refresh_keeps_old_token(env_client, http, reply):
     before = write_creds(expires_in=-60)
     http.on("POST", TOKEN_URL, reply)
-    assert aiu._gemini_access_token() == "ya29.fake-access"
+    assert gemini._gemini_access_token() == "ya29.fake-access"
     assert read_creds() == before
 
 
 def test_expired_without_refresh_token(env_client, http):
     write_creds(expires_in=-60, refresh=None)
-    assert aiu._gemini_access_token() == "ya29.fake-access" and http.calls == []
+    assert gemini._gemini_access_token() == "ya29.fake-access" and http.calls == []
 
 
 def test_forced_refresh(env_client, http):
     write_creds()
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    assert aiu._gemini_access_token(force=True) == "ya29.refreshed"
+    assert gemini._gemini_access_token(force=True) == "ya29.refreshed"
 
 
 @pytest.mark.parametrize("content", [None, "", "{oops"])
 def test_no_usable_creds_file(http, content):
     if content is not None:
-        aiu.GEMINI_CREDS_PATH.parent.mkdir()
-        aiu.GEMINI_CREDS_PATH.write_text(content)
-    assert aiu._gemini_access_token() is None and http.calls == []
+        gemini.GEMINI_CREDS_PATH.parent.mkdir()
+        gemini.GEMINI_CREDS_PATH.write_text(content)
+    assert gemini._gemini_access_token() is None and http.calls == []
 
 
 def test_refresh_writes_a_0600_file_and_keeps_other_fields(env_client, http):
     write_creds(expires_in=-60, added_by_cli="keep me")
-    aiu.GEMINI_CREDS_PATH.chmod(0o644)
+    gemini.GEMINI_CREDS_PATH.chmod(0o644)
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    assert aiu._gemini_access_token() == "ya29.refreshed"
+    assert gemini._gemini_access_token() == "ya29.refreshed"
     assert read_creds()["added_by_cli"] == "keep me"
-    assert aiu.GEMINI_CREDS_PATH.stat().st_mode & 0o777 == 0o600
-    assert sorted(p.name for p in aiu.GEMINI_CREDS_PATH.parent.iterdir()) == [
+    assert gemini.GEMINI_CREDS_PATH.stat().st_mode & 0o777 == 0o600
+    assert sorted(p.name for p in gemini.GEMINI_CREDS_PATH.parent.iterdir()) == [
         ".oauth_creds.json.aiu-lock", "oauth_creds.json"]  # no temp file left
 
 
@@ -192,47 +194,47 @@ def test_refresh_through_a_symlink_keeps_the_symlink(env_client, http, home):
     write_creds(expires_in=-60)
     real = home / "dotfiles" / "oauth_creds.json"
     real.parent.mkdir()
-    aiu.GEMINI_CREDS_PATH.rename(real)
-    aiu.GEMINI_CREDS_PATH.symlink_to(real)
+    gemini.GEMINI_CREDS_PATH.rename(real)
+    gemini.GEMINI_CREDS_PATH.symlink_to(real)
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    assert aiu._gemini_access_token() == "ya29.refreshed"
-    assert aiu.GEMINI_CREDS_PATH.is_symlink()
+    assert gemini._gemini_access_token() == "ya29.refreshed"
+    assert gemini.GEMINI_CREDS_PATH.is_symlink()
     assert json.loads(real.read_text())["access_token"] == "ya29.refreshed"
 
 
 @pytest.mark.parametrize("crash", [OSError(28, "No space left on device"), KeyboardInterrupt()])
 def test_interrupted_write_leaves_the_old_file_intact(env_client, http, monkeypatch, capsys, crash):
     write_creds(expires_in=-60)
-    before = aiu.GEMINI_CREDS_PATH.read_bytes()
+    before = gemini.GEMINI_CREDS_PATH.read_bytes()
     http.on("POST", TOKEN_URL, (200, REFRESHED))
 
     def fsync(fd):  # the temp file is written, the rename has not happened yet
         raise crash
-    monkeypatch.setattr(aiu.os, "fsync", fsync)
+    monkeypatch.setattr(os, "fsync", fsync)
     if isinstance(crash, OSError):  # logged, and the token still serves this run
-        assert aiu._gemini_access_token() == "ya29.refreshed"
+        assert gemini._gemini_access_token() == "ya29.refreshed"
         err = capsys.readouterr().err
         assert "kept for this run only" in err and "OSError" in err and "ya29" not in err
     else:  # the run is killed mid-write
         with pytest.raises(KeyboardInterrupt):
-            aiu._gemini_access_token()
-    assert aiu.GEMINI_CREDS_PATH.read_bytes() == before
-    assert [p.name for p in aiu.GEMINI_CREDS_PATH.parent.glob("*.tmp")] == []
+            gemini._gemini_access_token()
+    assert gemini.GEMINI_CREDS_PATH.read_bytes() == before
+    assert [p.name for p in gemini.GEMINI_CREDS_PATH.parent.glob("*.tmp")] == []
 
 
 def test_refresh_does_not_write_a_file_owned_by_someone_else(env_client, http, monkeypatch, capsys):
     before = write_creds(expires_in=-60)
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    uid = aiu.GEMINI_CREDS_PATH.stat().st_uid
-    monkeypatch.setattr(aiu.os, "getuid", lambda: uid + 1)
-    assert aiu._gemini_access_token() == "ya29.refreshed"
+    uid = gemini.GEMINI_CREDS_PATH.stat().st_uid
+    monkeypatch.setattr(os, "getuid", lambda: uid + 1)
+    assert gemini._gemini_access_token() == "ya29.refreshed"
     assert read_creds() == before and "not owned by you" in capsys.readouterr().err
 
 
 def test_persist_rereads_the_file_under_the_lock(env_client):
     # The user signed in again between aiu's read and its write: keep their new login.
     before = write_creds(refresh="1//signed-in-again")
-    assert aiu._gemini_persist("1//fake-refresh", "ya29.refreshed", 0, None) == \
+    assert gemini._gemini_persist("1//fake-refresh", "ya29.refreshed", 0, None) == \
         "signed in again meanwhile"
     assert read_creds() == before
 
@@ -242,10 +244,10 @@ def test_persist_waits_for_the_lock(env_client):
     import os
     import threading
     write_creds()
-    lock = os.open(aiu.GEMINI_CREDS_PATH.with_name(".oauth_creds.json.aiu-lock"),
+    lock = os.open(gemini.GEMINI_CREDS_PATH.with_name(".oauth_creds.json.aiu-lock"),
                    os.O_CREAT | os.O_WRONLY, 0o600)
     fcntl.flock(lock, fcntl.LOCK_EX)  # another aiu run is writing
-    t = threading.Thread(target=aiu._gemini_persist,
+    t = threading.Thread(target=gemini._gemini_persist,
                          args=("1//fake-refresh", "ya29.refreshed", 0, None))
     t.start()
     t.join(0.3)
@@ -260,7 +262,7 @@ def test_persist_waits_for_the_lock(env_client):
 # ---------------------------------------------------------------------------
 @pytest.fixture
 def no_desktop(monkeypatch):
-    monkeypatch.setattr(aiu, "_query_local_quota_summary", lambda: None)
+    monkeypatch.setattr(gemini, "_query_local_quota_summary", lambda: None)
 
 
 # loadCodeAssist for an account the CLI client still serves (trimmed).
@@ -292,7 +294,7 @@ def test_oauth_normal_response(no_desktop, http):
         bucket("gemini-embedding-001", 0.5),
         {"modelId": "gemini-2.0-flash", "tokenType": "REQUESTS"},  # no fraction: skipped
     )))
-    rows = aiu.probe_gemini({})
+    rows = gemini.probe_gemini({})
     assert [(r.metric, round(r.used, 2)) for r in rows] == [
         ("Gemini Pro", 0.4), ("Gemini Flash", 0.0), ("Gemini Flash Lite", 0.05),
         ("gemini-embedding-001", 0.5)]
@@ -308,7 +310,7 @@ def test_oauth_plan_name_on_first_row(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, {**LOAD, "planName": "Google AI Pro"}))
     http.on("POST", QUOTA_URL, (200, quota(bucket("gemini-2.5-pro", 0.5), bucket("gemini-2.5-flash", 0.5))))
-    pro, flash = aiu.probe_gemini({})
+    pro, flash = gemini.probe_gemini({})
     assert pro.note == "Google AI Pro" and flash.note == ""
 
 
@@ -316,7 +318,7 @@ def test_oauth_plan_from_current_tier(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (200, quota(bucket("gemini-2.5-pro", 0.5), bucket("gemini-2.5-flash", 0.5))))
-    pro, flash = aiu.probe_gemini({})
+    pro, flash = gemini.probe_gemini({})
     assert pro.note == "Gemini Code Assist" and flash.note == ""
 
 
@@ -325,7 +327,7 @@ def test_oauth_load_failure_still_reads_quota(no_desktop, http, load_reply):
     write_creds()
     http.on("POST", LOAD_URL, load_reply)
     http.on("POST", QUOTA_URL, (200, quota(bucket("gemini-2.5-pro", 0.25))))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.used == 0.75
     assert http.to(QUOTA_URL)[0].json == {}  # no project known
 
@@ -336,7 +338,7 @@ def test_oauth_rejected_then_refreshed(no_desktop, env_client, http):
     http.on("POST", QUOTA_URL, (401, {"error": {"code": 401, "status": "UNAUTHENTICATED"}}),
             (200, quota(bucket("gemini-2.5-pro", 0.5))))
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.metric == "Gemini Pro" and row.used == 0.5
     assert [c.headers["Authorization"] for c in http.to(QUOTA_URL)] == [
         "Bearer ya29.fake-access", "Bearer ya29.refreshed"]
@@ -348,7 +350,7 @@ def test_oauth_rejected_twice(no_desktop, env_client, http):
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (401, {"error": {"code": 401}}))
     http.on("POST", TOKEN_URL, (400, {"error": "invalid_grant"}))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and "refresh token invalid" in row.note
     assert len(http.to(QUOTA_URL)) == 2
 
@@ -358,7 +360,7 @@ def test_oauth_rejected_and_no_client(no_desktop, http):
     write_creds(expires_in=-60)
     http.on("POST", LOAD_URL, (401, {"error": {"code": 401}}))
     http.on("POST", QUOTA_URL, (401, {"error": {"code": 401}}))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error"
     assert row.note == ("token expired and can't refresh: install gemini-cli or set "
                         "GEMINI_CLIENT_ID / GEMINI_CLIENT_SECRET")
@@ -370,7 +372,7 @@ def test_oauth_forbidden_twice(no_desktop, env_client, http):
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (403, {"error": {"code": 403, "status": "PERMISSION_DENIED"}}))
     http.on("POST", TOKEN_URL, (200, REFRESHED))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and "permission denied (403)" in row.note
     assert "refresh token" not in row.note and "(401)" not in row.note
     assert len(http.to(QUOTA_URL)) == 2 and len(http.to(TOKEN_URL)) == 1
@@ -382,7 +384,7 @@ def test_oauth_unsupported_client(no_desktop, http):
                                      "ineligibleTiers": [{"reasonCode": "UNSUPPORTED_CLIENT",
                                                           "tierId": "free-tier"}]}))
     http.on("POST", QUOTA_URL, (403, {"error": {"code": 403, "status": "PERMISSION_DENIED"}}))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert "for free-tier" in row.note and "Antigravity" in row.note
 
 
@@ -390,7 +392,7 @@ def test_oauth_server_error(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (500, {"error": {"code": 500, "status": "INTERNAL"}}))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and row.note == "HTTP 500"
 
 
@@ -398,7 +400,7 @@ def test_oauth_network_error(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, httpx.ConnectError("offline"))
     http.on("POST", QUOTA_URL, httpx.ConnectError("offline"))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and row.note == "network: offline"
 
 
@@ -406,7 +408,7 @@ def test_oauth_no_buckets_with_plan(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, {**LOAD, "planName": "Google AI Pro"}))
     http.on("POST", QUOTA_URL, (200, {}))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "quota" and row.used is None
     assert row.note == "Google AI Pro: no quota buckets returned"
 
@@ -415,7 +417,7 @@ def test_oauth_no_buckets_without_plan(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (200, LOAD))
     http.on("POST", QUOTA_URL, (200, quota({"modelId": "gemini-2.5-pro", "remaining": 0.5})))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.note == "Gemini Code Assist: no quota buckets returned"
 
 
@@ -423,7 +425,7 @@ def test_oauth_no_buckets_and_no_plan(no_desktop, http):
     write_creds()
     http.on("POST", LOAD_URL, (500, {"error": {"code": 500}}))
     http.on("POST", QUOTA_URL, (200, {}))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.note == "no quota buckets returned"
 
 
@@ -433,12 +435,12 @@ def test_oauth_non_json_body(no_desktop, http, body):
     write_creds()
     http.on("POST", LOAD_URL, (200, "<html>Google</html>"))
     http.on("POST", QUOTA_URL, (200, body))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and row.note == "malformed quota response (HTTP 200)"
 
 
 def test_oauth_no_creds(no_desktop, http):
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and "open Antigravity" in row.note and http.calls == []
 
 
@@ -449,7 +451,7 @@ TCP_HEADER = ("  sl  local_address rem_address   st tx_queue rx_queue tr tm->whe
               "   uid  timeout inode")
 
 
-UID = aiu.os.getuid()
+UID = os.getuid()
 OTHER_UID = UID + 1
 
 
@@ -477,7 +479,7 @@ class FakeProc:
             f"00:00000000 00000000  {uid}        0 {inode} 1 0000000000000000 100 0 0 10 0")
 
     def install(self, monkeypatch):
-        real_open, real_listdir, real_readlink = builtins.open, aiu.os.listdir, aiu.os.readlink
+        real_open, real_listdir, real_readlink = builtins.open, os.listdir, os.readlink
 
         def fake_open(path, mode="r", *a, **kw):
             path = str(path)
@@ -501,11 +503,11 @@ class FakeProc:
                 return self.fds[d][fd]
             return real_readlink(path, *a, **kw)
 
-        monkeypatch.setattr(aiu.glob, "glob", lambda pattern: [p for p in self.files if p.endswith("/cmdline")]
+        monkeypatch.setattr(glob, "glob", lambda pattern: [p for p in self.files if p.endswith("/cmdline")]
                             if pattern == "/proc/[0-9]*/cmdline" else [])
-        monkeypatch.setattr(aiu, "open", fake_open, raising=False)
-        monkeypatch.setattr(aiu.os, "listdir", fake_listdir)
-        monkeypatch.setattr(aiu.os, "readlink", fake_readlink)
+        monkeypatch.setattr(gemini, "open", fake_open, raising=False)
+        monkeypatch.setattr(os, "listdir", fake_listdir)
+        monkeypatch.setattr(os, "readlink", fake_readlink)
         return self
 
 
@@ -540,7 +542,7 @@ def record_post_kwargs(monkeypatch, http):
     def post(url, **kw):
         seen.append(kw)
         return http.post(url, **kw)
-    monkeypatch.setattr(aiu.httpx, "post", post)
+    monkeypatch.setattr(httpx, "post", post)
     return seen
 
 
@@ -560,7 +562,7 @@ def test_local_language_server(proc, http, monkeypatch):
     http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", httpx.RemoteProtocolError("TLS expected"))
     http.on("POST", f"https://127.0.0.1:41394{SUMMARY}", (200, SUMMARY_BODY))
     posts = record_post_kwargs(monkeypatch, http)
-    rows = aiu.probe_gemini({})  # no OAuth call: no creds file, none scripted
+    rows = gemini.probe_gemini({})  # no OAuth call: no creds file, none scripted
     assert [(r.metric, round(r.used, 2), r.window_secs) for r in rows] == [
         ("5-Hour Limit", 0.6, 5 * 3600), ("Weekly Limit", 0.25, 7 * 86400), ("Image generation", 0.0, None)]
     assert rows[0].reset_epoch == pytest.approx(time.time() + 7200, abs=5)
@@ -576,7 +578,7 @@ def test_local_main_log_without_server_sends_nothing(proc, http, home):
     proc.listen(631, 100)                       # another local service
     proc.listen(41394, 101, ip="00000000")      # maybe the server, maybe not
     proc.listen(41500, 102, uid=OTHER_UID)      # another user's
-    assert aiu._query_local_quota_summary() is None and http.calls == []
+    assert gemini._query_local_quota_summary() is None and http.calls == []
 
 
 def test_local_csrf_fallback_for_found_server(proc, http, home):
@@ -587,7 +589,7 @@ def test_local_csrf_fallback_for_found_server(proc, http, home):
     proc.listen(41394, 5555)
     proc.listen(631, 100)                       # not the server's
     http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, SUMMARY_BODY))
-    assert aiu._query_local_quota_summary()[0].metric == "5-Hour Limit"
+    assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
     assert [(c.url, c.headers.get("x-codeium-csrf-token")) for c in http.calls] == [
         (f"http://127.0.0.1:41394{SUMMARY}", "22222222-bbbb")]
 
@@ -601,7 +603,7 @@ def test_local_token_goes_only_to_its_own_server(proc, http, home):
     proc.listen(41500, 6666)
     http.on("POST", f"127.0.0.1:41394{SUMMARY}", (500, "busy"))
     http.on("POST", f"127.0.0.1:41500{SUMMARY}", (500, "busy"))
-    assert aiu._query_local_quota_summary() is None
+    assert gemini._query_local_quota_summary() is None
     assert {(c.url.split("/")[2], c.headers["x-codeium-csrf-token"]) for c in http.calls} == {
         ("127.0.0.1:41394", "token-a"), ("127.0.0.1:41500", "token-b")}
 
@@ -619,7 +621,7 @@ def test_local_only_our_antigravity_server(proc, http, home, argv, owner):
     write_main_log(home, "22222222-bbbb")
     proc.process(4242, *argv, b"--csrf_token", b"tok", sockets=(5555,), **owner)
     proc.listen(41394, 5555)
-    assert aiu._query_local_quota_summary() is None and http.calls == []
+    assert gemini._query_local_quota_summary() is None and http.calls == []
 
 
 @pytest.mark.parametrize("sock", [
@@ -630,14 +632,14 @@ def test_local_only_our_antigravity_server(proc, http, home, argv, owner):
 def test_local_only_our_loopback_sockets(proc, http, sock):
     proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
     proc.listen(41394, 5555, **sock)
-    assert aiu._query_local_quota_summary() is None and http.calls == []
+    assert gemini._query_local_quota_summary() is None and http.calls == []
 
 
 def test_local_ipv6_loopback(proc, http):
     proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
     proc.listen(41394, 5555, ip="00000000000000000000000001000000")  # [::1]
     http.on("POST", f"http://[::1]:41394{SUMMARY}", (200, SUMMARY_BODY))
-    assert aiu._query_local_quota_summary()[0].metric == "5-Hour Limit"
+    assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
 
 
 def test_local_server_updated_while_running(proc, http):
@@ -645,14 +647,14 @@ def test_local_server_updated_while_running(proc, http):
     proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,), exe=LS.decode() + " (deleted)")
     proc.listen(41394, 5555)
     http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, SUMMARY_BODY))
-    assert aiu._query_local_quota_summary()[0].metric == "5-Hour Limit"
+    assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
 
 
 def test_local_without_gemini_group_falls_back_to_oauth(proc, http):
     proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
     proc.listen(41394, 5555)
     http.on("POST", f"127.0.0.1:41394{SUMMARY}", (200, summary(group="Other Models")))
-    [row] = aiu.probe_gemini({})
+    [row] = gemini.probe_gemini({})
     assert row.kind == "error" and "open Antigravity" in row.note
 
 
@@ -661,7 +663,7 @@ def test_local_server_errors_fall_back(proc, http):
     proc.listen(41394, 5555)
     http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (401, {"code": "unauthenticated"}))
     http.on("POST", f"https://127.0.0.1:41394{SUMMARY}", (200, "not json"))
-    assert aiu._query_local_quota_summary() is None
+    assert gemini._query_local_quota_summary() is None
 
 
 @pytest.mark.parametrize("body", [
@@ -671,8 +673,8 @@ def test_local_server_errors_fall_back(proc, http):
     summary({"window": "5h", "remainingFraction": float("nan")}),
 ])
 def test_local_malformed_summary_is_no_summary(body):
-    assert aiu._parse_summary_response(body) is None
+    assert gemini._parse_summary_response(body) is None
 
 
 def test_local_nothing_running(proc, http):
-    assert aiu._query_local_quota_summary() is None and http.calls == []
+    assert gemini._query_local_quota_summary() is None and http.calls == []

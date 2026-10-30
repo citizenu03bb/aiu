@@ -1,7 +1,8 @@
 # Lets pipx / uv tool install the `aiu` and `consult` commands:
 #   pipx install git+https://github.com/citizenu03bb/aiu
-# aiu.py keeps its inline script metadata, so `./aiu.py` still runs standalone
-# with uv; keep the two dependency lists in sync.
+# The code is the aiu/ package. aiu.py at the root only runs it from a checkout:
+# it keeps its inline script metadata, so `./aiu.py` still runs standalone with
+# uv; keep the two dependency lists in sync. It is not part of the wheel.
 [build-system]
 requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
@@ -29,14 +30,17 @@ cookies = ["cryptography>=42"]
 Homepage = "https://github.com/citizenu03bb/aiu"
 
 [project.scripts]
-aiu = "aiu:main"
+aiu = "aiu.cli:main"
 consult = "consult:main"
 
 [tool.setuptools]
-py-modules = ["aiu", "consult"]
+packages = ["aiu", "aiu.probes"]
+py-modules = ["consult"]
 
+# aiu.__version__, named through __init__: setuptools reads an `attr` by looking
+# for aiu.py before aiu/__init__.py, and aiu.py is the root launcher script.
 [tool.setuptools.dynamic]
-version = {attr = "aiu.__version__"}
+version = {attr = "aiu.__init__.__version__"}
 
 # `uv run` installs the dev group, so the tests (CI included) can build and
 # decrypt Chromium cookie fixtures.

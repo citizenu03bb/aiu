@@ -1,0 +1,90 @@
+{
+  "captured_at": "2026-10-26T07:33:20+00:00",
+  "rows": [
+    {
+      "provider": "claude",
+      "metric": "\u2014",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "no token in ~/.claude/.credentials.json (run `claude` once)",
+      "reset_epoch": null,
+      "window_secs": null
+    },
+    {
+      "provider": "codex",
+      "metric": "\u2014",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "auth rejected (401) \u2014 run `codex` to refresh",
+      "reset_epoch": null,
+      "window_secs": null
+    },
+    {
+      "provider": "openai",
+      "metric": "Spend (MTD)",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "HTTP 500",
+      "reset_epoch": null,
+      "window_secs": null
+    },
+    {
+      "provider": "deepseek",
+      "metric": "Balance",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "malformed response: not a JSON object",
+      "reset_epoch": null,
+      "window_secs": null
+    },
+    {
+      "provider": "openrouter",
+      "metric": "Credits",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "network: cannot connect",
+      "reset_epoch": null,
+      "window_secs": null
+    },
+    {
+      "provider": "gemini",
+      "metric": "\u2014",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback \u2014 open Antigravity to read the quota",
+      "reset_epoch": null,
+      "window_secs": null
+    },
+    {
+      "provider": "mistral",
+      "metric": "\u2014",
+      "kind": "error",
+      "used": null,
+      "limit": null,
+      "unit": "",
+      "reset": null,
+      "note": "session rejected (307) \u2014 copy a fresh Cookie header from admin.mistral.ai",
+      "reset_epoch": null,
+      "window_secs": null
+    }
+  ],
+  "advice": []
+}

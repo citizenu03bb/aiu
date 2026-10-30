@@ -9,7 +9,9 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import aiu  # noqa: E402
+from aiu import cli, keys, util  # noqa: E402
+from aiu.config import load_config  # noqa: E402
+from aiu.probes import deepseek, gemini, openai, openrouter  # noqa: E402
 
 OPENAI_URL = "https://api.openai.com/v1/organizations/costs"
 DEEPSEEK_URL = "https://api.deepseek.com/user/balance"
@@ -46,49 +48,49 @@ def openai_key(monkeypatch):
 
 def test_openai_spend(openai_key, http):
     http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(0.06, 1.2), cost_bucket(), cost_bucket(0.004))))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert (row.metric, row.kind, row.used, row.unit) == ("Spend (MTD)", "spend", 1.26, "USD")
     [call] = http.calls
     assert call.headers["Authorization"] == "Bearer sk-admin-fake"
-    assert call.params["start_time"] == aiu._month_start_epoch() and "page" not in call.params
+    assert call.params["start_time"] == openai._month_start_epoch() and "page" not in call.params
 
 
 def test_openai_pagination(openai_key, http):
     http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(1.0), next_page="page_AAA")),
             (200, costs_page(cost_bucket(2.5))))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.used == 3.5
     assert [c.params.get("page") for c in http.calls] == [None, "page_AAA"]
 
 
 def test_openai_empty_month(openai_key, http):
     http.on("GET", OPENAI_URL, (200, costs_page()))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "spend" and row.used == 0.0
 
 
 def test_openai_null_value(openai_key, http):
     http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(None, 2.0))))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.used == 2.0
 
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_openai_auth_rejected(openai_key, http, status):
     http.on("GET", OPENAI_URL, (status, {"error": {"message": "Incorrect API key provided"}}))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.note == f"auth rejected ({status}) — needs an ADMIN key"
 
 
 def test_openai_server_error(openai_key, http):
     http.on("GET", OPENAI_URL, (500, {"error": {"message": "internal"}}))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.note == "HTTP 500"
 
 
 def test_openai_network_error(openai_key, http):
     http.on("GET", OPENAI_URL, httpx.ConnectError("connection refused"))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.note == "network: cannot connect"
 
 
@@ -96,24 +98,24 @@ def test_openai_bad_header_never_quotes_the_key(openai_key, http):
     # A multi-line key_cmd output: h11 quotes the header value (security review, M1).
     http.on("GET", OPENAI_URL, httpx.LocalProtocolError(
         "Illegal header value b'Bearer sk-admin-fake\\nlogin: me@example.com'"))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and "sk-admin" not in row.note and "example.com" not in row.note
 
 
 def test_openai_no_key(http):
-    [row] = aiu.probe_openai({"key_env": "OPENAI_ADMIN_KEY"})
+    [row] = openai.probe_openai({"key_env": "OPENAI_ADMIN_KEY"})
     assert row.kind == "error" and "OPENAI_ADMIN_KEY" in row.note and http.calls == []
 
 
 def test_openai_renamed_data(openai_key, http):
     http.on("GET", OPENAI_URL, (200, {"object": "page", "buckets": [cost_bucket(5.0)], "has_more": False}))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.used is None and row.note == "malformed response: no `data`"
 
 
 def test_openai_renamed_results(openai_key, http):
     http.on("GET", OPENAI_URL, (200, costs_page({"object": "bucket", "items": []})))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.note == "malformed response: no `results`"
 
 
@@ -121,7 +123,7 @@ def test_openai_malformed_second_page(openai_key, http):
     # Half a month is not the month: a bad page fails the whole spend.
     http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(1.0), next_page="page_AAA")),
             (200, "<html>Bad gateway</html>"))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.used is None
 
 
@@ -131,7 +133,7 @@ def test_openai_malformed_second_page(openai_key, http):
                                         (costs_page(cost_bucket("n/a")), "malformed response (ValueError)")])
 def test_openai_malformed_body(openai_key, http, body, note):
     http.on("GET", OPENAI_URL, (200, body))
-    [row] = aiu.probe_openai(openai_key)
+    [row] = openai.probe_openai(openai_key)
     assert row.kind == "error" and row.note == note
 
 
@@ -152,7 +154,7 @@ def deepseek_key(monkeypatch):
 def test_deepseek_balance(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True,
                                         "balance_infos": [balance(), balance("USD", "4.20", "0.00", "4.20")]}))
-    cny, usd = aiu.probe_deepseek(deepseek_key)
+    cny, usd = deepseek.probe_deepseek(deepseek_key)
     assert (cny.metric, cny.kind, cny.used, cny.unit, cny.note) == ("Balance (CNY)", "balance", 110.0, "CNY", "")
     assert (usd.metric, usd.used) == ("Balance (USD)", 4.2)
     assert http.calls[0].headers["Authorization"] == "Bearer sk-fake"
@@ -161,67 +163,67 @@ def test_deepseek_balance(deepseek_key, http):
 def test_deepseek_unavailable(deepseek_key, http):
     # Out of credit: DeepSeek flags the account as unavailable for API calls.
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": False, "balance_infos": [balance(total="0.00")]}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.used == 0.0 and row.note == "account not available"
 
 
 def test_deepseek_no_balance_infos(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": []}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "balance" and row.used is None and row.note == "no balance info returned"
 
 
 def test_deepseek_missing_fields_in_info(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": [{"total_balance": "1.5"}]}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert (row.metric, row.used, row.unit) == ("Balance (?)", 1.5, "")
 
 
 def test_deepseek_missing_total_balance(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": [{"currency": "CNY"}]}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "error" and row.used is None and row.note == "malformed response: no `total_balance`"
 
 
 def test_deepseek_renamed_balance_infos(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balances": [balance()]}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "error" and row.note == "malformed response: no `balance_infos`"
 
 
 def test_deepseek_missing_is_available(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, {"balance_infos": [balance()]}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.note == ""
 
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_deepseek_auth_rejected(deepseek_key, http, status):
     http.on("GET", DEEPSEEK_URL, (status, {"error": {"message": "Authentication Fails"}}))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "error" and row.note == f"auth rejected ({status})"
 
 
 def test_deepseek_server_error(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (500, ""))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "error" and row.note == "HTTP 500"
 
 
 def test_deepseek_network_error(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, httpx.ConnectTimeout("timed out"))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "error" and row.note == "network: timed out"
 
 
 def test_deepseek_no_key(http):
-    [row] = aiu.probe_deepseek({"key_env": "DEEPSEEK_API_KEY"})
+    [row] = deepseek.probe_deepseek({"key_env": "DEEPSEEK_API_KEY"})
     assert row.kind == "error" and "DEEPSEEK_API_KEY" in row.note and http.calls == []
 
 
 def test_deepseek_non_json_body(deepseek_key, http):
     http.on("GET", DEEPSEEK_URL, (200, "<html>502 Bad Gateway</html>"))
-    [row] = aiu.probe_deepseek(deepseek_key)
+    [row] = deepseek.probe_deepseek(deepseek_key)
     assert row.kind == "error" and row.note == "malformed response: not JSON"
 
 
@@ -236,7 +238,7 @@ def openrouter_key(monkeypatch):
 
 def test_openrouter_credits(openrouter_key, http):
     http.on("GET", OPENROUTER_URL, (200, {"data": {"total_credits": 25.0, "total_usage": 7.4321}}))
-    spend, left = aiu.probe_openrouter(openrouter_key)
+    spend, left = openrouter.probe_openrouter(openrouter_key)
     assert (spend.metric, spend.kind, spend.used, spend.unit) == ("Spend (total)", "spend", 7.43, "USD")
     assert (left.metric, left.kind, left.used) == ("Remaining", "balance", 17.57)
     assert http.calls[0].headers["Authorization"] == "Bearer sk-or-v1-fake"
@@ -245,37 +247,37 @@ def test_openrouter_credits(openrouter_key, http):
 def test_openrouter_overdrawn(openrouter_key, http):
     # Usage past the purchased credits (negative balance, requests refused).
     http.on("GET", OPENROUTER_URL, (200, {"data": {"total_credits": 10, "total_usage": 10.5}}))
-    _, left = aiu.probe_openrouter(openrouter_key)
+    _, left = openrouter.probe_openrouter(openrouter_key)
     assert left.used == -0.5
 
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_openrouter_auth_rejected(openrouter_key, http, status):
     http.on("GET", OPENROUTER_URL, (status, {"error": {"code": status, "message": "No auth credentials found"}}))
-    [row] = aiu.probe_openrouter(openrouter_key)
+    [row] = openrouter.probe_openrouter(openrouter_key)
     assert row.kind == "error" and row.note == f"auth rejected ({status})"
 
 
 def test_openrouter_server_error(openrouter_key, http):
     http.on("GET", OPENROUTER_URL, (500, {"error": {"code": 500}}))
-    [row] = aiu.probe_openrouter(openrouter_key)
+    [row] = openrouter.probe_openrouter(openrouter_key)
     assert row.kind == "error" and row.note == "HTTP 500"
 
 
 def test_openrouter_network_error(openrouter_key, http):
     http.on("GET", OPENROUTER_URL, httpx.ConnectError("connection reset"))
-    [row] = aiu.probe_openrouter(openrouter_key)
+    [row] = openrouter.probe_openrouter(openrouter_key)
     assert row.kind == "error" and row.note == "network: cannot connect"
 
 
 def test_openrouter_no_key(http):
-    [row] = aiu.probe_openrouter({"key_env": "OPENROUTER_API_KEY"})
+    [row] = openrouter.probe_openrouter({"key_env": "OPENROUTER_API_KEY"})
     assert row.kind == "error" and "OPENROUTER_API_KEY" in row.note and http.calls == []
 
 
 def test_openrouter_renamed_fields(openrouter_key, http):
     http.on("GET", OPENROUTER_URL, (200, {"data": {"credits": 25.0, "usage": 7.4}}))
-    [row] = aiu.probe_openrouter(openrouter_key)
+    [row] = openrouter.probe_openrouter(openrouter_key)
     assert row.kind == "error" and row.used is None and row.note == "malformed response: no `total_credits`"
 
 
@@ -285,7 +287,7 @@ def test_openrouter_renamed_fields(openrouter_key, http):
                                          "malformed response: no `total_usage`")])
 def test_openrouter_malformed_body(openrouter_key, http, body, note):
     http.on("GET", OPENROUTER_URL, (200, body))
-    [row] = aiu.probe_openrouter(openrouter_key)
+    [row] = openrouter.probe_openrouter(openrouter_key)
     assert row.kind == "error" and row.note == note
 
 
@@ -296,32 +298,32 @@ def test_resolve_key_priority(monkeypatch, home):
     (home / "key").write_text("  from-file\n")
     cfg = {"key_env": "AIU_TEST_KEY", "key_cmd": "printf ' from-cmd \\n'", "key_file": "~/key"}
     forget(monkeypatch, "AIU_TEST_KEY")
-    assert aiu.resolve_key(cfg, "x") == "from-cmd"
+    assert keys.resolve_key(cfg, "x") == "from-cmd"
     monkeypatch.setenv("AIU_TEST_KEY", " from-env ")
-    assert aiu.resolve_key(cfg, "x") == "from-env"
-    assert aiu.resolve_key({"key_file": "~/key"}, "x") == "from-file"
+    assert keys.resolve_key(cfg, "x") == "from-env"
+    assert keys.resolve_key({"key_file": "~/key"}, "x") == "from-file"
 
 
 @pytest.mark.parametrize("cmd", ["exit 3", "printf ''", "no-such-command-anywhere"])
 def test_resolve_key_failed_cmd_falls_back(home, cmd):
     (home / "key").write_text("from-file")
-    assert aiu.resolve_key({"key_cmd": cmd, "key_file": "~/key"}, "x") == "from-file"
+    assert keys.resolve_key({"key_cmd": cmd, "key_file": "~/key"}, "x") == "from-file"
 
 
 def test_resolve_key_nothing(home):
-    assert aiu.resolve_key({"key_env": "AIU_TEST_UNSET", "key_file": "~/missing"}, "x") is None
-    assert aiu.resolve_key({}, "x") is None
+    assert keys.resolve_key({"key_env": "AIU_TEST_UNSET", "key_file": "~/missing"}, "x") is None
+    assert keys.resolve_key({}, "x") is None
 
 
 def test_resolve_key_keeps_first_line(monkeypatch, home, http):
     """M1: a `pass` entry holds more lines after the password; only the first is the key."""
     (home / "key").write_text("sk-from-file\r\n# my admin key\r\n")
-    assert aiu.resolve_key({"key_file": "~/key"}, "x") == "sk-from-file"
+    assert keys.resolve_key({"key_file": "~/key"}, "x") == "sk-from-file"
     monkeypatch.setenv("AIU_TEST_KEY", "sk-from-env\nlogin: me@example.com")
-    assert aiu.resolve_key({"key_env": "AIU_TEST_KEY"}, "x") == "sk-from-env"
+    assert keys.resolve_key({"key_env": "AIU_TEST_KEY"}, "x") == "sk-from-env"
     cfg = {"key_cmd": "printf 'sk-admin-fake\\nlogin: me@example.com\\nurl: x\\n'"}
     http.on("GET", OPENAI_URL, (200, costs_page(cost_bucket(1.0))))
-    aiu.probe_openai(cfg)
+    openai.probe_openai(cfg)
     assert http.calls[0].headers["Authorization"] == "Bearer sk-admin-fake"
 
 
@@ -330,7 +332,7 @@ def test_resolve_key_refuses_control_chars(monkeypatch, home, capsys, value):
     """M1: a key that still holds control characters is refused, and never quoted."""
     (home / "key").write_text("from-file")
     monkeypatch.setenv("AIU_TEST_KEY", value)
-    assert aiu.resolve_key({"key_env": "AIU_TEST_KEY", "key_file": "~/key"}, "openai") == "from-file"
+    assert keys.resolve_key({"key_env": "AIU_TEST_KEY", "key_file": "~/key"}, "openai") == "from-file"
     err = capsys.readouterr().err
     assert "openai: key from key_env holds control characters" in err
     assert "SECRET" not in err
@@ -339,13 +341,13 @@ def test_resolve_key_refuses_control_chars(monkeypatch, home, capsys, value):
 @pytest.fixture
 def env_file(monkeypatch, home):
     """Write ~/.env (0600) and return a loader for it; ENV_FILE starts empty."""
-    monkeypatch.setattr(aiu, "ENV_FILE", {})
+    monkeypatch.setattr(keys, "ENV_FILE", {})
     path = home / ".env"
 
     def write(text, config=None, mode=0o600):
         path.write_text(text)
         path.chmod(mode)
-        return aiu.load_env_file(config or {})
+        return keys.load_env_file(config or {})
     return write
 
 
@@ -374,11 +376,11 @@ def test_env_file_feeds_probes(monkeypatch, env_file, http):
                      "MISTRAL_ADMIN_COOKIE": 'ory_session=abc; csrf="x=y"',
                      "OPENAI_ADMIN_KEY": "sk-admin-from-file"}
     assert dict(os.environ) == before
-    aiu.ENV_FILE.update(found)
-    assert aiu.resolve_key(config["openai"], "openai") == "sk-admin-already-set"  # env wins
-    assert aiu.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE"}, "mistral") == 'ory_session=abc; csrf="x=y"'
+    keys.ENV_FILE.update(found)
+    assert keys.resolve_key(config["openai"], "openai") == "sk-admin-already-set"  # env wins
+    assert keys.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE"}, "mistral") == 'ory_session=abc; csrf="x=y"'
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": [balance()]}))
-    aiu.probe_deepseek({"key_env": "DEEPSEEK_API_KEY"})
+    deepseek.probe_deepseek({"key_env": "DEEPSEEK_API_KEY"})
     assert http.calls[0].headers["Authorization"] == "Bearer sk-from-env-file"
 
 
@@ -439,16 +441,16 @@ def test_env_file_override_and_missing(monkeypatch, home, tmp_path):
     other = tmp_path / "other.env"
     other.write_text("AIU_FROM_OTHER=1\n")
     monkeypatch.setenv("AIU_ENV_FILE", str(other))
-    assert aiu.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {"AIU_FROM_OTHER": "1"}
+    assert keys.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {"AIU_FROM_OTHER": "1"}
     monkeypatch.setenv("AIU_ENV_FILE", str(tmp_path / "absent.env"))
-    assert aiu.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {}  # no file: silently nothing
+    assert keys.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {}  # no file: silently nothing
 
 
 def test_main_exports_nothing_from_env_file(monkeypatch, home, tmp_path, capsys):
     """GEMINI_CLIENT_ID / _SECRET keep working from ~/.env, and no ~/.env value,
     provider key or Gemini client, reaches os.environ."""
     forget(monkeypatch, "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY")
-    monkeypatch.setattr(aiu, "ENV_FILE", {})
+    monkeypatch.setattr(keys, "ENV_FILE", {})
     config = tmp_path / "cfg" / "config.toml"
     config.parent.mkdir(mode=0o700)
     config.write_text('[deepseek]\nkey_env = "DEEPSEEK_API_KEY"\n')
@@ -458,11 +460,11 @@ def test_main_exports_nothing_from_env_file(monkeypatch, home, tmp_path, capsys)
                                "DEEPSEEK_API_KEY=sk-ds\n")
     (home / ".env").chmod(0o600)
     monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(config), "--only", "none", "--json"])
-    assert aiu.main() == 0
+    assert cli.main() == 0
     for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY"):
         assert k not in os.environ
-    assert aiu._gemini_oauth_client() == ("id.apps.googleusercontent.com", "s3cret")
-    assert aiu.ENV_FILE["DEEPSEEK_API_KEY"] == "sk-ds"
+    assert gemini._gemini_oauth_client() == ("id.apps.googleusercontent.com", "s3cret")
+    assert keys.ENV_FILE["DEEPSEEK_API_KEY"] == "sk-ds"
 
 
 # ---------------------------------------------------------------------------
@@ -474,7 +476,7 @@ KEY_CMD_CONFIG = '[openai]\nkey_env = "OPENAI_ADMIN_KEY"\nkey_cmd = "echo sk-x"\
 def test_load_config_creates_private_template(tmp_path, capsys):
     """L1: a --config path whose parent is missing gets a 0700 dir and a 0600 file."""
     path = tmp_path / "a" / "b" / "config.toml"
-    config = aiu.load_config(path)
+    config = load_config(path)
     assert config["claude"]["enabled"] is True
     assert path.stat().st_mode & 0o777 == 0o600
     assert path.parent.stat().st_mode & 0o777 == 0o700
@@ -492,7 +494,7 @@ def write_config(path, mode=0o600, dir_mode=0o700):
 def test_load_config_keeps_key_cmd_when_private(tmp_path, capsys):
     for mode, dir_mode in ((0o600, 0o700), (0o644, 0o755)):
         path = write_config(tmp_path / "cfg" / "config.toml", mode, dir_mode)
-        assert aiu.load_config(path)["openai"]["key_cmd"] == "echo sk-x"
+        assert load_config(path)["openai"]["key_cmd"] == "echo sk-x"
     assert capsys.readouterr().err == ""
 
 
@@ -504,9 +506,9 @@ def test_load_config_keeps_key_cmd_when_private(tmp_path, capsys):
 ])
 def test_load_config_refuses_key_cmd_when_writable(monkeypatch, tmp_path, capsys,
                                                    mode, dir_mode, why):
-    monkeypatch.setattr(aiu, "_private_group", lambda gid: False)
+    monkeypatch.setattr(util, "_private_group", lambda gid: False)
     path = write_config(tmp_path / "cfg" / "config.toml", mode, dir_mode)
-    config = aiu.load_config(path)
+    config = load_config(path)
     assert "key_cmd" not in config["openai"]
     assert config["openai"]["key_env"] == "OPENAI_ADMIN_KEY"  # the rest still applies
     err = capsys.readouterr().err
@@ -515,12 +517,12 @@ def test_load_config_refuses_key_cmd_when_writable(monkeypatch, tmp_path, capsys
 
 def test_load_config_keeps_key_cmd_for_private_group(monkeypatch, tmp_path, capsys):
     """Group write by the user's own private group (umask 002) is not "others"."""
-    monkeypatch.setattr(aiu, "_private_group", lambda gid: True)
+    monkeypatch.setattr(util, "_private_group", lambda gid: True)
     path = write_config(tmp_path / "cfg" / "config.toml", 0o664, 0o775)
-    assert aiu.load_config(path)["openai"]["key_cmd"] == "echo sk-x"
+    assert load_config(path)["openai"]["key_cmd"] == "echo sk-x"
     assert capsys.readouterr().err == ""
     path.chmod(0o666)
-    assert "key_cmd" not in aiu.load_config(path)["openai"]
+    assert "key_cmd" not in load_config(path)["openai"]
 
 
 def test_load_config_refuses_key_cmd_through_symlink(tmp_path, capsys):
@@ -529,12 +531,12 @@ def test_load_config_refuses_key_cmd_through_symlink(tmp_path, capsys):
     link = tmp_path / "cfg" / "config.toml"
     link.parent.mkdir(mode=0o700)
     link.symlink_to(target)
-    assert "key_cmd" not in aiu.load_config(link)["openai"]
+    assert "key_cmd" not in load_config(link)["openai"]
     assert "shared is writable by group or others" in capsys.readouterr().err
 
 
 def test_load_config_refuses_key_cmd_not_owned(monkeypatch, tmp_path, capsys):
     path = write_config(tmp_path / "cfg" / "config.toml")
-    monkeypatch.setattr(aiu.os, "getuid", lambda: path.stat().st_uid + 1)
-    assert "key_cmd" not in aiu.load_config(path)["openai"]
+    monkeypatch.setattr(os, "getuid", lambda: path.stat().st_uid + 1)
+    assert "key_cmd" not in load_config(path)["openai"]
     assert "config.toml is not yours" in capsys.readouterr().err

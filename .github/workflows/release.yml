@@ -15,13 +15,13 @@ jobs:
         working-directory: gnome-extension
     steps:
       - uses: actions/checkout@v4
-      - name: The tag matches the version in aiu.py and metadata.json
+      - name: The tag matches the version in aiu/__init__.py and metadata.json
         env:
           TAG: ${{ github.ref_name }}
         run: |
-          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' ../aiu.py)
+          version=$(sed -n 's/^__version__ = "\(.*\)"$/\1/p' ../aiu/__init__.py)
           name=$(python3 -c 'import json; print(json.load(open("metadata.json"))["version-name"])')
-          echo "tag $TAG, aiu.py $version, metadata.json $name"
+          echo "tag $TAG, aiu/__init__.py $version, metadata.json $name"
           [ "$TAG" = "v$version" ] && [ "$name" = "$version" ]
       - name: Install GJS
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs

@@ -7,14 +7,15 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import aiu  # noqa: E402
+import aiu.probes  # noqa: E402
+import aiu.rows  # noqa: E402
 
 
 @pytest.fixture
 def probes(monkeypatch):
     """Replace the probe table with fakes; returns the dict to fill."""
     table = {}
-    monkeypatch.setattr(aiu, "PROBES", table)
+    monkeypatch.setattr(aiu.probes, "PROBES", table)
     return table
 
 
@@ -23,16 +24,16 @@ def test_probe_exception_becomes_an_error_row(probes):
         raise RuntimeError("Bearer sk-SECRET leaked through the message")
 
     probes["broken"] = broken
-    probes["fine"] = lambda cfg: [aiu.Row("fine", "Balance", "balance", used=1.0)]
-    err, ok = aiu.collect({}, {"broken", "fine"})
+    probes["fine"] = lambda cfg: [aiu.rows.Row("fine", "Balance", "balance", used=1.0)]
+    err, ok = aiu.probes.collect({}, {"broken", "fine"})
     assert (err.provider, err.kind, err.note) == ("broken", "error", "probe failed (RuntimeError)")
     assert (ok.provider, ok.used) == ("fine", 1.0)
 
 
 def test_only_enabled_probes_run(probes):
-    probes["on"] = lambda cfg: [aiu.Row("on", "x", "balance")]
+    probes["on"] = lambda cfg: [aiu.rows.Row("on", "x", "balance")]
     probes["off"] = lambda cfg: pytest.fail("disabled probe ran")
-    assert [r.provider for r in aiu.collect({"on": {"enabled": True}, "off": {}}, None)] == ["on"]
+    assert [r.provider for r in aiu.probes.collect({"on": {"enabled": True}, "off": {}}, None)] == ["on"]
 
 
 @pytest.mark.parametrize("note", [
@@ -43,8 +44,8 @@ def test_only_enabled_probes_run(probes):
     "token eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.c2lnbmF0dXJl",
 ])
 def test_token_like_notes_are_redacted(probes, note):
-    probes["p"] = lambda cfg: [aiu.Row("p", "x", "error", note=note)]
-    [row] = aiu.collect({}, {"p"})
+    probes["p"] = lambda cfg: [aiu.rows.Row("p", "x", "error", note=note)]
+    [row] = aiu.probes.collect({}, {"p"})
     assert "[redacted]" in row.note
     for secret in ("abc.def", "AbCdEf123", "0123456789abcdef", "eyJhbGci"):
         assert secret not in row.note
@@ -59,6 +60,6 @@ def test_token_like_notes_are_redacted(probes, note):
     "auth rejected (401) — run `codex` to refresh",
 ])
 def test_ordinary_notes_are_kept(probes, note):
-    probes["p"] = lambda cfg: [aiu.Row("p", "x", "error", note=note)]
-    [row] = aiu.collect({}, {"p"})
+    probes["p"] = lambda cfg: [aiu.rows.Row("p", "x", "error", note=note)]
+    [row] = aiu.probes.collect({}, {"p"})
     assert row.note == note
