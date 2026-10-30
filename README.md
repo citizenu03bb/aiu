@@ -110,8 +110,9 @@ console's Usage page (`usage.costBreakdown` for tokens per billing metric,
 `usage.prices` for €/token) and multiplies them; this matches the dashboard's
 "Total Estimated Cost" to the cent. Setup: in admin.mistral.ai, DevTools →
 Network → any `/api/local-trpc/` request → copy the whole `Cookie` request
-header into `MISTRAL_ADMIN_COOKIE`, in single quotes (the `aiu` wrapper sources
-`~/.env` with bash, and the cookie contains `;`), then set `enabled = true`.
+header into `MISTRAL_ADMIN_COOKIE`, in single quotes (the cookie contains `;`
+and spaces, and `~/.env` is read like a shell reads it; better, keep it in a
+keyring, see *Secrets*), then set `enabled = true`.
 When the session expires the row says "session rejected": copy it again.
 Vibe's local session logs (`~/.vibe/logs`) are not a substitute, because they
 undercount the server's token totals by roughly 3×.
@@ -141,7 +142,7 @@ takes only the names the config refers to (each `key_env`, plus
 ignores every other line, so a `HTTPS_PROXY` or `LD_PRELOAD` meant for another
 tool changes nothing. Variables already in your environment win. The keys are
 kept inside `aiu`, not exported, so `key_cmd` and the other commands `aiu` runs
-don't see them; the Gemini CLI's public OAuth client is the one exception.
+don't see them.
 Values are read like a shell reads them, without `$` expansion: `export KEY=v`
 and bare `KEY=v` both work, an unquoted value stops at ` #`, `'...'` is
 literal, and a line whose quotes don't match is skipped with a warning. `aiu`

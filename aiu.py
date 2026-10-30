@@ -64,10 +64,13 @@ PRICES_PATH = CONFIG_DIR / "prices.toml"
 CONFIG_TEMPLATE = """\
 # aiu config — enable the providers you use, tell aiu how to find each key.
 # Key resolution per provider, in priority order:
-#   key_env  = "NAME"          -> read environment variable NAME
-#   key_cmd  = "shell command" -> run it, use trimmed stdout (great for pulling
-#                                 a key out of an existing CLI config)
-#   key_file = "/path"         -> read whole file (trimmed)
+#   key_env  = "NAME"          -> read environment variable NAME, else NAME
+#                                 from ~/.env
+#   key_cmd  = "shell command" -> run it, use the first line of stdout (great
+#                                 for pulling a key out of an existing CLI
+#                                 config); ignored if others can write this file
+#   key_file = "/path"         -> read the file's first line
+# A key that still holds control characters is refused.
 # Claude Max needs no key here: the OAuth token is read from
 # ~/.claude/.credentials.json automatically.
 
@@ -600,7 +603,8 @@ _GEMINI_CLIENT_SECRET_RE = re.compile(r'OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"')
 
 
 def _gemini_oauth_client() -> tuple[str, str] | None:
-    cid, secret = os.environ.get("GEMINI_CLIENT_ID"), os.environ.get("GEMINI_CLIENT_SECRET")
+    cid, secret = (os.environ.get(k) or ENV_FILE.get(k)
+                   for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET"))
     if cid and secret:
         return cid, secret
     cli = shutil.which("gemini")
@@ -1671,11 +1675,6 @@ def main() -> int:
 
     config = load_config(Path(os.path.expanduser(args.config)))
     ENV_FILE.update(load_env_file(config))
-    # _gemini_oauth_client reads the environment. That client is the Gemini CLI's
-    # public one, not a user secret, so it is the only ~/.env value exported.
-    for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET"):
-        if k in ENV_FILE:
-            os.environ.setdefault(k, ENV_FILE[k])
     if args.alert:
         ensure_desktop_entry()  # before probing, so GNOME has indexed it by notify time
     only = set(s.strip() for s in args.only.split(",")) if args.only else None
