@@ -464,6 +464,74 @@ has passed, instead of "unknown pace".
 **Done when:** CI is green, with tests for early-fast (conserve), early-slow
 (unknown) and history-present (history wins).
 
+## Wave 8: provider terms, in parallel
+
+A survey of each provider's official sign-in and usage APIs (2026-10-30)
+found two places where aiu leans on another program's credentials in a way
+the provider's terms address, and one clean official sign-in:
+
+- **Anthropic**: "developers may not collect, store, or intermediate Claude.ai
+  credentials or session tokens" (code.claude.com/docs/en/legal-and-compliance).
+  aiu reads Claude Code's stored token and calls `api/oauth/usage`, the same
+  endpoint, header and token type the Claude desktop app uses for its own usage
+  card. The only documented alternative, the Claude Code status line's
+  `rate_limits`, exists only in CLI sessions. The maintainer keeps the probe,
+  as an informed opt-in.
+- **Google**: the Gemini CLI FAQ calls third-party software that piggybacks on
+  Gemini CLI's OAuth a "direct violation" that "may be grounds for immediate
+  suspension". aiu's Gemini fallback refreshes and uses the Gemini CLI's
+  token with the Gemini CLI's OAuth client. The Antigravity local path is not
+  covered by that text.
+- **OpenRouter** documents an OAuth PKCE flow that issues a user API key, and
+  `GET /api/v1/key` reads that key's limit and usage (`/api/v1/credits`, used
+  today, is documented for management keys).
+
+### R. Claude as an informed opt-in
+
+- The starter config ships `claude.enabled = false`, with a comment that says
+  what the probe does (reads Claude Code's token, calls `api/oauth/usage`) and
+  quotes the policy line. Existing configs keep their value.
+- `aiu config set claude.enabled true` (and the preferences switch) prints the
+  same notice once; nothing else changes in the probe.
+- While there: the window labels the desktop app knows that aiu drops today
+  (`seven_day_opus`, `seven_day_oauth_apps`, `seven_day_cowork`) get labels and
+  window lengths, if the endpoint returns them.
+- README and `docs/security-review.md` state the terms question plainly.
+
+**Files:** `aiu/config.py` (starter config), `aiu/probes/claude.py`,
+`aiu/i18n.py`, `tests/`, `README.md`, `docs/security-review.md`,
+`gnome-extension/prefsWindow.js` (notice text only), `gnome-extension/po/`.
+
+### S. Drop the Gemini CLI OAuth fallback
+
+- Remove the path that refreshes `~/.gemini/oauth_creds.json` with the Gemini
+  CLI's OAuth client (from the environment or the CLI bundle) and calls
+  `cloudcode-pa` with it. Gemini is read from the Antigravity local server only;
+  without it, the row says to open Antigravity.
+- Remove `GEMINI_CLIENT_ID` / `GEMINI_CLIENT_SECRET` handling, the bundle
+  scan, `_gemini_persist` and their tests; update README, the starter config
+  and the security review (M2 and the Gemini notes become history).
+- Own OAuth on a Google Cloud project is out of scope: it reaches the Gemini
+  API's per-project quotas, not the Google AI plan used through Antigravity.
+
+**Files:** `aiu/probes/gemini.py`, `aiu/keys.py` (Gemini env names),
+`aiu/config.py`, `tests/`, `README.md`, `docs/security-review.md`.
+
+### T. `aiu login openrouter`
+
+- OAuth PKCE (S256) with a loopback callback on `127.0.0.1` and a random port,
+  `key_label=aiu`; exchange the code at `POST /api/v1/auth/keys`; store the key
+  with `secret-tool` and set `openrouter.key_cmd` through `aiu config set`, as
+  the cookie import does. User-run only; nothing is printed but the outcome.
+- The probe reads `GET /api/v1/key` (limit, `limit_remaining`, usage) and
+  keeps `/api/v1/credits` only as a fallback for management keys.
+
+**Files:** `aiu/probes/openrouter.py`, a new `aiu/login.py`, `aiu/cli.py`
+(dispatch), `aiu/i18n.py`, `tests/`, `README.md`.
+
+**Done when** (each task): CI is green, behaviour outside the task unchanged,
+and the README says what changed for existing users.
+
 ## Later
 
 - **`claude_cmd` from an untrusted config.** `aiu config set` refuses it like
@@ -478,8 +546,9 @@ has passed, instead of "unknown pace".
   authorization code with PKCE at `auth.openai.com`, a loopback redirect,
   `client_id=dynamic_agent_client` with an agent host id, scopes up to
   `chatgpt.tokens.use.direct`, ID token checked against the JWKS, tokens in the
-  keyring. Before any code, check whether such a token can read the usage
-  endpoint the probe uses (`chatgpt.com/backend-api/wham/usage`) and what
-  OpenAI documents about that agent program. If it can, `aiu login chatgpt`
-  could replace the dependency on the Codex CLI; the same token could also let
-  `consult` send prompts to the plan without `codex`. Ideas only, not code.
+  keyring. OpenAI documents it as "Sign in with ChatGPT"
+  (developers.openai.com/siwc): open to open-source apps for eligible Plus and
+  Pro users, tokens for `/v1/responses` and `/v1/models` only, per-app caps
+  managed in ChatGPT settings, no documented way to read usage or limits.
+  So it suits `consult` (prompts on the plan without `codex`), not the codex
+  probe, unless a test shows the token reads `wham/usage`. Ideas only, not code.
