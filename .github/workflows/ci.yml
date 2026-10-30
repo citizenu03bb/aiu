@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # tests/test_json_output.py compares with aiu.py before the split
       - uses: astral-sh/setup-uv@v5
       - name: Tests (synthetic snapshots, no network)
         run: uv run --python 3.12 --with pytest --with httpx --with rich pytest -q tests
@@ -23,6 +25,7 @@ jobs:
         run: |
           pipx install .
           aiu --help
+          aiu --version
           consult --help
       - name: aiu.py still runs standalone with uv
         run: ./aiu.py --help

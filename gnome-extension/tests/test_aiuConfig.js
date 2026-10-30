@@ -26,7 +26,7 @@ const keySources = (env = null) => ({
     key_file: opt('string', null),
 });
 
-// Shaped as aiu.py's config_snapshot() prints it.
+// Shaped as aiu's config_snapshot() (aiu/config.py) prints it.
 function showJson({ allowed = true, problems = [] } = {}) {
     return JSON.stringify({
         path: '/home/me/.config/ai-usage/config.toml',

@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-import aiu  # noqa: E402
+from aiu.probes import claude, gemini  # noqa: E402
 
 PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
                 "MISTRAL_ADMIN_COOKIE", "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET",
@@ -37,8 +37,8 @@ def home(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LANG", "C.UTF-8")
     # Resolved at import time from the real home.
-    monkeypatch.setattr(aiu, "GEMINI_CREDS_PATH", home / ".gemini" / "oauth_creds.json")
-    monkeypatch.setattr(aiu, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))
+    monkeypatch.setattr(gemini, "GEMINI_CREDS_PATH", home / ".gemini" / "oauth_creds.json")
+    monkeypatch.setattr(claude, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))
     yield home
     os.umask(umask)
 
@@ -87,8 +87,8 @@ class FakeHTTP:
 @pytest.fixture(autouse=True)
 def http(monkeypatch):
     fake = FakeHTTP()
-    monkeypatch.setattr(aiu.httpx, "get", fake.get)
-    monkeypatch.setattr(aiu.httpx, "post", fake.post)
+    monkeypatch.setattr(httpx, "get", fake.get)
+    monkeypatch.setattr(httpx, "post", fake.post)
     yield fake
     assert not fake.unexpected, f"unscripted HTTP calls: {fake.unexpected}"
 

@@ -17,6 +17,7 @@ from cryptography.hazmat.primitives import padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
 
 import aiu
+from aiu import cli, config, cookies, keys
 
 HOST = "admin.mistral.ai"
 SESSION = "ory_session_x=S3cr3t-Sess10n-Value"
@@ -114,7 +115,7 @@ def cfg(tmp_path):
 def run(monkeypatch, capsys, cfg, *args):
     monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(cfg), "cookie", "import", "mistral", *args])
     capsys.readouterr()
-    code = aiu.main()
+    code = cli.main()
     out, err = capsys.readouterr()
     for secret in NEVER_SHOWN:
         assert secret not in out + err
@@ -197,7 +198,7 @@ def snapshot(root: Path) -> dict[str, bytes]:
 @pytest.mark.parametrize("version, prefix", [(b"v10", False), (b"v10", True),
                                              (b"v11", False), (b"v11", True)])
 def test_chromium_import(monkeypatch, capsys, tmp_path, home, cfg, keyring, browser, version, prefix):
-    password = aiu.CHROMIUM_V10_PASSWORD if version == b"v10" else SAFE_STORAGE
+    password = cookies.CHROMIUM_V10_PASSWORD if version == b"v10" else SAFE_STORAGE
     keyring.add(["xdg:schema", V2, "application", browser], SAFE_STORAGE.decode())
     chromium_db(home / BROWSER_DIRS[browser] / "Default" / "Network" / "Cookies",
                 mistral_rows(password, version, prefix) + other_rows(), 24 if prefix else 23)
@@ -218,7 +219,7 @@ def test_chromium_import(monkeypatch, capsys, tmp_path, home, cfg, keyring, brow
     # Only this browser's Safe Storage entry is asked for, and only for v11.
     expected = [["xdg:schema", V2, "application", browser]] if version == b"v11" else []
     assert keyring.lookups() == expected
-    assert aiu.load_config(cfg)["mistral"]["key_cmd"] == KEY_CMD
+    assert config.load_config(cfg)["mistral"]["key_cmd"] == KEY_CMD
     assert f"mistral.key_cmd set in {cfg}" in out
     # Nothing written but the keyring and the config (with its lock file).
     after = snapshot(tmp_path)
@@ -230,10 +231,10 @@ def test_chromium_import(monkeypatch, capsys, tmp_path, home, cfg, keyring, brow
 
 def test_imported_session_is_what_the_probe_resolves(monkeypatch, capsys, home, cfg, keyring):
     chromium_db(home / BROWSER_DIRS["chrome"] / "Default" / "Network" / "Cookies",
-                mistral_rows(aiu.CHROMIUM_V10_PASSWORD, b"v10", True))
+                mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", True))
     assert run(monkeypatch, capsys, cfg, "--browser", "chrome")[0] == 0
-    mistral = aiu.load_config(cfg)["mistral"]
-    assert aiu.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE", **mistral}, "mistral") \
+    mistral = config.load_config(cfg)["mistral"]
+    assert keys.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE", **mistral}, "mistral") \
         == f"{SESSION}; {CSRF}"
 
 
@@ -287,7 +288,7 @@ def test_not_signed_in(monkeypatch, capsys, home, cfg, keyring):
 
 def test_expired_session(monkeypatch, capsys, home, cfg, keyring):
     chromium_db(home / BROWSER_DIRS["chrome"] / "Default" / "Network" / "Cookies",
-                mistral_rows(aiu.CHROMIUM_V10_PASSWORD, b"v10", True, expires=PAST))
+                mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", True, expires=PAST))
     code, _, err = run(monkeypatch, capsys, cfg, "--browser", "chrome")
     assert code == 1 and "session in Chrome profile Default has expired" in err
     assert keyring.stores() == []
@@ -296,7 +297,7 @@ def test_expired_session(monkeypatch, capsys, home, cfg, keyring):
 def test_session_cookies_and_paths(monkeypatch, capsys, home, cfg, keyring):
     """A cookie without expiry is kept; one whose path does not cover the tRPC
     endpoint is not; the longer path comes first, as a browser sends them."""
-    pw = aiu.CHROMIUM_V10_PASSWORD
+    pw = cookies.CHROMIUM_V10_PASSWORD
     chromium_db(home / BROWSER_DIRS["chrome"] / "Default" / "Network" / "Cookies", [
         (HOST, "root", "", encrypt("1", pw, b"v10", HOST, True), "/", 0),
         (HOST, "api", "", encrypt("2", pw, b"v10", HOST, True), "/api", FAR),
@@ -309,7 +310,7 @@ def test_session_cookies_and_paths(monkeypatch, capsys, home, cfg, keyring):
 
 def test_legacy_cookie_location_and_named_profile(monkeypatch, capsys, home, cfg, keyring):
     root = home / BROWSER_DIRS["chrome"]
-    chromium_db(root / "Profile 2" / "Cookies", mistral_rows(aiu.CHROMIUM_V10_PASSWORD, b"v10", False))
+    chromium_db(root / "Profile 2" / "Cookies", mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", False))
     (root / "Default").mkdir()
     (root / "Local State").write_text(json.dumps(
         {"profile": {"info_cache": {"Default": {"name": "Personal"}, "Profile 2": {"name": "Work"}}}}))
@@ -331,14 +332,14 @@ def test_browser_not_installed(monkeypatch, capsys, cfg, keyring):
 def test_without_cryptography(monkeypatch, capsys, home, cfg, keyring):
     monkeypatch.setitem(sys.modules, "cryptography", None)  # import fails
     chromium_db(home / BROWSER_DIRS["chrome"] / "Default" / "Network" / "Cookies",
-                mistral_rows(aiu.CHROMIUM_V10_PASSWORD, b"v10", True))
+                mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", True))
     code, _, err = run(monkeypatch, capsys, cfg, "--browser", "chrome")
     assert code == 1 and "needs the cryptography package: pipx inject aiu cryptography" in err
 
 
 def test_without_secret_tool(monkeypatch, capsys, home, cfg):
     chromium_db(home / BROWSER_DIRS["chrome"] / "Default" / "Network" / "Cookies",
-                mistral_rows(aiu.CHROMIUM_V10_PASSWORD, b"v10", True))
+                mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", True))
     code, _, err = run(monkeypatch, capsys, cfg, "--browser", "chrome")
     assert code == 1 and "secret-tool not found" in err
     assert not cfg.exists()
@@ -347,7 +348,7 @@ def test_without_secret_tool(monkeypatch, capsys, home, cfg):
 def test_locked_keyring_changes_nothing(monkeypatch, capsys, home, cfg, keyring):
     monkeypatch.setenv("FAKE_KEYRING_LOCKED", "1")
     chromium_db(home / BROWSER_DIRS["chrome"] / "Default" / "Network" / "Cookies",
-                mistral_rows(aiu.CHROMIUM_V10_PASSWORD, b"v10", True))
+                mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", True))
     code, _, err = run(monkeypatch, capsys, cfg, "--browser", "chrome")
     assert code == 1 and "the keyring did not store the cookie (is it locked?)" in err
     assert keyring.mistral() is None and not cfg.exists()
@@ -416,7 +417,7 @@ def test_firefox_import(monkeypatch, capsys, tmp_path, home, cfg, keyring, snap)
     [store] = keyring.stores()
     assert store["stdin"] == f"{SESSION}; {CSRF}"
     assert not any(s in a for a in store["argv"] for s in NEVER_SHOWN)
-    assert aiu.load_config(cfg)["mistral"]["key_cmd"] == KEY_CMD
+    assert config.load_config(cfg)["mistral"]["key_cmd"] == KEY_CMD
     after = snapshot(tmp_path)
     assert {k for k in after if after[k] != before.get(k)} == {
         "keyring/store.json", "keyring/calls.jsonl", "cfg/config.toml", "cfg/.config.toml.aiu-lock"}
@@ -524,7 +525,7 @@ def test_rerun_replaces_the_session(monkeypatch, capsys, cfg, keyring, firefox):
 
 def test_untrusted_config_keeps_the_keyring_and_prints_the_command(monkeypatch, capsys, cfg,
                                                                    keyring, firefox):
-    aiu.ensure_config(cfg)
+    config.ensure_config(cfg)
     cfg.parent.chmod(0o777)
     code, out, err = run(monkeypatch, capsys, cfg, "--browser", "firefox")
     cfg.parent.chmod(0o700)
@@ -532,7 +533,7 @@ def test_untrusted_config_keeps_the_keyring_and_prints_the_command(monkeypatch, 
     assert keyring.mistral() == f"{SESSION}; {CSRF}"
     assert "mistral.key_cmd not set (mistral.key_cmd refused:" in err
     assert f'aiu config set mistral.key_cmd "{KEY_CMD}"' in err
-    assert "key_cmd" not in aiu.load_config(cfg)["mistral"]
+    assert "key_cmd" not in config.load_config(cfg)["mistral"]
 
 
 def test_warns_when_the_environment_still_wins(monkeypatch, capsys, home, cfg, keyring, firefox):
@@ -553,8 +554,8 @@ def test_warns_when_the_environment_still_wins(monkeypatch, capsys, home, cfg, k
     assert f"MISTRAL_ADMIN_COOKIE is set in {env}, and aiu reads it before key_cmd" in err
 
     # Once key_env is off, the copy in ~/.env is no longer read.
-    assert aiu.config_set(cfg, "mistral.key_env", "") is None
-    aiu.config_set(cfg, "mistral.enabled", "true")
+    assert config.config_set(cfg, "mistral.key_env", "") is None
+    config.config_set(cfg, "mistral.enabled", "true")
     code, out, err = run(monkeypatch, capsys, cfg, "--browser", "firefox")
     assert code == 0 and "before key_cmd" not in err and "mistral is off" not in out
 
@@ -567,9 +568,9 @@ def test_messages_in_french(monkeypatch, capsys, cfg, keyring):
 
 def test_only_the_user_runs_it():
     """Neither the snapshot path nor the GNOME extension ever imports a cookie."""
-    root = Path(aiu.__file__).resolve().parent
+    root = Path(aiu.__file__).resolve().parents[1]
     for js in (root / "gnome-extension").glob("*.js"):
         assert "cookie" not in js.read_text().lower(), js.name
-    src = (root / "aiu.py").read_text()
+    src = "".join(p.read_text() for p in (root / "aiu").rglob("*.py"))
     assert src.count("cookie_main(") == 2  # its definition and the `cookie` dispatch in main
     assert src.count("cookie_import(") == 2

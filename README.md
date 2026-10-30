@@ -35,7 +35,7 @@ pipx install git+https://github.com/citizenu03bb/aiu
 ```
 
 Or run straight from a clone with [`uv`](https://docs.astral.sh/uv/): the script
-declares its own dependencies.
+declares its own dependencies, and runs the `aiu/` package next to it.
 
 ```bash
 git clone https://github.com/citizenu03bb/aiu.git
@@ -345,10 +345,13 @@ Cloud Billing and would need a BigQuery export — not implemented here, since t
 subscription quota is what matters for the CLI.)*
 
 ## Adding a provider
-Write a `probe_<name>(cfg) -> list[Row]` function, register it in `PROBES`, add
-a `[<name>]` block to the config template and its options to `CONFIG_OPTIONS`
-(for `aiu config`). A `Row` is provider/metric/kind (`quota|spend|balance|credit`)
-+ `used`/`limit`/`unit`/`reset`/`note`.
+A provider is one module, `aiu/probes/<name>.py`, that follows the `Probe`
+protocol in `aiu/probes/__init__.py`: `NAME` (its config section), `OPTIONS`
+(what `aiu config` shows and sets for it, e.g. `**KEY_SOURCES` from `aiu/keys.py`
+for a key) and `probe(cfg) -> list[Row]`. Add it to `REGISTRY` there, and a
+`[<name>]` block to both starter configs in `aiu/config.py`. A `Row`
+(`aiu/rows.py`) is provider/metric/kind (`quota|spend|balance|credit`) +
+`used`/`limit`/`unit`/`reset`/`note`.
 
 ## Unofficial endpoints & privacy
 The subscription probes call **undocumented** endpoints, the same ones the
@@ -371,6 +374,8 @@ writes it back to `~/.gemini/oauth_creds.json`, like the Gemini CLI does.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.
+The code is the `aiu/` package, one module per concern (its docstring lists
+them); `aiu.py` at the root only runs it from a checkout.
 
 ```bash
 uv run --with pytest --with httpx --with rich pytest -q tests   # CLI
@@ -387,7 +392,7 @@ make -C gnome-extension check test pack                         # extension, as 
   translations); `make clean` removes it and `locale/`.
 
 User-facing CLI messages are written in English and translated through the
-`FR` table in `aiu.py` (and in `consult.py`); `tests/test_i18n.py` fails when a
+`FR` table in `aiu/i18n.py` (and in `consult.py`); `tests/test_i18n.py` fails when a
 message has no French text. The extension's strings are in
 `gnome-extension/po/`, see its [README](gnome-extension/README.md#languages).
 

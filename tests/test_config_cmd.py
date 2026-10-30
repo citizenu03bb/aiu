@@ -4,12 +4,14 @@ window reads or changes config.toml. Values only, never a key; line-level
 edits that leave every other byte alone; the security review's rules (0600,
 key_cmd trust check, never echoing what was typed) hold here too."""
 import json
+import os
 import sys
 import tomllib
 
 import pytest
 
-import aiu
+from aiu import cli, config, keys, probes, util
+from aiu.probes import mistral
 
 # A hand-edited config: comments everywhere, odd spacing, a quoted key, a
 # section aiu doesn't know, an unknown key, CRLF-free but no final newline.
@@ -41,7 +43,7 @@ enabled = true
 def run(monkeypatch, capsys, path, *args):
     monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(path), *args])
     capsys.readouterr()  # drop what the test's own setup printed
-    code = aiu.main()
+    code = cli.main()
     out, err = capsys.readouterr()
     return code, out, err
 
@@ -75,8 +77,8 @@ def cfg(tmp_path):
 
 
 def test_options_cover_every_probe():
-    assert set(aiu.CONFIG_OPTIONS) == set(aiu.PROBES)
-    for options in aiu.CONFIG_OPTIONS.values():
+    assert set(config.CONFIG_OPTIONS) == set(probes.PROBES)
+    for options in config.CONFIG_OPTIONS.values():
         assert options["enabled"] == ("bool", False)
 
 
@@ -85,18 +87,18 @@ def test_options_cover_every_probe():
 # ---------------------------------------------------------------------------
 def test_show_creates_the_starter_config(monkeypatch, capsys, cfg):
     snap = show(monkeypatch, capsys, cfg)
-    assert cfg.read_text() == aiu.CONFIG_TEMPLATE
+    assert cfg.read_text() == config.CONFIG_TEMPLATE
     assert cfg.stat().st_mode & 0o777 == 0o600
     assert snap["path"] == str(cfg)
     assert snap["key_cmd_allowed"] is True and snap["key_cmd_problems"] == []
-    assert list(snap["providers"]) == list(aiu.CONFIG_OPTIONS)
+    assert list(snap["providers"]) == list(config.CONFIG_OPTIONS)
     assert opt(snap, "claude", "enabled") == {"type": "bool", "value": True, "source": "file"}
     assert opt(snap, "openai", "key_env") == {"type": "string", "value": "OPENAI_ADMIN_KEY",
                                               "source": "file"}
     # Commented out in the template: still the default.
     assert opt(snap, "openai", "key_cmd") == {"type": "string", "value": None, "source": "default"}
     assert opt(snap, "mistral", "vibe_allowance_eur") == {
-        "type": "number", "value": aiu.MISTRAL_ALLOWANCE_EUR, "source": "default"}
+        "type": "number", "value": mistral.MISTRAL_ALLOWANCE_EUR, "source": "default"}
     assert set(snap["providers"]["codex"]["options"]) == {"enabled"}
 
 
@@ -125,8 +127,8 @@ def test_show_never_resolves_a_key(monkeypatch, capsys, cfg, home, tmp_path):
 
 
 def test_show_reports_an_untrusted_config(monkeypatch, capsys, cfg):
-    monkeypatch.setattr(aiu, "_private_group", lambda gid: False)
-    aiu.ensure_config(cfg)
+    monkeypatch.setattr(util, "_private_group", lambda gid: False)
+    config.ensure_config(cfg)
     cfg.chmod(0o620)
     snap = show(monkeypatch, capsys, cfg)
     assert snap["key_cmd_allowed"] is False
@@ -210,7 +212,7 @@ def test_set_round_trips_on_the_starter_config(monkeypatch, capsys, cfg, option,
 
 
 def test_appended_setting_goes_after_the_last_one_not_the_next_comment(monkeypatch, capsys, cfg):
-    aiu.ensure_config(cfg)
+    config.ensure_config(cfg)
     run(monkeypatch, capsys, cfg, "config", "set", "openrouter.key_file", "~/k")
     text = cfg.read_text()
     assert ('[openrouter]\nenabled = false\nkey_env = "OPENROUTER_API_KEY"\nkey_file = "~/k"\n\n'
@@ -222,7 +224,7 @@ def test_setting_the_same_value_twice_is_stable(monkeypatch, capsys, cfg):
     once = cfg.read_text()
     run(monkeypatch, capsys, cfg, "config", "set", "openai.key_cmd", "pass show x")
     assert cfg.read_text() == once
-    assert once.count("key_cmd = ") == aiu.CONFIG_TEMPLATE.count("key_cmd = ")
+    assert once.count("key_cmd = ") == config.CONFIG_TEMPLATE.count("key_cmd = ")
 
 
 HAND_EDITED_CHANGES = [
@@ -299,7 +301,7 @@ def test_set_on_an_empty_file(monkeypatch, capsys, cfg):
 def test_set_creates_the_starter_config_first(monkeypatch, capsys, cfg):
     code, _, err = run(monkeypatch, capsys, cfg, "config", "set", "gemini.enabled", "true")
     assert code == 0 and "wrote a starter config" in err
-    assert changed_lines(aiu.CONFIG_TEMPLATE, cfg.read_text()) == [
+    assert changed_lines(config.CONFIG_TEMPLATE, cfg.read_text()) == [
         ("enabled = false", "enabled = true")]
     assert cfg.stat().st_mode & 0o777 == 0o600
     assert cfg.parent.stat().st_mode & 0o777 == 0o700
@@ -308,14 +310,14 @@ def test_set_creates_the_starter_config_first(monkeypatch, capsys, cfg):
 def test_empty_string_turns_a_source_off(monkeypatch, capsys, cfg):
     run(monkeypatch, capsys, cfg, "config", "set", "openai.key_env", "")
     assert tomllib.loads(cfg.read_text())["openai"]["key_env"] == ""
-    assert aiu.resolve_key(tomllib.loads(cfg.read_text())["openai"], "openai") is None
+    assert keys.resolve_key(tomllib.loads(cfg.read_text())["openai"], "openai") is None
 
 
 # ---------------------------------------------------------------------------
 # set: writing
 # ---------------------------------------------------------------------------
 def test_write_is_atomic_and_private(monkeypatch, capsys, cfg):
-    aiu.ensure_config(cfg)
+    config.ensure_config(cfg)
     cfg.chmod(0o644)
     inode = cfg.stat().st_ino
     run(monkeypatch, capsys, cfg, "config", "set", "openai.enabled", "true")
@@ -329,7 +331,7 @@ def test_symlinked_config_stays_a_symlink(monkeypatch, capsys, cfg, tmp_path):
     dotfiles = tmp_path / "dotfiles"
     dotfiles.mkdir(mode=0o700)
     target = dotfiles / "aiu.toml"
-    target.write_text(aiu.CONFIG_TEMPLATE)
+    target.write_text(config.CONFIG_TEMPLATE)
     target.chmod(0o600)
     cfg.symlink_to(target)
     run(monkeypatch, capsys, cfg, "config", "set", "openai.key_cmd", "pass show openai")
@@ -339,25 +341,25 @@ def test_symlinked_config_stays_a_symlink(monkeypatch, capsys, cfg, tmp_path):
 
 
 def test_refuses_a_config_that_is_not_yours(monkeypatch, capsys, cfg):
-    aiu.ensure_config(cfg)
-    monkeypatch.setattr(aiu.os, "getuid", lambda: cfg.stat().st_uid + 1)
+    config.ensure_config(cfg)
+    monkeypatch.setattr(os, "getuid", lambda: cfg.stat().st_uid + 1)
     code, _, err = run(monkeypatch, capsys, cfg, "config", "set", "openai.enabled", "true")
     assert code == 1 and err == f"aiu config: {cfg} is not yours\n"
-    assert cfg.read_text() == aiu.CONFIG_TEMPLATE
+    assert cfg.read_text() == config.CONFIG_TEMPLATE
 
 
 @pytest.mark.parametrize("option", ["openai.key_cmd", "claude.claude_cmd"])
 @pytest.mark.parametrize("mode, dir_mode", [(0o620, 0o700), (0o602, 0o700), (0o600, 0o777)])
 def test_refuses_a_command_in_an_untrusted_config(monkeypatch, capsys, cfg, option, mode, dir_mode):
-    monkeypatch.setattr(aiu, "_private_group", lambda gid: False)
-    aiu.ensure_config(cfg)
+    monkeypatch.setattr(util, "_private_group", lambda gid: False)
+    config.ensure_config(cfg)
     cfg.chmod(mode)
     cfg.parent.chmod(dir_mode)
     code, _, err = run(monkeypatch, capsys, cfg, "config", "set", option, "echo sk-x")
     assert code == 1
     assert err.startswith(f"aiu config: {option} refused: ")
     assert "writable by group or others" in err and "echo sk-x" not in err
-    assert cfg.read_text() == aiu.CONFIG_TEMPLATE
+    assert cfg.read_text() == config.CONFIG_TEMPLATE
     # Other settings, and turning a command off, still work.
     assert run(monkeypatch, capsys, cfg, "config", "set", "openai.enabled", "true")[0] == 0
     assert run(monkeypatch, capsys, cfg, "config", "set", option, "")[0] == 0
@@ -368,7 +370,7 @@ def test_refuses_a_command_through_a_shared_symlink(monkeypatch, capsys, cfg, tm
     shared.mkdir()
     shared.chmod(0o777)
     target = shared / "config.toml"
-    target.write_text(aiu.CONFIG_TEMPLATE)
+    target.write_text(config.CONFIG_TEMPLATE)
     target.chmod(0o600)
     cfg.symlink_to(target)
     code, _, err = run(monkeypatch, capsys, cfg, "config", "set", "openai.key_cmd", "echo x")
@@ -398,17 +400,17 @@ def test_refuses_a_command_through_a_shared_symlink(monkeypatch, capsys, cfg, tm
     ("openai.key_file", "/tmp/sk-SECRET\x00", "key_file cannot hold control characters"),
 ])
 def test_set_validates_and_never_echoes_the_value(monkeypatch, capsys, cfg, option, value, message):
-    aiu.ensure_config(cfg)
+    config.ensure_config(cfg)
     code, out, err = run(monkeypatch, capsys, cfg, "config", "set", option, value)
     assert (code, out) == (1, "")
     assert err == f"aiu config: {message}\n"
     assert "SECRET" not in err
-    assert cfg.read_text() == aiu.CONFIG_TEMPLATE
+    assert cfg.read_text() == config.CONFIG_TEMPLATE
 
 
 def test_validation_message_in_french(monkeypatch, capsys, cfg):
     monkeypatch.setenv("AIU_LANG", "fr")
-    aiu.ensure_config(cfg)
+    config.ensure_config(cfg)
     _, _, err = run(monkeypatch, capsys, cfg, "config", "set", "openai.enabled", "oui")
     assert err == "aiu config : enabled prend true ou false\n"
 
@@ -458,13 +460,13 @@ def test_without_a_subcommand_aiu_takes_its_snapshot(monkeypatch, capsys, cfg):
 
 def test_config_option_after_the_subcommand(monkeypatch, capsys, cfg):
     monkeypatch.setattr(sys, "argv", ["aiu", "config", "--config", str(cfg), "show", "--json"])
-    assert aiu.main() == 0
+    assert cli.main() == 0
     assert json.loads(capsys.readouterr().out)["path"] == str(cfg)
 
 
 def test_config_needs_an_action(monkeypatch, capsys, cfg):
     monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(cfg), "config"])
     with pytest.raises(SystemExit) as e:
-        aiu.main()
+        cli.main()
     assert e.value.code == 2
     assert not cfg.exists()
