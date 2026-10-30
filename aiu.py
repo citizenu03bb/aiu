@@ -196,26 +196,78 @@ def _read_claude_token() -> tuple[str | None, int | None]:
         return None, None
 
 
-def _refresh_claude_token() -> bool:
+# Where the installers put `claude`, in order: native installer, the old
+# local npm install, then system-wide ones. `claude_cmd` overrides the list.
+CLAUDE_LOCATIONS = ("~/.local/bin/claude", "~/.claude/local/claude",
+                    "/usr/local/bin/claude", "/usr/bin/claude", "/opt/homebrew/bin/claude")
+CLAUDE_REFRESH_BACKOFF = 3600  # seconds without retrying after a failed refresh
+
+
+def _refresh_claude_token(cfg: dict | None = None) -> bool:
     """Have the CLI refresh ~/.claude/.credentials.json. Any `claude` start does
     it, `auth status` without spending a request; the desktop app keeps its own
     token and never rewrites the file, so it goes stale 8h after the last CLI run.
     Clean environment: a host Claude session's variables (ANTHROPIC_BASE_URL,
-    host-managed auth) must not steer the child."""
-    exe = shutil.which("claude")
+    host-managed auth) must not steer the child.
+
+    The binary is never taken from PATH (gnome-shell's, when run from the
+    extension): only `claude_cmd` from the [claude] config, or else the first
+    known install location. It is resolved once to its real path, skipped when
+    someone else can write it or its directory, and that exact file is run.
+    A failed run is not retried for CLAUDE_REFRESH_BACKOFF seconds.
+    It can race an interactive `claude` over the same refresh token; the
+    backoff keeps that to one attempt per stale period."""
+    marker = Path(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")) \
+        / "aiu" / "claude-refresh-failed"
+    try:
+        if time.time() - marker.stat().st_mtime < CLAUDE_REFRESH_BACKOFF:
+            return False
+    except OSError:
+        pass
+    configured = (cfg or {}).get("claude_cmd")
+    candidates = [configured] if configured else CLAUDE_LOCATIONS
+    exe = None
+    for c in candidates:
+        path = Path(os.path.expanduser(str(c)))
+        real = Path(os.path.realpath(path))
+        if not (real.is_file() and os.access(real, os.X_OK)):
+            if configured:
+                print(f"aiu: claude_cmd {path} is not an executable file", file=sys.stderr)
+            continue
+        # The link, its target and both directories: none writable by others.
+        try:
+            safe = all((st.st_uid in (0, os.getuid()) and not st.st_mode & 0o022)
+                       for st in (os.stat(p) for p in {path.parent, real, real.parent}))
+        except OSError:
+            safe = False
+        if safe:
+            exe = str(real)
+        else:
+            print(f"aiu: not running {path}: writable by other users", file=sys.stderr)
+        break
     if not exe:
         return False
     env = {k: os.environ[k] for k in ("HOME", "PATH", "USER", "LANG") if k in os.environ}
     try:
-        return subprocess.run([exe, "auth", "status"], env=env, capture_output=True,
-                              timeout=60).returncode == 0
+        ok = subprocess.run([exe, "auth", "status"], env=env, capture_output=True,
+                            timeout=60).returncode == 0
     except Exception:
-        return False
+        ok = False
+    try:
+        if ok:
+            marker.unlink(missing_ok=True)
+        else:
+            marker.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            marker.touch(mode=0o600)
+            os.utime(marker, (time.time(),) * 2)
+    except OSError:
+        pass
+    return ok
 
 
 def probe_claude(cfg: dict) -> list[Row]:
     token, expires_at = _read_claude_token()
-    if token and expires_at and expires_at / 1000 < time.time() + 60 and _refresh_claude_token():
+    if token and expires_at and expires_at / 1000 < time.time() + 60 and _refresh_claude_token(cfg):
         token, expires_at = _read_claude_token()
     if not token:
         return [Row("claude", "—", "error",
