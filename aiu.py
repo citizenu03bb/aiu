@@ -811,17 +811,10 @@ def load_config(path: Path) -> dict:
         return tomllib.load(f)
 
 
-# Former provider names, still accepted in the config file and in --only.
-PROVIDER_ALIASES = {"claude_max": "claude"}
-
-
 def collect(config: dict, only: set[str] | None) -> list[Row]:
     rows: list[Row] = []
-    if only is not None:
-        only = {PROVIDER_ALIASES.get(n, n) for n in only}
-    old_names = {new: old for old, new in PROVIDER_ALIASES.items()}
     for name, probe in PROBES.items():
-        cfg = config.get(name) or config.get(old_names.get(name, ""), {})
+        cfg = config.get(name, {})
         if only is not None:
             if name not in only:
                 continue

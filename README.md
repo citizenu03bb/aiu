@@ -113,7 +113,6 @@ command, stdout used) → `key_file` (file contents). `secrets.env` populates th
 elsewhere (e.g. `pass`, a CLI config).
 
 ### claude
-(Formerly `claude_max`; that name is still accepted in the config and in `--only`.)
 Nothing to configure. The OAuth token is read locally from
 `~/.claude/.credentials.json` (same source Claude Code uses). If you see
 "auth rejected", just run `claude` once to refresh the token.
