@@ -64,7 +64,7 @@ import httpx
 
 # The release version: pyproject.toml reads it, and a v<version> tag must match it
 # (tests/test_version.py, .github/workflows/release.yml).
-__version__ = "0.3.0"
+__version__ = "0.3.1"
 
 CONFIG_DIR = Path(os.path.expanduser("~/.config/ai-usage"))
 CONFIG_PATH = CONFIG_DIR / "config.toml"
