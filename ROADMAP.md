@@ -316,7 +316,18 @@ config and on a hand-edited one with comments, which stay intact.
 **Done when:** CI is green and the window, checked locally in a nested or
 headless GNOME Shell, turns a provider on and off through `aiu config`.
 
+## Release v0.3.1: clipboard declared
+
+extensions.gnome.org's automatic check flagged `St.Clipboard` (EGO-A-005,
+manual review). Its rule is that clipboard access must be declared in the
+description, so v0.3.1 says there that **Copy command** writes the install
+command to the clipboard on click and never reads it.
+
 ## Later
 
+- **`claude_cmd` from an untrusted config.** `aiu config set` refuses it like
+  `key_cmd`, but `load_config` does not drop it from a config others can
+  write. Low risk (the refresh still runs only a binary owned by root or the
+  user that nobody else can write), but it should match `key_cmd`.
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
   starts to matter which kind of work gets the spare quota.

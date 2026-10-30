@@ -269,6 +269,8 @@ export class MenuView {
 
         const buttons = new St.BoxLayout({ style_class: 'aiu-setup-buttons', x_expand: true });
         buttons.add_child(this._actionButton(_('Copy command'), button => {
+            // The only clipboard access: write-only, on this click, declared in
+            // metadata.json's description (extensions.gnome.org review rule).
             St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, command);
             button.label = _('Copied ✓');
         }));
