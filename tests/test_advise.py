@@ -41,6 +41,14 @@ def frozen_clock(monkeypatch):
     monkeypatch.setattr(aiu.time, "time", lambda: NOW)
 
 
+@pytest.fixture(autouse=True)
+def no_desktop(monkeypatch):
+    """Synthetic rows must never reach the real desktop: record any subprocess call."""
+    calls = []
+    monkeypatch.setattr(aiu.subprocess, "run", lambda *a, **k: calls.append(a[0]))
+    return calls
+
+
 def statuses(rows):
     return [(a["provider"], a["metric"], a["status"]) for a in aiu.route_order(rows, NOW)]
 
@@ -92,8 +100,9 @@ def test_extra_usage_is_paid_overage_not_free_quota():
     assert aiu.route_order(rows, NOW) == []
 
 
-def test_alert_on_snapshot(capsys):
-    assert aiu.alert(SNAPSHOT) == 1
+def test_alert_on_snapshot(capsys, no_desktop):
+    assert aiu.alert(SNAPSHOT, notify=False) == 1
+    assert no_desktop == []
     out = capsys.readouterr().out
     assert "claude · Weekly (all models): ~11% du plafond perdu au reset" in out
     assert "Cloud Credit: 98.46 USD non dépensés" in out
@@ -103,14 +112,22 @@ def test_alert_on_snapshot(capsys):
 
 def test_alert_reports_probe_errors_and_skips_locked_credit(capsys):
     rows = [Row("codex", "—", "error", note="HTTP 500"), credit(50, D, note="locked: x")]
-    assert aiu.alert(rows) == 1
+    assert aiu.alert(rows, notify=False) == 1
     out = capsys.readouterr().out
     assert "codex: données indisponibles (HTTP 500)" in out
     assert "Cloud Credit" not in out
 
 
 def test_alert_all_clear(capsys):
-    assert aiu.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)]) == 0
+    assert aiu.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)], notify=False) == 0
+
+
+def test_notification_title_carries_snapshot_time(monkeypatch, no_desktop):
+    monkeypatch.setattr(aiu.shutil, "which", lambda _: "/usr/bin/notify-send")
+    aiu.alert(SNAPSHOT)
+    (argv,) = no_desktop
+    taken = aiu.datetime.fromtimestamp(NOW).strftime("%H:%M")
+    assert argv[:4] == ["notify-send", "-a", "aiu", f"Quota AI · relevé {taken}"]
 
 
 def test_advise_renders_without_error(capsys):

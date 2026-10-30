@@ -1067,9 +1067,10 @@ def advise(rows: list[Row], now: float | None = None) -> int:
     return 0
 
 
-def alert(rows: list[Row]) -> int:
+def alert(rows: list[Row], notify: bool = True) -> int:
     """Warn about long-window quota projected to reset unused or to run dry long
-    before its reset, and about expiring credits. Quiet-friendly for cron: prints only warnings (and a single OK line otherwise)."""
+    before its reset, and about expiring credits. Quiet-friendly for cron: prints only warnings (and a single OK line otherwise).
+    notify=False keeps it off the desktop (tests, synthetic rows)."""
     now = time.time()
     warns = []
     for r in rows:
@@ -1100,10 +1101,13 @@ def alert(rows: list[Row]) -> int:
     if warns:
         for w in warns:
             print(w)
-        # best-effort desktop notification so it lands without watching the terminal
-        if shutil.which("notify-send"):
+        # best-effort desktop notification so it lands without watching the terminal;
+        # the title carries the snapshot time so a notification left in the tray
+        # can't pass for current data
+        if notify and shutil.which("notify-send"):
+            taken = datetime.fromtimestamp(now).strftime("%H:%M")
             try:
-                subprocess.run(["notify-send", "-a", "aiu", "Quota AI",
+                subprocess.run(["notify-send", "-a", "aiu", f"Quota AI · relevé {taken}",
                                 "\n".join(warns)], timeout=5)
             except Exception:
                 pass
