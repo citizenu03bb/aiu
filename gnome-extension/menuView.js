@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // menuView.js - Populates and manages the popup menu for aiu-indicator
 
+import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import St from 'gi://St';
 import Clutter from 'gi://Clutter';
@@ -8,6 +9,7 @@ import Gio from 'gi://Gio';
 import Pango from 'gi://Pango';
 import GLib from 'gi://GLib';
 import { displayName, formatDuration, resetText } from './aiuClient.js';
+import { dataMaxHeight } from './menuLayout.js';
 import { _, N_, fmt } from './i18n.js';
 
 function setLineWrap(label, wrap = true) {
@@ -37,7 +39,7 @@ const STATUS_FILL = { burn: 'green', '?': 'grey', on_track: 'blue', conserve: 'o
 function progressBar(frac, colorClass) {
     const track = new St.BoxLayout({
         style_class: 'aiu-track',
-        x_expand: true,
+        y_align: Clutter.ActorAlign.CENTER,
     });
     const fill = new St.Widget({
         style_class: `aiu-fill ${colorClass}`,
@@ -58,11 +60,26 @@ export class MenuView {
         this._menu = menu;
         this._callbacks = callbacks; // onRefresh, etc.
         this._dataSection = null;
+        this._scrollView = null;
+        this._webSubmenu = null;
         this._headerSubtitle = null;
         this._refreshButton = null;
         this._refreshIcon = null;
 
         this._buildStaticMenu();
+
+        // The menu dies with the indicator, and these handlers with it.
+        this._menu.connect('open-state-changed', (menu, isOpen) => {
+            if (isOpen) {
+                this._fitToScreen();
+            }
+        });
+        // Opening the web consoles makes the bottom items taller.
+        this._webSubmenu.menu.connect('open-state-changed', () => {
+            if (this._menu.isOpen) {
+                this._fitToScreen();
+            }
+        });
     }
 
     _buildStaticMenu() {
@@ -124,10 +141,14 @@ export class MenuView {
         // Separator
         this._menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        // 2. Dynamic content container item
-        this._dataSection = new PopupMenu.PopupBaseMenuItem({
-            reactive: false,
-            can_focus: false,
+        // 2. Dynamic content, scrolled when taller than the screen allows
+        // (_fitToScreen caps it), so the header and bottom items stay visible.
+        this._dataSection = new PopupMenu.PopupMenuSection();
+        this._scrollView = new St.ScrollView({
+            style_class: 'aiu-scroll',
+            hscrollbar_policy: St.PolicyType.NEVER,
+            vscrollbar_policy: St.PolicyType.AUTOMATIC,
+            x_expand: true,
         });
 
         this._dataBox = new St.BoxLayout({
@@ -135,7 +156,13 @@ export class MenuView {
             x_expand: true,
             style_class: 'aiu-menu-box',
         });
-        this._dataSection.add_child(this._dataBox);
+        // GNOME 45 sets up the scrolling in add_actor(); 46+ only has set_child().
+        if (typeof this._scrollView.add_actor === 'function') {
+            this._scrollView.add_actor(this._dataBox);
+        } else {
+            this._scrollView.set_child(this._dataBox);
+        }
+        this._dataSection.actor.add_child(this._scrollView);
         this._menu.addMenuItem(this._dataSection);
 
         // 3. Static footer items
@@ -150,12 +177,44 @@ export class MenuView {
 
         // Web consoles submenu
         const webSubmenu = new PopupMenu.PopupSubMenuMenuItem(_('🌐 Web consoles'));
+        this._webSubmenu = webSubmenu;
         this._addWebLink(webSubmenu, 'Google AI Studio', 'https://aistudio.google.com/');
         this._addWebLink(webSubmenu, 'Anthropic Console', 'https://console.anthropic.com/');
         this._addWebLink(webSubmenu, 'ChatGPT / OpenAI', 'https://chatgpt.com/');
         this._addWebLink(webSubmenu, 'DeepSeek Platform', 'https://platform.deepseek.com/');
         this._addWebLink(webSubmenu, 'OpenRouter Activity', 'https://openrouter.ai/activity');
         this._menu.addMenuItem(webSubmenu);
+    }
+
+    /** Caps the data section so the whole menu fits in the monitor's work area. */
+    _fitToScreen() {
+        try {
+            const layout = Main.layoutManager;
+            const source = this._menu.sourceActor;
+            let monitor = source ? layout.findIndexForActor(source) : -1;
+            if (monitor < 0) {
+                monitor = layout.primaryIndex;
+            }
+            const workArea = layout.getWorkAreaForMonitor(monitor);
+            const scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;
+
+            // Everything but the data section, at its natural height. A submenu
+            // reports its new state before it shows or hides itself.
+            const [, menuHeight] = this._menu.box.get_preferred_height(-1);
+            const [, dataHeight] = this._dataSection.actor.get_preferred_height(-1);
+            const submenu = this._webSubmenu.menu;
+            const [, submenuHeight] = submenu.actor.get_preferred_height(-1);
+            const fixedHeight = menuHeight - dataHeight
+                - (submenu.actor.visible ? submenuHeight : 0)
+                + (submenu.isOpen ? submenuHeight : 0)
+                + this._menu.actor.margin_top + this._menu.actor.margin_bottom;
+
+            const maxHeight = dataMaxHeight(workArea?.height, fixedHeight, { scaleFactor });
+            this._scrollView.style = maxHeight === null ? null : `max-height: ${maxHeight}px;`;
+        } catch (e) {
+            // A menu that overflows still beats a menu that does not open.
+            console.error(`[aiu-indicator] Could not fit the menu to the screen: ${e.message}`);
+        }
     }
 
     _addWebLink(submenu, label, url) {
@@ -334,21 +393,25 @@ export class MenuView {
 
                 for (const item of items) {
                     const isRouted = lot && item.metric === lot.metric;
-                    const rowBox = new St.BoxLayout({ vertical: true, style_class: 'aiu-quota-row' });
-
-                    const infoLine = new St.BoxLayout({ x_expand: true });
-                    infoLine.add_child(new St.Label({
+                    // One line per metric: name, reset, bar, percent.
+                    const row = new St.BoxLayout({ x_expand: true, style_class: 'aiu-quota-row' });
+                    const name = new St.Label({
                         text: item.metric,
                         style_class: 'aiu-metric-name',
                         x_expand: true,
-                    }));
-                    infoLine.add_child(new St.Label({
-                        text: item.used_pct === null
-                            ? _('— unknown')
-                            : fmt(_('{percent}% used'), { percent: Math.round(item.used_pct) }),
-                        style_class: 'aiu-metric-detail',
-                    }));
-                    rowBox.add_child(infoLine);
+                        y_align: Clutter.ActorAlign.CENTER,
+                    });
+                    setLineWrap(name, true);
+                    row.add_child(name);
+
+                    const reset = resetText(item);
+                    if (reset) {
+                        row.add_child(new St.Label({
+                            text: fmt(_('Reset {when}'), { when: reset }),
+                            style_class: 'aiu-metric-reset',
+                            y_align: Clutter.ActorAlign.CENTER,
+                        }));
+                    }
 
                     let colorClass;
                     if (item.used_pct === null) {
@@ -359,31 +422,36 @@ export class MenuView {
                         // Short windows are rate limits: only fullness matters.
                         colorClass = item.used_pct >= 85 ? 'red' : item.used_pct >= 60 ? 'yellow' : 'green';
                     }
-                    rowBox.add_child(progressBar((item.used_pct ?? 0) / 100, colorClass));
+                    row.add_child(progressBar((item.used_pct ?? 0) / 100, colorClass));
 
-                    const bits = [];
-                    const reset = resetText(item);
-                    if (reset) bits.push(fmt(_('Reset {when}'), { when: reset }));
+                    row.add_child(new St.Label({
+                        text: item.used_pct === null
+                            ? '—'
+                            : fmt(_('{percent}%'), { percent: Math.round(item.used_pct) }),
+                        style_class: 'aiu-metric-detail',
+                        y_align: Clutter.ActorAlign.CENTER,
+                    }));
+                    card.add_child(row);
+
+                    // The pace hint, on the window aiu routes on only.
+                    let hint = null;
                     if (isRouted && typeof lot.leftover === 'number') {
                         if (lot.status === 'conserve' && typeof lot.runway_secs === 'number') {
-                            bits.push(fmt(_('runs dry in ~{duration} at your pace'),
-                                { duration: formatDuration(lot.runway_secs) }));
+                            hint = fmt(_('runs dry in ~{duration} at your pace'),
+                                { duration: formatDuration(lot.runway_secs) });
                         } else if (lot.status === 'burn') {
-                            bits.push(fmt(_('~{percent}% lost at reset at your pace'),
-                                { percent: Math.round(lot.leftover * 100) }));
+                            hint = fmt(_('~{percent}% lost at reset at your pace'),
+                                { percent: Math.round(lot.leftover * 100) });
                         }
                     }
-                    if (bits.length) {
+                    if (hint) {
                         const sub = new St.Label({
-                            text: bits.join(' · '),
-                            style_class: isRouted && lot.status !== 'on_track'
-                                ? `aiu-metric-reset ${STATUS_BADGES[lot.status]?.[1] || ''}`
-                                : 'aiu-metric-reset',
+                            text: hint,
+                            style_class: `aiu-metric-reset ${STATUS_BADGES[lot.status]?.[1] || ''}`,
                         });
                         setLineWrap(sub, true);
-                        rowBox.add_child(sub);
+                        card.add_child(sub);
                     }
-                    card.add_child(rowBox);
                 }
 
                 this._dataBox.add_child(card);
