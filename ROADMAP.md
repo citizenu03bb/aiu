@@ -329,6 +329,48 @@ manual review). Its rule is that clipboard access must be declared in the
 description, so v0.3.1 says there that **Copy command** writes the install
 command to the clipboard on click and never reads it.
 
+## Wave 6: not started
+
+### N. `aiu cookie import mistral`
+
+**Goal:** stop copying the admin.mistral.ai `Cookie` header out of DevTools by
+hand (security review L3), without making that session easier to leak.
+
+Prior art: codexbar-gnome's `scripts/codexbar-cookie-importer` reads the
+browser's "Safe Storage" key from the keyring and decrypts Chromium cookies.
+Same idea, minus its weak spots: it copies the cookie database to a guessable
+`/tmp` name, writes every keyring key it finds to a `/tmp` file, and tries
+them all. Ideas only, no code from it (its licence asks for credit on
+derivatives).
+
+- An explicit command, run by the user only: never by a probe, `--json` or
+  the GNOME extension. `--browser chrome|chromium|brave|firefox` picks one
+  profile; no browser is searched by default.
+- Only the cookies of `admin.mistral.ai` (the ones the tRPC calls need, if
+  fewer than the whole header is enough).
+- Chromium family: the one Safe Storage entry of the named browser, the
+  v10/v11 scheme (AES-128-CBC, PBKDF2-SHA1 `saltysalt`, 1 iteration).
+  Firefox: `cookies.sqlite` is not encrypted.
+- The database is opened read-only through SQLite's `file:…?mode=ro&immutable=1`
+  URI, or copied into a private temporary directory (0700, removed on exit).
+  No key and no cookie ever touches the disk outside the keyring.
+- The result goes to the keyring (`secret-tool store`), and
+  `aiu config set mistral.key_cmd "secret-tool lookup …"` points aiu at it,
+  instead of `~/.env`. Re-running replaces it.
+- AES: Python's standard library has none, so either an `openssl`
+  subprocess (keys passed on stdin or as a file descriptor, never on the
+  command line) or the `cryptography` package as an optional extra. Decide in
+  the PR.
+- Errors say what is missing (keyring locked, not signed in, unknown
+  profile) and never print a cookie or a key.
+
+**Files:** `aiu.py` (new `cookie` subcommand), `tests/` (encrypted and plain
+fixture databases built in the test, a fake `secret-tool`), `README.md` (the
+Mistral setup), `docs/security-review.md` (L3 status).
+**Done when:** CI is green, a test decrypts a Chromium fixture and reads a
+Firefox one into the keyring stub without writing outside a private
+directory, and the maintainer's real Mistral session is imported once by hand.
+
 ## Later
 
 - **`claude_cmd` from an untrusted config.** `aiu config set` refuses it like
