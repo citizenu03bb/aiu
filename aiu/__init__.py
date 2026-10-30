@@ -17,4 +17,4 @@ One module per concern; aiu.cli.main is the `aiu` command:
 
 # The release version: pyproject.toml reads it, and a v<version> tag must match it
 # (tests/test_version.py, .github/workflows/release.yml).
-__version__ = "0.4.1"
+__version__ = "0.5.0"
