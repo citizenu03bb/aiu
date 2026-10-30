@@ -46,9 +46,13 @@ export function resetText(row, nowSecs = Date.now() / 1000) {
         .replace(/(\d+)d /g, '$1j ');
 }
 
+/** A fetch still running after this long is killed (the probes' own timeouts are 15-60 s). */
+export const FETCH_TIMEOUT_SECONDS = 120;
+
 export class AiuClient {
-    constructor() {
-        this._cancellable = null;
+    constructor({ timeoutSeconds = FETCH_TIMEOUT_SECONDS } = {}) {
+        this._timeoutSeconds = timeoutSeconds;
+        this._run = null; // { proc, cancellable, watchdogId, timedOut } of the fetch in flight
     }
 
     _resolveCommand() {
@@ -66,21 +70,38 @@ export class AiuClient {
         throw new Error("Impossible de localiser 'aiu' (ni ~/.local/bin/aiu, ni dans le PATH)");
     }
 
+    /** Stop the fetch in flight, if any: its promise resolves with `cancelled`, its aiu is killed. */
     cancel() {
-        if (this._cancellable) {
-            this._cancellable.cancel();
-            this._cancellable = null;
+        if (this._run) {
+            this._stop(this._run);
+        }
+    }
+
+    /** Kill a fetch's aiu and stop waiting for it. Cancelling alone would leave aiu running. */
+    _stop(run) {
+        this._forget(run);
+        run.cancellable.cancel();
+        run.proc.force_exit();
+    }
+
+    _forget(run) {
+        if (run.watchdogId) {
+            GLib.source_remove(run.watchdogId);
+            run.watchdogId = 0;
+        }
+        if (this._run === run) {
+            this._run = null;
         }
     }
 
     /**
      * Fetch aiu snapshot asynchronously without blocking GNOME Shell main loop.
-     * @returns {Promise<{success: boolean, data?: object, error?: string}>}
+     * A newer fetch, cancel() or the watchdog kills the aiu process.
+     * @returns {Promise<{success: boolean, data?: object, error?: string, cancelled?: boolean}>}
      */
     fetchSnapshot() {
         return new Promise((resolve) => {
             this.cancel();
-            this._cancellable = new Gio.Cancellable();
 
             let argv;
             try {
@@ -90,20 +111,30 @@ export class AiuClient {
                 return;
             }
 
+            const cancellable = new Gio.Cancellable();
             let proc;
             try {
                 proc = new Gio.Subprocess({
                     argv: argv,
                     flags: Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE,
                 });
-                proc.init(this._cancellable);
+                proc.init(cancellable);
             } catch (err) {
                 resolve({ success: false, error: `Échec lancement aiu: ${err.message}` });
                 return;
             }
 
-            proc.communicate_utf8_async(null, this._cancellable, (subprocess, res) => {
-                this._cancellable = null;
+            const run = { proc, cancellable, watchdogId: 0, timedOut: false };
+            this._run = run;
+            run.watchdogId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, this._timeoutSeconds, () => {
+                run.watchdogId = 0;
+                run.timedOut = true;
+                this._stop(run);
+                return GLib.SOURCE_REMOVE;
+            });
+
+            proc.communicate_utf8_async(null, cancellable, (subprocess, res) => {
+                this._forget(run);
                 try {
                     const [, stdout, stderr] = subprocess.communicate_utf8_finish(res);
 
@@ -127,11 +158,14 @@ export class AiuClient {
                     const processed = this._processData(parsed);
                     resolve({ success: true, data: processed });
                 } catch (err) {
-                    if (err.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
-                        // Execution was intentionally cancelled
-                        return;
+                    if (run.timedOut) {
+                        resolve({ success: false, error: `aiu n'a pas répondu en ${this._timeoutSeconds} s, arrêté` });
+                    } else if (err.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
+                        // Superseded by a newer fetch, or the extension was disabled
+                        resolve({ success: false, cancelled: true });
+                    } else {
+                        resolve({ success: false, error: err.message });
                     }
-                    resolve({ success: false, error: err.message });
                 }
             });
         });
