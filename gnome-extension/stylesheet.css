@@ -28,11 +28,12 @@
     background-color: #9a9996;
 }
 
-/* Menu content */
+/* Menu content, in a scroll view capped to the screen (menuLayout.js) */
 .aiu-menu-box {
     /* Fixed width: long lines wrap instead of stretching (or cutting) the menu. */
     width: 380px;
-    padding: 6px 4px;
+    /* The menu item padding it had before the scroll view, plus its own. */
+    padding: 6px 16px;
     spacing: 8px;
 }
 
@@ -105,8 +106,15 @@
     color: #ffbe6f;
 }
 
+.aiu-metric-detail {
+    /* "100 %" in French: the bars stay aligned from one row to the next. */
+    min-width: 3.4em;
+    text-align: right;
+}
+
+/* One line per metric: name, reset, bar, percent */
 .aiu-quota-row {
-    margin-top: 4px;
+    spacing: 8px;
 }
 
 /* Routing status badge (from aiu's advice) */
@@ -141,9 +149,8 @@
 .aiu-track {
     background-color: rgba(255, 255, 255, 0.12);
     border-radius: 3px;
+    width: 64px;
     height: 6px;
-    margin-top: 2px;
-    margin-bottom: 4px;
 }
 
 .aiu-fill {

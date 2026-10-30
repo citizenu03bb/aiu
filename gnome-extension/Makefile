@@ -1,7 +1,7 @@
 UUID = aiu-indicator@citizenu03bb.github.io
 EXT_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 SRC_DIR = $(shell pwd)
-JS_FILES = extension.js indicator.js menuView.js aiuClient.js i18n.js
+JS_FILES = extension.js indicator.js menuView.js menuLayout.js aiuClient.js i18n.js
 TEST_FILES = $(wildcard tests/*.js)
 # gettext domain: "gettext-domain" in metadata.json and DOMAIN in i18n.js.
 DOMAIN = aiu-indicator
@@ -43,6 +43,7 @@ pot:
 test: $(MO_FILES)
 	@echo "Running unit tests with GJS..."
 	@LC_ALL=C.UTF-8 LANGUAGE= gjs -m tests/test_aiuClient.js
+	@LC_ALL=C.UTF-8 LANGUAGE= gjs -m tests/test_menuLayout.js
 	@sh tests/run_french.sh
 
 # Calls the real aiu (and so your providers): local only, never in CI.

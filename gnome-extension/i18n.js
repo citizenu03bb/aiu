@@ -24,7 +24,7 @@ export function N_(msgid) {
 }
 
 /**
- * Fill {name} placeholders: fmt(_('{percent}% used'), { percent: 40 }).
+ * Fill {name} placeholders: fmt(_('{percent}%'), { percent: 40 }).
  * The result is plain text for St.Label({ text }), never markup.
  */
 export function fmt(text, fields) {

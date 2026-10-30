@@ -162,12 +162,8 @@ msgid "Subscriptions"
 msgstr "Forfaits"
 
 #: menuView.js
-msgid "— unknown"
-msgstr "— inconnu"
-
-#: menuView.js
-msgid "{percent}% used"
-msgstr "{percent} % utilisé"
+msgid "{percent}%"
+msgstr "{percent} %"
 
 #: menuView.js
 msgid "Reset {when}"
