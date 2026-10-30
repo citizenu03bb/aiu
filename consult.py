@@ -24,13 +24,39 @@ documented way to read a prompt from stdin (its print mode is known to misbehave
 with a piped stdin), so it still gets it as the value of `-p`.
 The delegated CLIs run with their own sandbox and approval defaults: consult
 does not restrict them, except `pi`'s `--no-tools`.
+
+Messages are in French when AIU_LANG (else LC_ALL, LC_MESSAGES or LANG) is fr.
 """
 import json
+import os
 import subprocess
 import sys
 
 TIMEOUT = 300
 SUBS = ("gemini", "codex")  # flat-fee subs reachable here (claude = the caller)
+
+# Same language choice as aiu's ui_lang(); kept here so consult needs only the stdlib.
+FR = {
+    "timeout after {secs}s": "délai dépassé après {secs} s",
+    "command not found: {cmd}": "commande introuvable : {cmd}",
+    "[consult] note: claude's own surplus expires first ({detail}) — doing it yourself may be better":
+        "[consult] note : le surplus de claude lui-même expire en premier ({detail}) — "
+        "le faire toi-même vaut peut-être mieux",
+    "consult: empty prompt": "consult : prompt vide",
+    "consult: unknown provider {provider} (gemini|codex|deepseek|auto)":
+        "consult : fournisseur inconnu {provider} (gemini|codex|deepseek|auto)",
+    "[consult] {provider} failed (rc={rc}): {err}": "[consult] échec de {provider} (rc={rc}) : {err}",
+}
+
+
+def tr(msg: str, **fields) -> str:
+    """msg in French when AIU_LANG, else the locale, says so; {fields} filled in."""
+    for var in ("AIU_LANG", "LC_ALL", "LC_MESSAGES", "LANG"):
+        if v := os.environ.get(var):
+            if v.lower().startswith("fr"):
+                msg = FR.get(msg, msg)
+            break
+    return msg.format(**fields) if fields else msg
 
 
 def _run(cmd: list[str], stdin: str | None = None):
@@ -41,9 +67,9 @@ def _run(cmd: list[str], stdin: str | None = None):
                            capture_output=True, text=True, timeout=TIMEOUT)
         return p.returncode, p.stdout.strip(), p.stderr.strip()
     except subprocess.TimeoutExpired:
-        return 124, "", f"timeout after {TIMEOUT}s"
+        return 124, "", tr("timeout after {secs}s", secs=TIMEOUT)
     except FileNotFoundError:
-        return 127, "", f"command not found: {cmd[0]}"
+        return 127, "", tr("command not found: {cmd}", cmd=cmd[0])
 
 
 def call_gemini(prompt: str):
@@ -77,8 +103,8 @@ def pick_auto() -> str:
         if a["status"] == "conserve":
             break
         if a["provider"] == "claude" and a["status"] == "burn" and a is advice[0]:
-            print(f"[consult] note: claude's own surplus expires first "
-                  f"({a['detail']}) — doing it yourself may be better", file=sys.stderr)
+            print(tr("[consult] note: claude's own surplus expires first ({detail}) "
+                     "— doing it yourself may be better", detail=a["detail"]), file=sys.stderr)
         if a["provider"] in SUBS:
             return a["provider"]
     return "deepseek"
@@ -93,21 +119,22 @@ def main() -> int:
     rest = args[1:]
     prompt = sys.stdin.read() if (not rest or rest == ["-"]) else " ".join(rest)
     if not prompt.strip():
-        print("consult: empty prompt", file=sys.stderr)
+        print(tr("consult: empty prompt"), file=sys.stderr)
         return 2
     if provider == "auto":
         provider = pick_auto()
         print(f"[consult] → {provider}", file=sys.stderr)
     fn = CALLERS.get(provider)
     if not fn:
-        print(f"consult: unknown provider {provider!r} "
-              "(gemini|codex|deepseek|auto)", file=sys.stderr)
+        print(tr("consult: unknown provider {provider} (gemini|codex|deepseek|auto)",
+                 provider=repr(provider)), file=sys.stderr)
         return 2
     rc, out, err = fn(prompt)
     if out:
         print(out)
     elif rc != 0:
-        print(f"[consult] {provider} failed (rc={rc}): {err[:300]}", file=sys.stderr)
+        print(tr("[consult] {provider} failed (rc={rc}): {err}", provider=provider, rc=rc, err=err[:300]),
+              file=sys.stderr)
     return rc
 
 

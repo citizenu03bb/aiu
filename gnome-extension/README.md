@@ -1,55 +1,75 @@
 # AI Usage Indicator (`aiu-indicator`)
 
-Extension GNOME Shell, livrée avec [`aiu`](../README.md) dont elle affiche la sortie `aiu --json`.
-Extension GNOME Shell (compatible GNOME 45 à 51+, testée sur GNOME Shell 50.1 Wayland) plaçant une icône discrète à côté de la date et de l'heure dans la barre supérieure, présentant l'ensemble des données et quotas agrégés par `aiu`.
+GNOME Shell extension shipped with [`aiu`](../README.md); it shows the output of `aiu --json`.
+It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested on GNOME Shell 50.1, Wayland) and a menu with everything `aiu` collects.
 
-## Fonctionnalités
+## Features
 
-- **Emplacement central** : Intégration dans le bloc central du panneau (`_centerBox`, index 1) immédiatement à droite de l'horloge.
-- **Exécution 100% asynchrone & non-bloquante** : Interrogation en arrière-plan via `Gio.Subprocess` sans aucun freeze ni blocage de l'interface GNOME.
-- **Statut visuel d'un coup d'œil** :
-  - Pastille verte : rien à faire.
-  - Pastille jaune : du quota gratuit sera perdu à un reset dans les 24 h (à utiliser).
-  - Pastille rouge : une fenêtre est saturée (≥ 95 %) ou un relevé a échoué (ex. jeton Claude expiré).
-- **Menu complet et soigné** :
-  - **Forfaits** : dans l'ordre de routage, avec un badge (à brûler / au rythme / à ménager), des barres à l'échelle colorées selon ce qu'il faut en faire, et le compte à rebours du reset (ex. `Reset dans 4h27 · à sec dans ~11h33`).
-  - **Crédits & API payantes** : crédits offerts avec leur expiration, soldes prépayés, et dépense historique (grisée).
-  - **Conseil d'arbitrage** : reprend le champ `advice` de `aiu --json` — brûle d'abord le forfait (ou crédit) dont le surplus expire le plus tôt, et signale ceux à ménager parce qu'ils seront à sec avant leur reset.
-  - **Alertes explicites** : Affichage sans omission des erreurs ou jetons expirés avec instruction de rafraîchissement.
-  - **Bouton d'actualisation instantanée** et actualisation automatique toutes les 5 minutes (ou à l'ouverture du menu si > 2 min).
-  - **Raccourcis rapides** : Ouverture de `aiu` dans le terminal et liens directs vers les consoles web IA (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek).
+- **Centre of the panel**: in the panel's centre box (`_centerBox`, index 1), just right of the clock.
+- **Fully asynchronous**: `aiu` runs in the background through `Gio.Subprocess`, so GNOME Shell never freezes.
+- **Status at a glance**:
+  - Green dot: nothing to do.
+  - Yellow dot: free quota will be lost at a reset within 24 h (use it).
+  - Red dot: a window is full (≥ 95 %) or a probe failed (e.g. an expired Claude token).
+- **Menu**:
+  - **Subscriptions**: in routing order, each with a badge (burn first / unknown pace / on track / conserve), bars to scale coloured by what to do with them, and the time to the reset (e.g. `Reset in 4h27m · runs dry in ~11h33m at your pace`).
+  - **Credits & paid APIs**: free credits with their expiry, prepaid balances, and lifetime spend (greyed out).
+  - **Advice**: from the `advice` field of `aiu --json`: burn first the subscription (or credit) whose surplus expires first, and keep for later the ones that would run dry before their reset.
+  - **Errors in full**: every probe error or expired token, with what to run to fix it.
+  - **Refresh button**, plus an automatic refresh every 5 minutes (or when the menu opens and the data is over 2 minutes old).
+  - **Shortcuts**: open `aiu` in a terminal, and links to the AI web consoles (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek).
 
-## Installation
+## Languages
 
-Prérequis : la commande `aiu` dans `~/.local/bin` ou le `PATH` (voir le [README principal](../README.md#install)).
+The menu is in English, or in French when your GNOME session is (Settings → System → Region & Language).
+It uses gettext with the domain `aiu-indicator`: the sources are in `po/`, and `make mo`, `make pack` and `make install` compile them into `locale/`.
+Text that comes from `aiu` itself, the probe errors and metric names, stays in English; the CLI's own `--advise` and `--alert` follow `AIU_LANG` or your locale (see the [main README](../README.md#language)).
+
+To add a language or update one after changing strings (needs GNU gettext):
 
 ```bash
-cd gnome-extension   # depuis votre clone du dépôt aiu
-make install         # puis déconnexion / reconnexion (Wayland)
+make pot                                         # po/aiu-indicator.pot
+msginit -i po/aiu-indicator.pot -o po/de.po -l de   # new language
+msgmerge -U po/fr.po po/aiu-indicator.pot           # existing one
 ```
 
-Sans clone, depuis le zip joint à chaque [release GitHub](https://github.com/citizenu03bb/aiu/releases) (ou construit avec `make pack`, au format attendu par extensions.gnome.org) :
+Keep each `{placeholder}` as it is. The text is shown as plain text, never markup. `make check` fails when a `.po` file misses a string, keeps an unused one, or changes a placeholder.
+
+## Install
+
+Needs the `aiu` command in `~/.local/bin` or on the `PATH` (see the [main README](../README.md#install)).
+
+```bash
+cd gnome-extension   # in your clone of the aiu repository
+make install         # then log out and back in (Wayland)
+```
+
+Without a clone, from the zip attached to each [GitHub release](https://github.com/citizenu03bb/aiu/releases) (or built with `make pack`, in the layout extensions.gnome.org expects):
 
 ```bash
 gnome-extensions install --force aiu-indicator@citizenu03bb.github.io.shell-extension.zip
-gnome-extensions enable aiu-indicator@citizenu03bb.github.io   # après déconnexion / reconnexion
+gnome-extensions enable aiu-indicator@citizenu03bb.github.io   # after logging out and back in
 ```
 
-`make test` lance les tests unitaires hors ligne (ceux de la CI) ; `make test-live` interroge le vrai `aiu`, donc vos fournisseurs, et ne tourne qu'en local.
+GNOME Shell keeps an extension's JavaScript in memory for the whole session: after an update, log out and back in (`make reload` does not reload the modules).
 
-GNOME Shell garde le JavaScript d'une extension en mémoire pour toute la session : après une mise à jour, déconnectez-vous puis reconnectez-vous (`make reload` ne recharge pas les modules).
+## Make commands
 
-## Commandes Make
+- `make check`: checks the syntax of every JavaScript file, `metadata.json`, and the translations against the strings in the code. Needs `node` and `python3`.
+- `make test`: offline unit tests, the ones CI runs, in English and in French. Needs only `gjs` (and `python3` to compile the translations); the French run needs a UTF-8 locale other than `C`, or `localedef` with the glibc locale sources to build `fr_FR` on the fly.
+- `make test-live`: runs the installed `aiu`, so it calls your providers. Local only, never in CI.
+- `make mo`: compiles `po/*.po` into `locale/` (with `python3`, no GNU gettext needed).
+- `make pot`: writes the translation template `po/aiu-indicator.pot` (needs `xgettext`).
+- `make pack`: builds `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` for extensions.gnome.org, compiled translations included.
+- `make clean`: removes the zip and `locale/`.
+- `make install`: compiles the translations, links this directory into `~/.local/share/gnome-shell/extensions/` and enables the extension.
+- `make reload`: disables then re-enables the extension.
+- `make uninstall`: disables the extension and removes the link.
+- `make status`: shows the extension's state with `gnome-extensions info`.
+- `make log`: follows GNOME Shell's log, filtered for this extension.
 
-- `make check` : Vérifie la syntaxe de tous les fichiers JavaScript et de `metadata.json`.
-- `make test` : Exécute les tests unitaires asynchrones avec GJS.
-- `make install` : Crée le lien symbolique dans `~/.local/share/gnome-shell/extensions/` et active l'extension.
-- `make reload` : Désactive puis réactive l'extension pour prise en compte à chaud.
-- `make uninstall` : Désactive et retire le lien symbolique.
-- `make status` : Affiche l'état de l'extension via `gnome-extensions info`.
-- `make log` : Filtre les logs de GNOME Shell pour l'extension.
+## Invariants and architecture
 
-## Invariants & Architecture
-
-- **Zéro fallback destructeur** : Si `aiu` échoue ou renvoie une erreur, l'état d'erreur est affiché textuellement, jamais masqué par de fausses données.
-- **Hygiène système** : `disable()` désenregistre scrupuleusement tous les timeouts `GLib.Source`, annule les `Gio.Cancellable` en cours et détruit les conteneurs d'acteurs Clutter.
+- **No misleading fallback**: when `aiu` fails or reports an error, the error is shown as text, never hidden behind made-up data.
+- **Clean disable**: `disable()` removes every `GLib.Source` timeout, cancels the `Gio.Cancellable` in flight, kills a running `aiu` and destroys the Clutter actors.
+- **Plain text only**: every label is `St.Label({ text })`, never markup, so provider text and translations cannot inject Pango markup.

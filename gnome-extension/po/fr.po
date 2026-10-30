@@ -1,0 +1,198 @@
+# French translation of the aiu-indicator GNOME Shell extension.
+# SPDX-License-Identifier: GPL-3.0-or-later
+# {name} placeholders must be kept as they are; the text is never markup.
+msgid ""
+msgstr ""
+"Project-Id-Version: aiu-indicator\n"
+"PO-Revision-Date: 2026-10-30 00:00+0000\n"
+"Last-Translator: aiu contributors\n"
+"Language-Team: French\n"
+"Language: fr\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
+
+# Durations: 4j22h, 3h08, 12min
+#: aiuClient.js
+msgid "{d}d{h}h"
+msgstr "{d}j{h}h"
+
+#: aiuClient.js
+msgid "{h}h{m}m"
+msgstr "{h}h{m}"
+
+#: aiuClient.js
+msgid "{m}m"
+msgstr "{m}min"
+
+#: aiuClient.js
+msgid "in {duration}"
+msgstr "dans {duration}"
+
+#: aiuClient.js
+msgid "passed, refresh the snapshot"
+msgstr "passé, relevé à rafraîchir"
+
+#: aiuClient.js
+msgid "Cannot find 'aiu' (neither ~/.local/bin/aiu nor on the PATH)"
+msgstr "Impossible de localiser 'aiu' (ni ~/.local/bin/aiu, ni dans le PATH)"
+
+#: aiuClient.js
+msgid "Could not start aiu: {error}"
+msgstr "Échec du lancement d'aiu : {error}"
+
+#: aiuClient.js
+msgid "aiu printed nothing"
+msgstr "Sortie vide de la commande aiu"
+
+#: aiuClient.js
+msgid "aiu returned invalid JSON: {error}"
+msgstr "JSON invalide retourné par aiu : {error}"
+
+#: aiuClient.js
+msgid "aiu did not answer within {seconds} s, stopped"
+msgstr "aiu n'a pas répondu en {seconds} s, arrêté"
+
+# Advice box
+#: aiuClient.js
+msgid "Conserve: {providers}"
+msgstr "À ménager : {providers}"
+
+#: aiuClient.js
+msgid "💡 Burn {provider} first"
+msgstr "💡 Brûle d'abord {provider}"
+
+#: aiuClient.js
+msgid "{metric}: reset in {duration} (unknown pace)"
+msgstr "{metric} : reset dans {duration} (allure inconnue)"
+
+#: aiuClient.js
+msgid "{metric} (unknown pace)"
+msgstr "{metric} (allure inconnue)"
+
+#: aiuClient.js
+msgid "{metric}: ~{percent}% lost at reset in {duration}"
+msgstr "{metric} : ~{percent} % perdu au reset dans {duration}"
+
+#: aiuClient.js
+msgid "{metric}: ~{percent}% lost at reset"
+msgstr "{metric} : ~{percent} % perdu au reset"
+
+#: aiuClient.js
+msgid "{metric}: expires in {duration}"
+msgstr "{metric} : expire dans {duration}"
+
+#: aiuClient.js
+msgid "💡 No expiring surplus: route by task fit"
+msgstr "💡 Pas de surplus qui expire : route par fit de tâche"
+
+#: aiuClient.js
+msgid "💡 No subscription has surplus"
+msgstr "💡 Aucun forfait n'a de surplus"
+
+#: aiuClient.js
+msgid "Keep each for what only it can do, overflow to the paid API"
+msgstr "Réserve chacun à ce que lui seul sait faire, déborde sur l'API payante"
+
+# Status badges
+#: menuView.js
+msgid "burn first"
+msgstr "à brûler"
+
+#: menuView.js
+msgid "unknown pace"
+msgstr "allure inconnue"
+
+#: menuView.js
+msgid "on track"
+msgstr "au rythme"
+
+#: menuView.js
+msgid "conserve"
+msgstr "à ménager"
+
+# Menu
+#: menuView.js
+msgid "Starting…"
+msgstr "Initialisation…"
+
+#: menuView.js
+msgid "💻 Open aiu in a terminal"
+msgstr "💻 Ouvrir aiu dans le terminal"
+
+#: menuView.js
+msgid "🌐 Web consoles"
+msgstr "🌐 Consoles Web"
+
+#: menuView.js
+msgid "Press Enter to close…"
+msgstr "Appuyez sur Entrée pour fermer…"
+
+#: menuView.js
+msgid "Refreshing…"
+msgstr "Actualisation en cours…"
+
+#: menuView.js
+msgid "⚠️ Could not fetch the snapshot"
+msgstr "⚠️ Erreur lors de la récupération"
+
+#: menuView.js
+msgid "Error"
+msgstr "Erreur"
+
+#: menuView.js
+msgid "No data available"
+msgstr "Aucune donnée disponible"
+
+#: menuView.js
+msgid "Last snapshot: {time}"
+msgstr "Dernier relevé : {time}"
+
+#: menuView.js
+msgid "⚠️ {provider}:"
+msgstr "⚠️ {provider} :"
+
+#: menuView.js
+msgid "Authentication error or quota exceeded"
+msgstr "Erreur d’authentification ou quota dépassé"
+
+#: menuView.js
+msgid "Subscriptions"
+msgstr "Forfaits"
+
+#: menuView.js
+msgid "— unknown"
+msgstr "— inconnu"
+
+#: menuView.js
+msgid "{percent}% used"
+msgstr "{percent} % utilisé"
+
+#: menuView.js
+msgid "Reset {when}"
+msgstr "Reset {when}"
+
+#: menuView.js
+msgid "runs dry in ~{duration} at your pace"
+msgstr "à sec dans ~{duration} à ton allure"
+
+#: menuView.js
+msgid "~{percent}% lost at reset at your pace"
+msgstr "~{percent} % perdu au reset à ton allure"
+
+#: menuView.js
+msgid "Credits & paid APIs"
+msgstr "Crédits & API payantes"
+
+#: menuView.js
+msgid "free, lost when it expires ({when})"
+msgstr "gratuit, perdu à l'expiration ({when})"
+
+#: menuView.js
+msgid "free, lost when it expires"
+msgstr "gratuit, perdu à l'expiration"
+
+#: menuView.js
+msgid "already spent (history)"
+msgstr "déjà dépensé (historique)"

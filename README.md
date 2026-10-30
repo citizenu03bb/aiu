@@ -14,6 +14,17 @@ aiu --only claude         # subset, ignores enabled flags
 watch -n 60 aiu           # poor man's live view
 ```
 
+## Language
+Messages are in English. For French, set `AIU_LANG=fr`; without it `aiu`
+follows your locale (`LC_ALL`, then `LC_MESSAGES`, then `LANG`), so a French
+desktop gets French messages, and `AIU_LANG=en` keeps English on one. This
+covers `--advise`, `--alert` and its notification, the table headings, the
+warnings on stderr and the starter config's comments. Probe notes, metric
+names and the `--json` keys stay English: they are data, read by the
+[GNOME indicator](gnome-extension/README.md) and by scripts. The indicator has
+its own English and French translations and follows your GNOME session's
+language.
+
 ## Install
 Needs Python ≥ 3.11. With [`pipx`](https://pipx.pypa.io/) (or
 `uv tool install` with the same URL), which provides both `aiu` and `consult`:
@@ -145,8 +156,10 @@ kept inside `aiu`, not exported, so `key_cmd` and the other commands `aiu` runs
 don't see them.
 Values are read like a shell reads them, without `$` expansion: `export KEY=v`
 and bare `KEY=v` both work, an unquoted value stops at ` #`, `'...'` is
-literal, and a line whose quotes don't match is skipped with a warning. `aiu`
-warns when other users can read the file: `chmod 600 ~/.env`.
+literal, and a line whose quotes don't match is skipped with a warning.
+Values must fit on one line: a quoted value continued on the next lines is
+skipped the same way, and the warning says so. `aiu` warns when other users
+can read the file: `chmod 600 ~/.env`.
 
 ```sh
 DEEPSEEK_API_KEY=sk-...
@@ -282,10 +295,26 @@ writes it back to `~/.gemini/oauth_creds.json`, like the Gemini CLI does.
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
 
 ## Development
+Every test is offline: providers are faked, and no key or network is needed.
+
 ```bash
-uv run --with pytest --with httpx --with rich pytest -q tests   # CLI, no network
-make -C gnome-extension check test                              # extension (test needs gjs + aiu)
+uv run --with pytest --with httpx --with rich pytest -q tests   # CLI
+make -C gnome-extension check test pack                         # extension, as CI runs it
 ```
+
+- `make check` checks the JavaScript syntax (with `node`), `metadata.json`
+  and the translations.
+- `make test` runs the extension's unit tests with `gjs` only, in English and
+  in French; it does not need `aiu`.
+- `make test-live` runs the installed `aiu`, so it calls your providers: local
+  only, never in CI.
+- `make pack` builds the zip for extensions.gnome.org (with the compiled
+  translations); `make clean` removes it and `locale/`.
+
+User-facing CLI messages are written in English and translated through the
+`FR` table in `aiu.py` (and in `consult.py`); `tests/test_i18n.py` fails when a
+message has no French text. The extension's strings are in
+`gnome-extension/po/`, see its [README](gnome-extension/README.md#languages).
 
 ## License
 GPL-3.0-or-later, see [LICENSE](LICENSE).

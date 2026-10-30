@@ -18,3 +18,7 @@ node_modules/
 # Antigravity / local scratch
 .system_generated/
 scratch/
+
+# compiled translations (make mo) and the template (make pot)
+/locale/
+/po/*.pot

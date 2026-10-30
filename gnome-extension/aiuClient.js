@@ -3,6 +3,7 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import { _, fmt } from './i18n.js';
 
 const DISPLAY_NAMES = {
     claude: 'Claude',
@@ -18,32 +19,43 @@ export function displayName(provider) {
     return DISPLAY_NAMES[provider] || provider;
 }
 
-/** Compact French duration: 3h08, 4j22h, 12min. */
+/** Compact duration: 4d22h, 3h08m, 12m (French: 4j22h, 3h08, 12min). */
 export function formatDuration(secs) {
     const s = Math.max(0, Math.floor(secs));
     const d = Math.floor(s / 86400);
     const h = Math.floor((s % 86400) / 3600);
     const m = Math.floor((s % 3600) / 60);
-    if (d) return `${d}j${h}h`;
-    if (h) return `${h}h${String(m).padStart(2, '0')}`;
-    return `${m}min`;
+    if (d) return fmt(_('{d}d{h}h'), { d, h });
+    if (h) return fmt(_('{h}h{m}m'), { h, m: String(m).padStart(2, '0') });
+    return fmt(_('{m}m'), { m });
 }
+
+const UNIT_SECS = { d: 86400, h: 3600, m: 60 };
 
 /**
  * Time to a row's reset, recomputed from reset_epoch so it stays right while
- * the menu sits open; falls back to aiu's English text, translated.
+ * the menu sits open; else read from aiu's text ("in 2d 3h", "expires in 5m",
+ * "now"). Text in any other shape is shown as aiu wrote it.
  */
 export function resetText(row, nowSecs = Date.now() / 1000) {
+    let ttr;
     if (typeof row.reset_epoch === 'number') {
-        const ttr = row.reset_epoch - nowSecs;
-        return ttr > 0 ? `dans ${formatDuration(ttr)}` : 'passé, relevé à rafraîchir';
+        ttr = row.reset_epoch - nowSecs;
+    } else if (!row.reset) {
+        return null;
+    } else if (row.reset === 'now') {
+        ttr = 0;
+    } else {
+        const m = /^(?:expires )?in ((?:\d+[dhm] ?)+)$/.exec(row.reset);
+        if (!m) return row.reset;
+        ttr = 0;
+        for (const [, n, unit] of m[1].matchAll(/(\d+)([dhm])/g)) {
+            ttr += Number(n) * UNIT_SECS[unit];
+        }
     }
-    if (!row.reset) return null;
-    return row.reset
-        .replace(/^expires in /, 'dans ')
-        .replace(/^in /, 'dans ')
-        .replace(/^now$/, 'passé, relevé à rafraîchir')
-        .replace(/(\d+)d /g, '$1j ');
+    return ttr > 0
+        ? fmt(_('in {duration}'), { duration: formatDuration(ttr) })
+        : _('passed, refresh the snapshot');
 }
 
 /** A fetch still running after this long is killed (the probes' own timeouts are 15-60 s). */
@@ -67,7 +79,7 @@ export class AiuClient {
             return [pathBin, '--json'];
         }
 
-        throw new Error("Impossible de localiser 'aiu' (ni ~/.local/bin/aiu, ni dans le PATH)");
+        throw new Error(_("Cannot find 'aiu' (neither ~/.local/bin/aiu nor on the PATH)"));
     }
 
     /** Stop the fetch in flight, if any: its promise resolves with `cancelled`, its aiu is killed. */
@@ -120,7 +132,7 @@ export class AiuClient {
                 });
                 proc.init(cancellable);
             } catch (err) {
-                resolve({ success: false, error: `Échec lancement aiu: ${err.message}` });
+                resolve({ success: false, error: fmt(_('Could not start aiu: {error}'), { error: err.message }) });
                 return;
             }
 
@@ -139,7 +151,7 @@ export class AiuClient {
                     const [, stdout, stderr] = subprocess.communicate_utf8_finish(res);
 
                     if (!stdout || stdout.trim().length === 0) {
-                        const errMsg = (stderr && stderr.trim()) || "Sortie vide de la commande aiu";
+                        const errMsg = (stderr && stderr.trim()) || _('aiu printed nothing');
                         resolve({ success: false, error: errMsg });
                         return;
                     }
@@ -150,7 +162,7 @@ export class AiuClient {
                     } catch (parseErr) {
                         resolve({
                             success: false,
-                            error: `JSON invalide retourné par aiu: ${parseErr.message}\n${stdout.slice(0, 150)}`
+                            error: `${fmt(_('aiu returned invalid JSON: {error}'), { error: parseErr.message })}\n${stdout.slice(0, 150)}`
                         });
                         return;
                     }
@@ -159,7 +171,10 @@ export class AiuClient {
                     resolve({ success: true, data: processed });
                 } catch (err) {
                     if (run.timedOut) {
-                        resolve({ success: false, error: `aiu n'a pas répondu en ${this._timeoutSeconds} s, arrêté` });
+                        resolve({
+                            success: false,
+                            error: fmt(_('aiu did not answer within {seconds} s, stopped'), { seconds: this._timeoutSeconds }),
+                        });
                     } else if (err.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED)) {
                         // Superseded by a newer fetch, or the extension was disabled
                         resolve({ success: false, cancelled: true });
@@ -235,27 +250,33 @@ export class AiuClient {
         }
 
         const keep = [...new Set(lots.filter(l => l.status === 'conserve').map(l => displayName(l.provider)))];
-        const spare = keep.length ? `À ménager : ${keep.join(', ')}` : null;
+        const spare = keep.length ? fmt(_('Conserve: {providers}'), { providers: keep.join(', ') }) : null;
         const first = lots[0];
         const lines = [];
 
         if (first.status === 'burn' || first.status === '?') {
-            lines.push(`💡 Brûle d'abord ${displayName(first.provider)}`);
-            const when = typeof first.ttr_secs === 'number' ? formatDuration(first.ttr_secs) : null;
+            lines.push(fmt(_('💡 Burn {provider} first'), { provider: displayName(first.provider) }));
+            const duration = typeof first.ttr_secs === 'number' ? formatDuration(first.ttr_secs) : null;
+            const fields = { metric: first.metric, duration };
             let detail = first.metric;
             if (first.status === '?') {
-                detail += when ? ` : reset dans ${when} (allure inconnue)` : ' (allure inconnue)';
+                detail = duration
+                    ? fmt(_('{metric}: reset in {duration} (unknown pace)'), fields)
+                    : fmt(_('{metric} (unknown pace)'), fields);
             } else if (typeof first.leftover === 'number') {
-                detail += ` : ~${Math.round(first.leftover * 100)} % perdu au reset${when ? ` dans ${when}` : ''}`;
-            } else if (when) {
-                detail += ` : expire dans ${when}`;
+                fields.percent = Math.round(first.leftover * 100);
+                detail = duration
+                    ? fmt(_('{metric}: ~{percent}% lost at reset in {duration}'), fields)
+                    : fmt(_('{metric}: ~{percent}% lost at reset'), fields);
+            } else if (duration) {
+                detail = fmt(_('{metric}: expires in {duration}'), fields);
             }
             lines.push(detail);
         } else if (first.status === 'on_track') {
-            lines.push('💡 Pas de surplus qui expire : route par fit de tâche');
+            lines.push(_('💡 No expiring surplus: route by task fit'));
         } else {
-            lines.push("💡 Aucun forfait n'a de surplus");
-            lines.push("Réserve chacun à ce que lui seul sait faire, déborde sur l'API payante");
+            lines.push(_('💡 No subscription has surplus'));
+            lines.push(_('Keep each for what only it can do, overflow to the paid API'));
         }
         if (spare && first.status !== 'conserve') {
             lines.push(spare);
