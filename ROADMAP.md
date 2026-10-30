@@ -472,3 +472,14 @@ has passed, instead of "unknown pace".
   user that nobody else can write), but it should match `key_cmd`.
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
   starts to matter which kind of work gets the spare quota.
+- **ChatGPT sign-in without the Codex CLI (investigate first).** The codex
+  probe reads the Codex CLI's `~/.codex/auth.json`. Plyph
+  (github.com/ubaimutl/Plyph, `chatgpt.js`) signs in to ChatGPT itself: OAuth
+  authorization code with PKCE at `auth.openai.com`, a loopback redirect,
+  `client_id=dynamic_agent_client` with an agent host id, scopes up to
+  `chatgpt.tokens.use.direct`, ID token checked against the JWKS, tokens in the
+  keyring. Before any code, check whether such a token can read the usage
+  endpoint the probe uses (`chatgpt.com/backend-api/wham/usage`) and what
+  OpenAI documents about that agent program. If it can, `aiu login chatgpt`
+  could replace the dependency on the Codex CLI; the same token could also let
+  `consult` send prompts to the plan without `codex`. Ideas only, not code.
