@@ -507,7 +507,7 @@ def probe_claude(cfg: dict) -> list[Row]:
         return [Row("claude", "—", "error",
                     note="no token in ~/.claude/.credentials.json (run `claude` once)")]
     warn = ""
-    if expires_at and (expires_at / 1000) < datetime.now(timezone.utc).timestamp():
+    if expires_at and expires_at / 1000 < time.time():
         warn = "token expired — run `claude` to refresh; "
     headers = {
         "Authorization": f"Bearer {token}",
