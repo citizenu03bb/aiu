@@ -6,8 +6,8 @@ spend across your other providers.
 
 ```
 aiu                       # pretty table
-aiu --advise              # rank subscriptions by headroom + where to route
-aiu --alert               # warn (+ desktop notify) on long-window quota near reset
+aiu --advise              # where to route: earliest-expiring surplus first
+aiu --alert               # warn (+ desktop notify) on quota lost at reset / running dry
 aiu --json                # machine-readable
 aiu --html /tmp/u.html    # local HTML page
 aiu --only claude_max     # subset, ignores enabled flags
@@ -19,9 +19,20 @@ Claude Max, ChatGPT/Codex, and Google One (Gemini) are **flat fees** — margina
 use is free and unused quota **resets to waste**. DeepSeek/OpenRouter are
 **pay-per-token**. So route agentic/CLI work onto the subscriptions first (by
 task fit, not raw headroom), spill to paid APIs only when a window is tapped.
-`aiu --advise` ranks live headroom + the task each subscription is best at;
-`aiu --alert` flags long windows (weekly/daily) you've paid for that are about
-to reset under-used, and fires a `notify-send` desktop notification.
+`aiu --advise` projects each weekly window to its reset at your current pace
+(pace = used ÷ time elapsed in the window). A window that will reset with quota
+left is **burn**; one that will run dry before its reset is **conserve**. It
+tells you to send flexible work to the burn windows (and promo credits) that
+expire **first**, and to keep conserve subscriptions for what only they can do.
+Remaining headroom alone is not the signal: 16% left that resets in 6h is worth
+using now, 30% left that must last 5 days is not. Earliest-deadline-first is
+optimal for work any subscription can do (proof:
+`../aiu-algo-recomandation/ADVISE_ALGORITHM.md`). `aiu --json` carries the same
+ordering under `"advice"`, which `consult auto` uses.
+`aiu --alert` flags long windows projected to lose ≥5% of their cap at a reset
+within 48h, windows projected to sit empty ≥24h before their reset, promo
+credits with ≥25% unspent within 14 days of expiry, and probe errors, and
+fires a `notify-send` desktop notification.
 
 To run the alert automatically (twice daily, with desktop notifications), a
 **systemd --user timer** is the right tool — it runs inside your graphical
@@ -92,6 +103,12 @@ Nothing to configure. The OAuth token is read locally from
 `~/.claude/.credentials.json` (same source Claude Code uses). If you see
 "auth rejected", just run `claude` once to refresh the token.
 
+Besides quotas, any dollar grant in the same response (an entry with
+`limit_dollars`, e.g. the cloud-session credit) shows up as a `credit` row:
+amount left / grant size, plus expiry. These entries use codenamed keys that
+Anthropic renames, so they are matched by shape; unknown ones render as
+`Credit (<key>)`.
+
 ### openai
 The Costs API needs an **Admin** key (starts with `sk-admin-...`), *not* a
 regular `sk-...` key. Create one at platform.openai.com → Settings →
@@ -145,7 +162,7 @@ subscription quota is what matters for the CLI.)*
 ## Adding a provider
 Write a `probe_<name>(cfg) -> list[Row]` function, register it in `PROBES`, add
 a `[<name>]` block to the config template. A `Row` is provider/metric/kind
-(`quota|spend|balance`) + `used`/`limit`/`unit`/`reset`/`note`.
+(`quota|spend|balance|credit`) + `used`/`limit`/`unit`/`reset`/`note`.
 
 ## Notes / limits
 - `claude_max` uses an **unofficial** OAuth-usage endpoint (the one Claude Code

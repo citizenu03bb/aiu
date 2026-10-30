@@ -13,7 +13,9 @@ Sources (each is a pluggable probe):
   - claude_max : Claude Max session quotas (5h / weekly / monthly), read from the
                  same OAuth-usage endpoint Claude Code uses. Token is read locally
                  from ~/.claude/.credentials.json. Nothing leaves your machine
-                 except the authenticated call to Anthropic.
+                 except the authenticated call to Anthropic. Also reports promo
+                 dollar credits (e.g. the cloud-session credit) found in the same
+                 response.
   - openai     : month-to-date USD spend via the Costs API (needs an Admin key).
   - deepseek   : remaining balance via /user/balance.
   - gemini     : month-to-date USD spend via your BigQuery billing export
@@ -103,9 +105,9 @@ enabled = false
 class Row:
     provider: str
     metric: str                 # human label, e.g. "5-Hour Limit", "Spend (MTD)"
-    kind: str                   # "quota" | "spend" | "balance" | "error"
-    used: float | None = None   # quota: 0..1 ; spend/balance: amount
-    limit: float | None = None  # quota: 1.0 ; spend: optional budget
+    kind: str                   # "quota" | "spend" | "balance" | "credit" | "error"
+    used: float | None = None   # quota: 0..1 ; spend/balance: amount ; credit: amount left
+    limit: float | None = None  # quota: 1.0 ; spend: optional budget ; credit: grant size
     unit: str = ""              # "%", "USD", "CNY", ...
     reset: str | None = None    # human reset string
     note: str = ""
@@ -216,8 +218,33 @@ def probe_claude_max(cfg: dict) -> list[Row]:
                         reset=reset_h, note=warn.strip(),
                         reset_epoch=_iso_epoch(reset) if reset else None,
                         window_secs=CLAUDE_WINDOW.get(key)))
+    rows.extend(_claude_credits(data, warn))
     if not rows:
         rows.append(Row("claude_max", "—", "quota", note=f"{warn}no active quotas reported"))
+    return rows
+
+
+# Promo dollar grants sit under codenamed keys that change without notice
+# (the Nov-2026 cloud-session credit is "iguana_necktie"), so match on shape.
+CLAUDE_CREDIT_LABELS = {"iguana_necktie": "Cloud Credit"}
+
+
+def _claude_credits(data: dict, warn: str) -> list[Row]:
+    rows = []
+    for key, entry in data.items():
+        if not isinstance(entry, dict) or entry.get("limit_dollars") is None:
+            continue
+        limit = float(entry["limit_dollars"])
+        left = entry.get("remaining_dollars")
+        if left is None:
+            left = limit - float(entry.get("used_dollars") or 0)
+        reset = entry.get("resets_at")
+        note = warn + (f"locked: {entry['locked_reason']}" if entry.get("locked_reason") else "")
+        rows.append(Row("claude_max", CLAUDE_CREDIT_LABELS.get(key, f"Credit ({key})"), "credit",
+                        used=round(float(left), 2), limit=limit, unit="USD",
+                        reset=f"expires {_humanize_reset(reset)}" if reset else None,
+                        note=note.strip(),
+                        reset_epoch=_iso_epoch(reset) if reset else None))
     return rows
 
 
@@ -792,6 +819,8 @@ def render_table(rows: list[Row]) -> None:
             usage = f"[{color}]{bar} {pct:5.1f}%[/{color}]"
         elif r.kind in ("spend", "balance") and r.used is not None:
             usage = f"{r.used:,.2f} {r.unit}"
+        elif r.kind == "credit" and r.used is not None:
+            usage = f"{r.used:,.2f}/{r.limit:,.0f} {r.unit} left"
         else:
             usage = "—"
         tail = r.reset or ""
@@ -813,6 +842,8 @@ def render_html(rows: list[Row], path: Path) -> None:
             return f"{r.used*100:.1f}%"
         if r.kind in ("spend", "balance") and r.used is not None:
             return f"{r.used:,.2f} {r.unit}"
+        if r.kind == "credit" and r.used is not None:
+            return f"{r.used:,.2f}/{r.limit:,.0f} {r.unit} left"
         return "—" if r.kind != "error" else "err"
     lines = ["<table border=1 cellpadding=6 style='border-collapse:collapse;font-family:sans-serif'>",
              "<tr><th>Provider</th><th>Metric</th><th>Usage</th><th>Resets / note</th></tr>"]
@@ -838,89 +869,211 @@ PROVIDER_HINTS = {
 ALERT_USED_MAX = 40.0        # only warn if a window is under this % used
 ALERT_TTR_MAX = 48 * 3600    # ...and resets within this many seconds
 ALERT_MIN_WINDOW = 6 * 3600  # ...and it's a long window (not a 5h burst bucket)
+# One-shot credits vanish entirely at expiry, so warn earlier.
+CREDIT_LEFT_MIN = 0.25       # warn if at least this fraction of the grant is unspent
+CREDIT_TTR_MAX = 14 * 86400  # ...and it expires within this many seconds
+ALERT_LEFTOVER_MIN = 0.05    # warn if a window is projected to lose this much of its cap at reset
+ALERT_DRY_MIN = 24 * 3600    # warn if a window is projected to sit empty this long before reset
 
 
-def _quota_providers(rows: list[Row]) -> dict:
-    """provider -> tightest window (max used%), with headroom and reset."""
-    out: dict[str, dict] = {}
+# Advice ranks by earliest-expiring SURPLUS (EDF), not raw headroom: quota is
+# lost at reset, so the reset is each window's deadline. Surplus = what is
+# projected to be left at reset if you keep the pace of the current period.
+RATE_WINDOW_MAX = 6 * 3600   # windows this short are rate limits (5h); longer = volume budgets
+PACE_MIN_FRAC = 0.10         # trust a window's pace once 10% of it has elapsed
+ON_TRACK_BAND = 0.05         # projected leftover within ±5% of the cap counts as on track
+
+
+def _dur(secs: float) -> str:
+    secs = int(max(0, secs))
+    d, rem = divmod(secs, 86400)
+    h, rem = divmod(rem, 3600)
+    return f"{d}d{h}h" if d else f"{h}h{rem // 60:02d}m" if h else f"{rem // 60}m"
+
+
+def _project(r: Row, now: float) -> dict | None:
+    """Extrapolate a quota window to its reset at the pace of its current period."""
+    if r.used is None or not r.reset_epoch or not r.window_secs:
+        return None
+    ttr = r.reset_epoch - now
+    elapsed = r.window_secs - ttr
+    if ttr <= 0 or elapsed < PACE_MIN_FRAC * r.window_secs:
+        return None
+    pace = r.used / elapsed                    # fraction of the cap per second
+    left = 1.0 - r.used
+    return {"r": r, "ttr": ttr, "pace": pace, "left": left,
+            "leftover": left - pace * ttr,     # > 0: expires unused ; < 0: runs dry first
+            "runway": left / pace if pace else float("inf")}
+
+
+def _lots(rows: list[Row], now: float) -> list[dict]:
+    """One routing lot per subscription (its volume windows) and per promo credit.
+    status: burn (surplus expires unused) | ? (pace unknown) | on_track | conserve (runs dry)."""
+    lots, quotas = [], {}
     for r in rows:
-        if r.kind != "quota" or r.used is None:
-            continue
-        used_pct = r.used * 100
-        cur = out.get(r.provider)
-        if cur is None or used_pct > cur["used"]:
-            out[r.provider] = {"used": used_pct, "metric": r.metric, "reset": r.reset}
-    for d in out.values():
-        d["headroom"] = round(100 - d["used"], 1)
-    return out
+        if r.kind == "quota" and r.used is not None and r.metric != "Extra Usage":
+            quotas.setdefault(r.provider, []).append(r)   # Extra Usage = paid overage
+        elif (r.kind == "credit" and r.used and r.reset_epoch and r.reset_epoch > now
+              and "locked" not in r.note):
+            # Spent only by sessions you choose to run: no committed load, all surplus.
+            ttr = r.reset_epoch - now
+            lots.append({"prov": r.provider, "status": "burn", "ttr": ttr, "metric": r.metric,
+                         "what": f"{r.metric} {r.used:,.2f}/{r.limit:,.0f} {r.unit}, expire dans "
+                                 f"{_dur(ttr)} (≈{r.used / ttr * 86400:,.2f} {r.unit}/jour pour tout utiliser)"})
+    for prov, rs in quotas.items():
+        vol = [r for r in rs if (r.window_secs or 0) > RATE_WINDOW_MAX] or rs
+        projs = [_project(r, now) for r in vol]
+        known = [p for p in projs if p]
+        dry = [p for p in known if p["leftover"] < -ON_TRACK_BAND]
+        if dry:
+            p = min(dry, key=lambda p: p["runway"])
+            lot = {"status": "conserve", "ttr": p["ttr"], "dry": p["ttr"] - p["runway"],
+                   "metric": p["r"].metric,
+                   "what": f"{p['r'].metric} {p['left'] * 100:.0f}% libre : à sec dans ~{_dur(p['runway'])}, "
+                           f"reset dans {_dur(p['ttr'])} → ~{_dur(p['ttr'] - p['runway'])} sans {prov}"}
+        elif len(known) < len(projs):
+            # No usable pace: fall back to plain EDF and say so.
+            r = min((r for r in vol if r.reset_epoch), key=lambda r: r.reset_epoch, default=vol[0])
+            ttr = r.reset_epoch - now if r.reset_epoch else float("inf")
+            lot = {"status": "?", "ttr": ttr, "metric": r.metric,
+                   "what": f"{r.metric} {100 * (1 - r.used):.0f}% libre, "
+                           + (f"reset dans {_dur(ttr)}" if r.reset_epoch else "reset inconnu")
+                           + " (allure inconnue)"}
+        else:
+            p = min(known, key=lambda p: p["ttr"])
+            if all(q["leftover"] > ON_TRACK_BAND for q in known):
+                need = p["left"] / p["ttr"]
+                lot = {"status": "burn", "ttr": p["ttr"], "metric": p["r"].metric,
+                       "what": f"{p['r'].metric} : reset dans {_dur(p['ttr'])}, ~{p['leftover'] * 100:.0f}% "
+                               f"du plafond perdu à ton allure ({p['pace'] * 360000:.2f}%/h ; "
+                               f"tout utiliser = {need * 360000:.2f}%/h, ×{need / p['pace']:.1f})"}
+            else:
+                lot = {"status": "on_track", "ttr": p["ttr"], "metric": p["r"].metric,
+                       "what": f"{p['r'].metric} {p['left'] * 100:.0f}% libre, reset dans "
+                               f"{_dur(p['ttr'])} — au rythme"}
+        # Short windows only gate availability; flag them when they'd run dry first.
+        for r in rs:
+            if r in vol:
+                continue
+            p = _project(r, now)
+            if p and p["leftover"] < 0:
+                lot["what"] += f" ; {r.metric} épuisé dans ~{_dur(p['runway'])}"
+        lot["prov"] = prov
+        lots.append(lot)
+    return lots
 
 
-def advise(rows: list[Row]) -> int:
+def route_order(rows: list[Row], now: float | None = None) -> list[dict]:
+    """Public advice for --json / consult: lots in routing order (burn & unknown by
+    deadline, then on-track, then conserve by how long they'd stay dry)."""
+    now = time.time() if now is None else now
+    lots = _lots(rows, now)
+    rank = {"burn": 0, "?": 0, "on_track": 1, "conserve": 2}
+    lots.sort(key=lambda l: (rank[l["status"]],
+                             -l["dry"] if l["status"] == "conserve" else l["ttr"]))
+    return [{"provider": l["prov"], "metric": l["metric"], "status": l["status"],
+             "ttr_secs": None if l["ttr"] == float("inf") else round(l["ttr"]),
+             "detail": l["what"]} for l in lots]
+
+
+def advise(rows: list[Row], now: float | None = None) -> int:
     from rich.console import Console
     console = Console()
-    q = _quota_providers(rows)
-    ranked = sorted(q.items(), key=lambda kv: kv[1]["headroom"], reverse=True)
-    console.print("\n[bold]Conseil de routage[/bold] — d'abord les forfaits "
-                  "(gratuit au marginal ; le quota non utilisé est perdu au reset) :\n")
-    for i, (prov, d) in enumerate(ranked, 1):
-        color = "green" if d["headroom"] > 50 else "yellow" if d["headroom"] > 15 else "red"
-        tight = f"plafond: {d['metric']} {d['used']:.0f}%"
-        if d["reset"]:
-            tight += f", reset {d['reset']}"
-        hint = PROVIDER_HINTS.get(prov, "")
-        console.print(f"  {i}. [{color}]{prov:<12}[/{color}] "
-                      f"{d['headroom']:5.1f}% libre   [dim]{tight}[/dim]   {hint}")
-    paid = [r for r in rows if r.kind in ("spend", "balance") and r.used is not None]
+    now = time.time() if now is None else now
+    lots = _lots(rows, now)
+    order = sorted((l for l in lots if l["status"] in ("burn", "?")), key=lambda l: l["ttr"])
+    steady = sorted((l for l in lots if l["status"] == "on_track"), key=lambda l: l["ttr"])
+    scarce = sorted((l for l in lots if l["status"] == "conserve"), key=lambda l: -l["dry"])
+    console.print("\n[bold]Conseil de routage[/bold] — la capacité qui expire le plus tôt d'abord "
+                  "(surplus projeté à ton allure actuelle) :\n")
+    for i, l in enumerate(order, 1):
+        color = "green" if l["status"] == "burn" else "yellow"
+        hint = PROVIDER_HINTS.get(l["prov"], "")
+        console.print(f"  {i}. [{color}]{l['prov']:<12}[/{color}] {l['what']}   [dim]{hint}[/dim]")
+    if steady:
+        console.print("\n  [bold]Au rythme (pas de surplus à offrir) :[/bold]")
+        for l in steady:
+            console.print(f"     {l['prov']:<12} {l['what']}")
+    if scarce:
+        console.print("\n  [bold red]À ménager[/bold red] (s'épuise avant le reset — garde-le pour "
+                      "ce que lui seul sait faire) :")
+        for l in scarce:
+            console.print(f"     [red]{l['prov']:<12}[/red] {l['what']}")
+    # Lifetime spend is sunk, not capacity: only list what can still absorb overflow.
+    paid = [r for r in rows if r.kind == "balance" and r.used is not None
+            or r.kind == "spend" and r.used is not None and "total" not in r.metric.lower()]
     if paid:
-        console.print("\n  [dim]Payant (débordement seulement) :[/dim]")
+        console.print("\n  [dim]Payant (débordement seulement ; devises non additionnées) :[/dim]")
         for r in paid:
             console.print(f"     [dim]{r.provider:<12} {r.used:,.2f} {r.unit}  ({r.metric})[/dim]")
     for r in rows:
         if r.kind == "error":
             console.print(f"  [red]{r.provider}: {r.note}[/red]")
-    # Closing advice: route by TASK FIT, not raw headroom (Gemini Flash's 99% is
-    # not a reason to send it deep reasoning). Flag only providers getting tight.
-    if ranked:
-        tight = [(p, d) for p, d in ranked if d["headroom"] < 25]
-        if not tight:
-            console.print("\n  [bold green]→ Forfaits grands ouverts[/bold green] : "
-                          "route par fit de tâche (ci-dessus), garde DeepSeek/OpenRouter au repos.\n")
-        else:
-            spare = ranked[0][0]
-            names = ", ".join(p for p, _ in tight)
-            console.print(f"\n  [bold yellow]→ {names} se remplit[/bold yellow] ; "
-                          f"bascule le surplus vers [bold]{spare}[/bold] "
-                          f"({ranked[0][1]['headroom']:.0f}% libre) avant toute API payante.\n")
+    keep = list(dict.fromkeys(l["prov"] for l in scarce))
+    names = ", ".join(keep)
+    if order:
+        first = order[0]
+        msg = (f"\n  [bold green]→ Brûle d'abord {first['prov']}[/bold green] "
+               f"(expire dans {_dur(first['ttr'])}"
+               + (", allure inconnue" if first["status"] == "?" else "")
+               + ") : envoie-lui tout ce qu'il sait faire")
+        msg += f", y compris ce que tu donnerais à {names}." if names else "."
+        if names:
+            who = "ce que lui seul sait" if len(keep) == 1 else "ce qu'eux seuls savent"
+            msg += f" Ménage {names} pour {who} faire."
+        console.print(msg + "\n")
+    elif steady:
+        console.print("\n  [bold]→ Aucun surplus qui expire[/bold] : route par fit de tâche vers "
+                      f"{', '.join(dict.fromkeys(l['prov'] for l in steady))} (au rythme)"
+                      + (f", ménage {names}." if names else ".") + "\n")
+    else:
+        console.print("\n  [bold yellow]→ Aucun forfait n'a de surplus[/bold yellow] : réserve chacun à ce "
+                      "que lui seul sait faire ; déborde le reste sur l'API payante la moins chère.\n")
     return 0
 
 
 def alert(rows: list[Row]) -> int:
-    """Warn about long-window quota you've paid for that's about to reset unused.
-    Quiet-friendly for cron: prints only warnings (and a single OK line otherwise)."""
+    """Warn about long-window quota projected to reset unused or to run dry long
+    before its reset, and about expiring credits. Quiet-friendly for cron: prints only warnings (and a single OK line otherwise)."""
     now = time.time()
     warns = []
     for r in rows:
+        if r.kind == "credit" and r.used is not None and r.limit and r.reset_epoch:
+            ttr = r.reset_epoch - now
+            if "locked" not in r.note and r.used / r.limit >= CREDIT_LEFT_MIN and 0 < ttr <= CREDIT_TTR_MAX:
+                warns.append(f"⚠ {r.provider} · {r.metric}: {r.used:,.2f} {r.unit} "
+                             f"non dépensés, {r.reset}")
+            continue
         if r.kind != "quota" or r.used is None or not r.reset_epoch:
             continue
         ttr = r.reset_epoch - now
         used_pct = r.used * 100
         long_window = (r.window_secs or 0) >= ALERT_MIN_WINDOW or \
                       (r.window_secs is None and ttr >= ALERT_MIN_WINDOW)
-        if long_window and used_pct < ALERT_USED_MAX and 0 < ttr <= ALERT_TTR_MAX:
-            warns.append(f"⚠ {r.provider} · {r.metric}: "
-                         f"{100 - used_pct:.0f}% inutilisé, reset {r.reset}")
+        if not long_window or ttr <= 0:
+            continue
+        p = _project(r, now)  # None while the pace is unknown: keep the level rule
+        waste = p["leftover"] if p else (1 - r.used) * (used_pct < ALERT_USED_MAX)
+        if waste >= ALERT_LEFTOVER_MIN and ttr <= ALERT_TTR_MAX:
+            warns.append(f"⚠ {r.provider} · {r.metric}: ~{waste * 100:.0f}% du plafond "
+                         f"perdu au reset, reset {r.reset}")
+        elif p and p["leftover"] < 0 and ttr - p["runway"] >= ALERT_DRY_MIN:
+            warns.append(f"⚠ {r.provider} · {r.metric}: à sec dans ~{_dur(p['runway'])} à ton allure, "
+                         f"reset {r.reset} → ~{_dur(ttr - p['runway'])} sans {r.provider}")
+    # Missing data is not an all-clear.
+    warns += [f"⚠ {r.provider}: données indisponibles ({r.note})" for r in rows if r.kind == "error"]
     if warns:
         for w in warns:
             print(w)
         # best-effort desktop notification so it lands without watching the terminal
         if shutil.which("notify-send"):
             try:
-                subprocess.run(["notify-send", "-a", "aiu", "Quota AI sous-utilisé",
+                subprocess.run(["notify-send", "-a", "aiu", "Quota AI",
                                 "\n".join(warns)], timeout=5)
             except Exception:
                 pass
         return 1
-    print("✓ aucune fenêtre longue sous-utilisée près du reset")
+    print("✓ rien ne sera perdu au reset ni à sec longtemps")
     return 0
 
 
@@ -934,9 +1087,9 @@ def main() -> int:
     ap.add_argument("--json", action="store_true", help="emit JSON")
     ap.add_argument("--html", metavar="PATH", help="write an HTML page")
     ap.add_argument("--advise", action="store_true",
-                    help="rank subscriptions by headroom + recommend where to route")
+                    help="recommend where to route: earliest-expiring surplus first")
     ap.add_argument("--alert", action="store_true",
-                    help="warn about long-window quota about to reset unused (cron-friendly)")
+                    help="warn about quota lost at reset / running dry, expiring credits (cron-friendly)")
     args = ap.parse_args()
 
     load_env_file()
@@ -946,7 +1099,8 @@ def main() -> int:
 
     if args.json:
         print(json.dumps({"captured_at": datetime.now(timezone.utc).isoformat(),
-                          "rows": [r.to_public() for r in rows]}, indent=2))
+                          "rows": [r.to_public() for r in rows],
+                          "advice": route_order(rows)}, indent=2))
     if args.html:
         render_html(rows, Path(os.path.expanduser(args.html)))
     if args.advise:

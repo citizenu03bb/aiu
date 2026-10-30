@@ -12,9 +12,10 @@ For Claude Code (or you) to offload independent / parallel / second-opinion
 sub-tasks onto idle flat-fee subscriptions (Gemini via `agy`, ChatGPT via
 `codex`) instead of spending its own Claude quota or a paid API.
 
-Route by TASK FIT, not idle quota. `auto` only breaks ties toward the freest
-subscription (read live from `aiu --json`); it falls back to DeepSeek (paid) if
-no subscription has headroom.
+Route by TASK FIT, not idle quota. `auto` only breaks ties toward the
+subscription whose spare quota expires first (`advice` from `aiu --json`); it
+falls back to DeepSeek (paid) when every reachable subscription is projected to
+run dry before its reset.
 """
 import json
 import subprocess
@@ -53,21 +54,21 @@ CALLERS = {"gemini": call_gemini, "codex": call_codex, "deepseek": call_deepseek
 
 
 def pick_auto() -> str:
-    """Pick the subscription with the most headroom; fall back to deepseek (paid)."""
+    """Pick the subscription whose surplus expires first (aiu's "advice" order);
+    fall back to deepseek (paid) when every reachable sub must be conserved."""
     try:
         p = subprocess.run(["aiu", "--json"], capture_output=True, text=True, timeout=30)
-        rows = json.loads(p.stdout).get("rows", [])
+        advice = json.loads(p.stdout).get("advice", [])
     except Exception:
         return "deepseek"
-    tight: dict[str, float] = {}
-    for r in rows:
-        if r.get("kind") == "quota" and r.get("provider") in SUBS and r.get("used") is not None:
-            h = 100 - r["used"] * 100
-            tight[r["provider"]] = min(tight.get(r["provider"], 101.0), h)
-    if tight:
-        best = max(tight, key=tight.get)
-        if tight[best] > 10:
-            return best
+    for a in advice:  # burn / unknown pace by deadline, then on track, then conserve
+        if a["status"] == "conserve":
+            break
+        if a["provider"] == "claude_max" and a["status"] == "burn" and a is advice[0]:
+            print(f"[consult] note: claude_max's own surplus expires first "
+                  f"({a['detail']}) — doing it yourself may be better", file=sys.stderr)
+        if a["provider"] in SUBS:
+            return a["provider"]
     return "deepseek"
 
 
