@@ -195,8 +195,27 @@ def _read_claude_token() -> tuple[str | None, int | None]:
         return None, None
 
 
+def _refresh_claude_token() -> bool:
+    """Have the CLI refresh ~/.claude/.credentials.json. Any `claude` start does
+    it, `auth status` without spending a request; the desktop app keeps its own
+    token and never rewrites the file, so it goes stale 8h after the last CLI run.
+    Clean environment: a host Claude session's variables (ANTHROPIC_BASE_URL,
+    host-managed auth) must not steer the child."""
+    exe = shutil.which("claude")
+    if not exe:
+        return False
+    env = {k: os.environ[k] for k in ("HOME", "PATH", "USER", "LANG") if k in os.environ}
+    try:
+        return subprocess.run([exe, "auth", "status"], env=env, capture_output=True,
+                              timeout=60).returncode == 0
+    except Exception:
+        return False
+
+
 def probe_claude(cfg: dict) -> list[Row]:
     token, expires_at = _read_claude_token()
+    if token and expires_at and expires_at / 1000 < time.time() + 60 and _refresh_claude_token():
+        token, expires_at = _read_claude_token()
     if not token:
         return [Row("claude", "—", "error",
                     note="no token in ~/.claude/.credentials.json (run `claude` once)")]
