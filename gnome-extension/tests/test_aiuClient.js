@@ -31,21 +31,26 @@ function runContract(client) {
     const raw = JSON.parse(readFixture('snapshot.json'));
     assertEqual([raw.schema, SCHEMA, schemaProblem(raw)], [1, 1, null], 'contract: schema');
     const data = client._processData(raw);
-    const now = Date.parse(raw.captured_at) / 1000;
+    // Ten minutes after the snapshot: a reset counted from reset_epoch, not from
+    // the `reset` text, which still says what it said at capture time.
+    const now = Date.parse(raw.captured_at) / 1000 + 600;
     assertEqual(data.capturedAt, '2026-10-26T07:33:20+00:00', 'contract: captured_at');
     assertEqual(data.quotas.map(q => [q.provider, q.metric, q.used_pct, q.note, resetText(q, now)]), [
-        ['claude', '5-Hour Limit', 12, '', 'in 2h00m'],
-        ['claude', 'Weekly (all models)', 40, '', 'in 3d0h'],
-        ['claude', 'Weekly Sonnet', 5, '', 'in 3d0h'],
-        ['codex', '5-Hour Limit', 20, 'plus', 'in 1h00m'],
-        ['codex', 'Weekly Limit', 90, '', 'in 5d0h'],
-        ['gemini', 'Gemini Pro', 25, 'Gemini Code Assist', 'in 20h00m'],
-        ['gemini', 'Gemini Flash', 10, '', 'in 20h00m'],
-        ['gemini', 'Gemini Flash Lite', 0, '', 'in 20h00m'],
+        ['claude', '5-Hour Limit', 12, '', 'in 1h50m'],
+        ['claude', 'Weekly (all models)', 40, '', 'in 2d23h'],
+        ['claude', 'Weekly Sonnet', 5, '', 'in 2d23h'],
+        ['codex', '5-Hour Limit', 20, 'plus', 'in 50m'],
+        ['codex', 'Weekly Limit', 90, '', 'in 4d23h'],
+        ['gemini', 'Gemini Pro', 25, 'Gemini Code Assist', 'in 19h50m'],
+        ['gemini', 'Gemini Flash', 10, '', 'in 19h50m'],
+        ['gemini', 'Gemini Flash Lite', 0, '', 'in 19h50m'],
     ], 'contract: quotas');
+    // The bars show used_pct; `used` is only the fallback for a row without it.
+    const pctOnly = client._processData({ ...raw, rows: raw.rows.map(r => ({ ...r, used: null })) });
+    assertEqual(pctOnly.quotas.map(q => q.used_pct), data.quotas.map(q => q.used_pct), 'contract: used_pct');
     assertEqual(data.balances.map(b => [b.provider, b.metric, b.kind, b.used, b.limit, b.unit, b.note,
         resetText(b, now)]), [
-        ['claude', 'Cloud Credit', 'credit', 31.5, 50, 'USD', '', 'in 10d0h'],
+        ['claude', 'Cloud Credit', 'credit', 31.5, 50, 'USD', '', 'in 9d23h'],
         ['codex', 'Credits', 'balance', 9.99, null, 'USD', '', null],
         ['openai', 'Spend (MTD)', 'spend', 1.73, null, 'USD', '', null],
         ['deepseek', 'Balance (USD)', 'balance', 4.2, null, 'USD', '', null],
