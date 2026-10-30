@@ -46,10 +46,12 @@ import argparse
 import glob
 import grp
 import json
+import math
 import os
 import pwd
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import time
@@ -258,6 +260,7 @@ FR = {
         "({pace}%/h ; tout utiliser = {need}%/h, ×{ratio})",
     "{metric} {left}% free, reset in {ttr} — on track":
         "{metric} {left}% libre, reset dans {ttr} — au rythme",
+    " (pace from past windows)": " (allure tirée des fenêtres passées)",
     "; {metric} runs out in ~{runway}": " ; {metric} épuisé dans ~{runway}",
     "\n[bold]Routing advice[/bold] — earliest-expiring capacity first "
     "(surplus projected at your current pace):\n":
@@ -1591,6 +1594,127 @@ RATE_WINDOW_MAX = 6 * 3600   # windows this short are rate limits (5h); longer =
 PACE_MIN_FRAC = 0.10         # trust a window's pace once 10% of it has elapsed
 ON_TRACK_BAND = 0.05         # projected leftover within ±5% of the cap counts as on track
 
+# Snapshot history: the last reading of each recent volume window, so a window
+# that just reset borrows the pace of the windows before it (see _project).
+HISTORY_WINDOWS = 4          # windows kept per metric: the current one and 3 before it
+HISTORY_DECAY = 0.5          # each older window weighs half as much in the blended pace
+HISTORY_MAX_AGE = 90 * 86400  # readings older than this are dropped
+HISTORY_MAX_ROWS = 256       # hard cap on the file, whatever the metrics
+HISTORY_MAX_BYTES = 64 * 1024  # a bigger file is not ours: ignored, then rewritten
+
+
+def _history_path() -> Path:
+    state = os.environ.get("XDG_STATE_HOME", "")
+    base = Path(state) if os.path.isabs(state) else Path(os.path.expanduser("~/.local/state"))
+    return base / "aiu" / "history.json"
+
+
+def _history_entry(e) -> dict | None:
+    """A stored reading if it has the expected shape, else None."""
+    if not isinstance(e, dict) or set(e) != {"p", "m", "u", "r", "w", "t"}:
+        return None
+    if not all(isinstance(e[k], str) and 0 < len(e[k]) <= 100 for k in ("p", "m")):
+        return None
+    if not all(isinstance(e[k], (int, float)) and not isinstance(e[k], bool)
+               and math.isfinite(e[k]) for k in ("u", "r", "w", "t")):
+        return None
+    return e if 0 <= e["u"] <= 2 and e["w"] > 0 else None
+
+
+def load_history() -> list[dict]:
+    """Stored readings; [] when the file is missing, too big, or not ours to trust."""
+    try:
+        path = _history_path()
+        if path.stat().st_size > HISTORY_MAX_BYTES:
+            return []
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        return []
+    rows = data.get("readings") if isinstance(data, dict) and data.get("v") == 1 else None
+    return [e for e in map(_history_entry, rows) if e] if isinstance(rows, list) else []
+
+
+def _same_window(a: dict, b: dict) -> bool:
+    # Reset times jitter by seconds between reads; consecutive windows are a window apart.
+    return (a["p"], a["m"]) == (b["p"], b["m"]) and abs(a["r"] - b["r"]) < a["w"] / 2
+
+
+def record_history(rows: list[Row], now: float) -> list[dict]:
+    """Merge this run's volume-window readings into the history file and return the
+    merged history. One entry per window, overwritten by each run, so the file stays
+    a few KB however often aiu runs. Only provider, metric, used fraction, reset,
+    window length and time are stored: never notes. Best effort: a write that fails
+    leaves the old file, and the merged history is still used for this run."""
+    hist = load_history()
+    fresh = [r for r in rows if r.kind == "quota" and r.used is not None and r.reset_epoch
+             and (r.window_secs or 0) > RATE_WINDOW_MAX and r.reset_epoch > now]
+    new = [e for r in fresh if (e := _history_entry({"p": r.provider, "m": r.metric, "u": r.used,
+                                                       "r": r.reset_epoch, "w": r.window_secs,
+                                                       "t": now}))]
+    if not new:
+        return hist
+    for e in new:
+        hist = [old for old in hist if not _same_window(old, e)]
+        hist.append(e)
+    # Prune: recent readings only, the last HISTORY_WINDOWS windows per metric.
+    kept, per_metric = [], {}
+    for e in sorted(hist, key=lambda e: -e["r"]):
+        n = per_metric.get((e["p"], e["m"]), 0)
+        if now - e["t"] <= HISTORY_MAX_AGE and n < HISTORY_WINDOWS:
+            per_metric[(e["p"], e["m"])] = n + 1
+            kept.append(e)
+    hist = sorted(kept[:HISTORY_MAX_ROWS], key=lambda e: (e["p"], e["m"], e["r"]))
+    _write_history(hist)
+    return hist
+
+
+def _write_history(hist: list[dict]) -> None:
+    """Atomic, user-only write: a 0600 temp file in a 0700 directory, renamed over
+    the old file. No lock: two runs racing lose at most one reading, which the next
+    run writes again. No fsync either: a file lost in a crash is simply rebuilt."""
+    import tempfile
+    path = _history_path()
+    tmp = None
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        st = path.parent.lstat()
+        if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid():
+            return
+        if stat.S_IMODE(st.st_mode) != 0o700:
+            os.chmod(path.parent, 0o700)
+        fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".history.", suffix=".tmp")
+        with os.fdopen(fd, "w") as f:  # mkstemp: O_EXCL, mode 0600
+            json.dump({"v": 1, "readings": hist}, f, separators=(",", ":"))
+        os.replace(tmp, path)
+        tmp = None
+    except OSError:
+        pass
+    finally:
+        if tmp:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
+
+
+def _history_pace(r: Row, hist: list[dict] | None) -> float | None:
+    """Average pace (fraction of the cap per second) of the windows before r's,
+    newest first, each older one weighing HISTORY_DECAY times less; None without
+    a usable reading. A reading counts once PACE_MIN_FRAC of its window had passed."""
+    past = []
+    for e in hist or ():
+        # Same metric, same kind of window (a calendar month varies by a few days).
+        if (e["p"], e["m"]) != (r.provider, r.metric) or abs(e["w"] - r.window_secs) > r.window_secs / 10:
+            continue
+        elapsed = e["w"] - (e["r"] - e["t"])
+        if e["r"] <= r.reset_epoch - e["w"] / 2 and elapsed >= PACE_MIN_FRAC * e["w"]:
+            past.append((e["r"], e["u"] / min(elapsed, e["w"])))
+    if not past:
+        return None
+    weights = [HISTORY_DECAY ** i for i in range(len(past))]
+    paces = [pace for _, pace in sorted(past, reverse=True)]
+    return sum(w * pace for w, pace in zip(weights, paces)) / sum(weights)
+
 
 def _dur(secs: float) -> str:
     secs = int(max(0, secs))
@@ -1599,24 +1723,37 @@ def _dur(secs: float) -> str:
     return f"{d}d{h}h" if d else f"{h}h{rem // 60:02d}m" if h else f"{rem // 60}m"
 
 
-def _project(r: Row, now: float) -> dict | None:
-    """Extrapolate a quota window to its reset at the pace of its current period."""
+def _project(r: Row, now: float, hist: list[dict] | None = None) -> dict | None:
+    """Extrapolate a quota window to its reset at the pace of its current period.
+    Under PACE_MIN_FRAC elapsed that pace is noise, so the history fills in: the
+    first PACE_MIN_FRAC of the window is assumed to hold what is used so far plus
+    the past windows' pace for the rest of it. That blend slides from the history
+    alone at the reset to the window's own pace at PACE_MIN_FRAC."""
     if r.used is None or not r.reset_epoch or not r.window_secs:
         return None
     ttr = r.reset_epoch - now
     elapsed = r.window_secs - ttr
-    if ttr <= 0 or elapsed < PACE_MIN_FRAC * r.window_secs:
+    if ttr <= 0:
         return None
-    pace = r.used / elapsed                    # fraction of the cap per second
+    from_history = elapsed < PACE_MIN_FRAC * r.window_secs
+    if from_history:
+        past = _history_pace(r, hist)
+        if past is None:
+            return None
+        head = PACE_MIN_FRAC * r.window_secs
+        pace = (r.used + past * (head - max(elapsed, 0))) / head
+    else:
+        pace = r.used / elapsed                # fraction of the cap per second
     left = 1.0 - r.used
-    return {"r": r, "ttr": ttr, "pace": pace, "left": left,
+    return {"r": r, "ttr": ttr, "pace": pace, "left": left, "history": from_history,
             "leftover": left - pace * ttr,     # > 0: expires unused ; < 0: runs dry first
             "runway": left / pace if pace else float("inf")}
 
 
-def _lots(rows: list[Row], now: float) -> list[dict]:
+def _lots(rows: list[Row], now: float, hist: list[dict] | None = None) -> list[dict]:
     """One routing lot per subscription (its volume windows) and per promo credit.
-    status: burn (surplus expires unused) | ? (pace unknown) | on_track | conserve (runs dry)."""
+    status: burn (surplus expires unused) | ? (pace unknown) | on_track | conserve (runs dry).
+    hist: past readings (load_history), for windows too young to have their own pace."""
     lots, quotas = [], {}
     for r in rows:
         if r.kind == "quota" and r.used is not None and r.metric != "Extra Usage":
@@ -1632,7 +1769,7 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
                                     unit=r.unit, ttr=_dur(ttr), per_day=f"{r.used / ttr * 86400:,.2f}")})
     for prov, rs in quotas.items():
         vol = [r for r in rs if (r.window_secs or 0) > RATE_WINDOW_MAX] or rs
-        projs = [_project(r, now) for r in vol]
+        projs = [_project(r, now, hist) for r in vol]
         known = [p for p in projs if p]
         dry = [p for p in known if p["leftover"] < -ON_TRACK_BAND]
         if dry:
@@ -1664,13 +1801,17 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
                                   "({pace}%/h; using it all = {need}%/h, ×{ratio})",
                                   metric=p["r"].metric, ttr=_dur(p["ttr"]),
                                   leftover=f"{p['leftover'] * 100:.0f}", pace=f"{p['pace'] * 360000:.2f}",
-                                  need=f"{need * 360000:.2f}", ratio=f"{need / p['pace']:.1f}")}
+                                  need=f"{need * 360000:.2f}",
+                                  ratio=f"{need / p['pace']:.1f}" if p["pace"] else "∞")}
             else:
                 lot = {"status": "on_track", "ttr": p["ttr"], "metric": p["r"].metric,
                        "leftover": p["leftover"],
                        "what": tr("{metric} {left}% free, reset in {ttr} — on track",
                                   metric=p["r"].metric, left=f"{p['left'] * 100:.0f}",
                                   ttr=_dur(p["ttr"]))}
+        lot["history"] = lot["status"] != "?" and any(q["history"] for q in known)
+        if lot["history"]:
+            lot["what"] += tr(" (pace from past windows)")
         # Short windows only gate availability; flag them when they'd run dry first.
         for r in rs:
             if r in vol:
@@ -1684,11 +1825,12 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
     return lots
 
 
-def route_order(rows: list[Row], now: float | None = None) -> list[dict]:
+def route_order(rows: list[Row], now: float | None = None,
+                hist: list[dict] | None = None) -> list[dict]:
     """Public advice for --json / consult: lots in routing order (burn & unknown by
     deadline, then on-track, then conserve by how long they'd stay dry)."""
     now = time.time() if now is None else now
-    lots = _lots(rows, now)
+    lots = _lots(rows, now, hist)
     rank = {"burn": 0, "?": 0, "on_track": 1, "conserve": 2}
     lots.sort(key=lambda l: (rank[l["status"]],
                              -l["dry"] if l["status"] == "conserve" else l["ttr"]))
@@ -1697,14 +1839,16 @@ def route_order(rows: list[Row], now: float | None = None) -> list[dict]:
              # projected fraction of the cap left at reset (<0: short by that much)
              "leftover": round(l["leftover"], 3) if "leftover" in l else None,
              "runway_secs": round(l["runway"]) if "runway" in l else None,
+             # the pace of a window that just reset, borrowed from the ones before it
+             "pace_from_history": l.get("history", False),
              "detail": l["what"]} for l in lots]
 
 
-def advise(rows: list[Row], now: float | None = None) -> int:
+def advise(rows: list[Row], now: float | None = None, hist: list[dict] | None = None) -> int:
     from rich.console import Console
     console = Console()
     now = time.time() if now is None else now
-    lots = _lots(rows, now)
+    lots = _lots(rows, now, hist)
     order = sorted((l for l in lots if l["status"] in ("burn", "?")), key=lambda l: l["ttr"])
     steady = sorted((l for l in lots if l["status"] == "on_track"), key=lambda l: l["ttr"])
     scarce = sorted((l for l in lots if l["status"] == "conserve"), key=lambda l: -l["dry"])
@@ -1842,7 +1986,7 @@ def _withdraw_notification() -> None:
         _gtk_notifications("RemoveNotification", NOTIFICATION_ID)
 
 
-def alert(rows: list[Row], notify: bool = True) -> int:
+def alert(rows: list[Row], notify: bool = True, hist: list[dict] | None = None) -> int:
     """Warn about long-window quota projected to reset unused or to run dry long
     before its reset, and about expiring credits. Quiet-friendly for cron: prints only warnings (and a single OK line otherwise).
     notify=False keeps it off the desktop (tests, synthetic rows)."""
@@ -1864,7 +2008,7 @@ def alert(rows: list[Row], notify: bool = True) -> int:
                       (r.window_secs is None and ttr >= ALERT_MIN_WINDOW)
         if not long_window or ttr <= 0:
             continue
-        p = _project(r, now)  # None while the pace is unknown: keep the level rule
+        p = _project(r, now, hist)  # None while the pace is unknown: keep the level rule
         waste = p["leftover"] if p else (1 - r.used) * (used_pct < ALERT_USED_MAX)
         if waste >= ALERT_LEFTOVER_MIN and ttr <= ALERT_TTR_MAX:
             warns.append(tr("⚠ {provider} · {metric}: ~{waste}% of the cap lost at reset, reset {reset}",
@@ -1915,17 +2059,20 @@ def main() -> int:
         ensure_desktop_entry()  # before probing, so GNOME has indexed it by notify time
     only = set(s.strip() for s in args.only.split(",")) if args.only else None
     rows = collect(config, only)
+    # Every run records, --only included: entries are per metric, so a filtered
+    # run never drops the others' history.
+    hist = record_history(rows, time.time())
 
     if args.json:
         print(json.dumps({"captured_at": datetime.now(timezone.utc).isoformat(),
                           "rows": [r.to_public() for r in rows],
-                          "advice": route_order(rows)}, indent=2))
+                          "advice": route_order(rows, hist=hist)}, indent=2))
     if args.html:
         render_html(rows, Path(os.path.expanduser(args.html)))
     if args.advise:
-        return advise(rows)
+        return advise(rows, hist=hist)
     if args.alert:
-        return alert(rows)
+        return alert(rows, hist=hist)
     if not args.json and not args.html:
         render_table(rows)
     return 0

@@ -82,9 +82,11 @@ idea when they put the milk that expires soonest at the front of the shelf.
 
 - Pace is the average over the current window. It ignores busy afternoons
   and quiet weekends.
-- For the first 10% of a window (about 17 h of a week) the pace is not
-  trusted, and the subscription is shown as "allure inconnue". It then
-  falls back to plain earliest-reset-first.
+- For the first 10% of a window (about 17 h of a week) the window's own
+  pace is not trusted. `aiu` then borrows the pace of the windows before it
+  from a small history file (see [Usage history](#usage-history) below), and
+  says so: "(pace from past windows)". With no history yet, the subscription
+  is shown as "unknown pace" and falls back to plain earliest-reset-first.
 - It assumes the 5-hour windows rarely block you. When one is about to run
   out, the output says so.
 - Task fit stays your call. The ranking says where to send work a
@@ -98,7 +100,8 @@ numbers. It then adds a budgeting system on top:
 - **A price list** per kind of task, so free quota goes to the work that
   would be most expensive to pay for.
 - **A usage history file**, so pace comes from recent behaviour instead of
-  one snapshot. This fixes the "just reset, no pace yet" gap.
+  one snapshot. This fixes the "just reset, no pace yet" gap. `aiu` now
+  borrows this one idea, only for that gap (see below).
 - **Confidence labels** (high/medium/low) on every estimate.
 - **A batch planner**: give it a pile of work by type, and it computes the
   best split.
@@ -138,15 +141,16 @@ its answer flips depending on the horizon you pick (Gemini at 3 h, Claude at
 |---|---|---|---|---|
 | Sees reset times | no | **yes** | yes | yes |
 | Sees your pace | no | **yes** | yes (better) | n/a (needs task list) |
-| Needs beyond the snapshot | nothing | **nothing** | prices, history, task types | task list, costs, fit |
+| Needs beyond the snapshot | nothing | **nothing (history optional)** | prices, history, task types | task list, costs, fit |
 | Proven optimal | no | **yes, for flexible work** | yes, for its model | yes, for its model |
 | Fits `aiu` today | yes | **yes, drop-in** | partly | no |
 
 - **It fixes the actual bug.** The old rule ignored time. SURPLUS-EDF is
   built around reset deadlines and your pace.
 - **It needs nothing new.** It uses only the snapshot `aiu` already
-  collects: no saved state, no config, no extra flags. `aiu` stays a
-  stateless, on-demand tool.
+  collects: no config, no extra flags. The one piece of saved state, the
+  usage history, only sharpens the pace right after a reset; delete it and
+  the routing still works.
 - **Its guarantee is strong where it matters.** For everyday "where should
   this go?" work, earliest-deadline-first is optimal regardless of the
   future.
@@ -160,13 +164,59 @@ its answer flips depending on the horizon you pick (Gemini at 3 h, Claude at
 
 - From SPARE: the **"runs dry" warning** in `aiu --alert`, and keeping
   lifetime spend out of the paid overflow list (it's sunk cost).
+- From SPARE: the **usage history**, for windows that just reset (below).
 - From the exact planner's review: one shared answer for every consumer.
   `aiu --json` publishes it as `"advice"`, and `consult auto` and the GNOME
   indicator both read it instead of keeping their own headroom maths.
 
+## Usage history
+
+Right after a reset, a window has almost no data: 3% used in 2 hours could
+mean a busy week or a busy morning. So for the first 10% of a window, `aiu`
+asks how fast you went **in the windows before it**.
+
+**The pace.** For each of the last few windows of the same metric, `aiu`
+takes the last reading it saw and divides the share used by the time passed
+at that reading. The most recent window counts most, and each older one half
+as much as the one after it. That past pace fills in the young part of the
+current window: the first 10% is assumed to hold what is already used plus
+the past pace for the rest of it. At the reset this is the history alone; by
+the 10% mark it is the window's own pace alone, so the projection never jumps
+when the history hands over. A reading taken before 10% of its own window had
+passed is too early to lend a pace. The advice marks every projection that
+leans on the history with "(pace from past windows)", and `--json` sets
+`"pace_from_history": true` on that lot. SURPLUS-EDF itself does not change:
+only the pace that feeds it does.
+
+**What is stored.** One file, `$XDG_STATE_HOME/aiu/history.json` (by default
+`~/.local/state/aiu/history.json`): directory 0700, file 0600, written to a
+temporary file and renamed over the old one, so a reader never sees half a
+file. Each entry holds a provider, a metric, the used fraction, the reset
+time, the window length and when it was read. Nothing else: no notes, no
+keys, no tokens.
+
+**What is recorded.** Every run that reads quotas (`--json`, `--advise`,
+`--alert`, the table) records its volume windows: those longer than 6 hours,
+with a known window length and a reset still ahead. The 5-hour rate limits
+are not recorded; they only gate availability. Runs with `--only` record
+too: entries are kept per metric, so a filtered run never drops the other
+providers' history.
+
+**How big it gets.** One entry per window, which each run overwrites: the
+GNOME extension runs `aiu --json` every 5 minutes, and the file still holds
+just one line per metric and window. Per metric, only the current window and
+the three before it are kept, readings older than 90 days are dropped, and
+the file is capped at 256 entries. A missing, corrupt or oversized file is
+ignored and rewritten; a write that fails is skipped without an error, and
+two runs racing lose at most one reading, which the next run writes again.
+
+**Limits.** The history only knows the windows `aiu` saw. After a week
+without running it, the "previous" window is older, and a reading taken early
+in a window describes only its start. It still ignores weekday swings within
+a window.
+
 ### Possible next steps
 
-If the "just reset, no pace yet" gap or weekday swings start to matter,
-SPARE's **usage history** is the natural next addition. Its **price list**
-is worth adding only if it starts to matter which kind of work gets the
-free quota.
+If weekday swings start to matter, the history could keep more than one
+reading per window. SPARE's **price list** is worth adding only if it starts
+to matter which kind of work gets the free quota.

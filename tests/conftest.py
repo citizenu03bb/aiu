@@ -15,7 +15,7 @@ import aiu  # noqa: E402
 
 PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
                 "MISTRAL_ADMIN_COOKIE", "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET",
-                "AIU_ENV_FILE", "XDG_DATA_HOME", "XDG_CACHE_HOME")
+                "AIU_ENV_FILE", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME")
 
 
 @pytest.fixture(autouse=True)
