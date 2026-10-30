@@ -324,8 +324,11 @@ chrome|chromium|brave|firefox [--profile NAME]` replaces the DevTools copy:
 
 - Run by the user only. No probe, `--json`, `--alert` or the GNOME extension
   calls it (a test checks the extension's sources).
-- Reads only cookies whose host is exactly `admin.mistral.ai` or
-  `.admin.mistral.ai`, from the plain browsing context (no container tabs or
+- Reads only the cookies a browser sends to `admin.mistral.ai` (RFC 6265
+  domain match): host `admin.mistral.ai`, `.admin.mistral.ai` or
+  `.mistral.ai`, where Mistral sets its Ory session and CSRF token. Never
+  other subdomains (`auth.`, `console.`, `chat.`) or a host-only
+  `mistral.ai`. From the plain browsing context (no container tabs or
   partitioned cookies), unexpired, whose path covers `/api/local-trpc/`. The
   code cannot tell which of them the tRPC calls need, so it keeps all of them
   rather than guess at one session cookie.
