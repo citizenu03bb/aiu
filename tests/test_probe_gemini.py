@@ -106,14 +106,16 @@ def summary(*buckets, group="Gemini Models"):
         {"displayName": group, "buckets": list(buckets)}]}}
 
 
-SUMMARY_BODY = summary(
-    {"bucketId": "gemini-weekly", "window": "weekly", "displayName": "Weekly",
-     "remainingFraction": 0.75, "resetTime": iso(3 * 86400)},
-    {"bucketId": "gemini-5h", "window": "5h", "displayName": "5 hours",
-     "remainingFraction": 0.4, "resetTime": iso(2 * 3600)},
-    {"bucketId": "gemini-images", "displayName": "Image generation", "remainingFraction": 1.0},
-    {"bucketId": "gemini-5h-burst", "window": "5h"},  # no fraction: skipped
-)
+def summary_body():
+    """Built when a test runs, not at import: the reset times are from now."""
+    return summary(
+        {"bucketId": "gemini-weekly", "window": "weekly", "displayName": "Weekly",
+         "remainingFraction": 0.75, "resetTime": iso(3 * 86400)},
+        {"bucketId": "gemini-5h", "window": "5h", "displayName": "5 hours",
+         "remainingFraction": 0.4, "resetTime": iso(2 * 3600)},
+        {"bucketId": "gemini-images", "displayName": "Image generation", "remainingFraction": 1.0},
+        {"bucketId": "gemini-5h-burst", "window": "5h"},  # no fraction: skipped
+    )
 
 
 def record_post_kwargs(monkeypatch, http):
@@ -141,7 +143,7 @@ def test_local_language_server(proc, http, monkeypatch):
     proc.listen(40001, 9999)                            # someone else's
     proc.listen(41395, 7777, state="01")                # established, not listening
     http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", httpx.RemoteProtocolError("TLS expected"))
-    http.on("POST", f"https://127.0.0.1:41394{SUMMARY}", (200, SUMMARY_BODY))
+    http.on("POST", f"https://127.0.0.1:41394{SUMMARY}", (200, summary_body()))
     posts = record_post_kwargs(monkeypatch, http)
     rows = gemini.probe_gemini({})
     assert [(r.metric, round(r.used, 2), r.window_secs) for r in rows] == [
@@ -169,7 +171,7 @@ def test_local_csrf_fallback_for_found_server(proc, http, home):
     proc.process(4242, LS, b"--random_port", sockets=(5555,))
     proc.listen(41394, 5555)
     proc.listen(631, 100)                       # not the server's
-    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, SUMMARY_BODY))
+    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, summary_body()))
     assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
     assert [(c.url, c.headers.get("x-codeium-csrf-token")) for c in http.calls] == [
         (f"http://127.0.0.1:41394{SUMMARY}", "22222222-bbbb")]
@@ -219,7 +221,7 @@ def test_local_only_our_loopback_sockets(proc, http, sock):
 def test_local_ipv6_loopback(proc, http):
     proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
     proc.listen(41394, 5555, ip="00000000000000000000000001000000")  # [::1]
-    http.on("POST", f"http://[::1]:41394{SUMMARY}", (200, SUMMARY_BODY))
+    http.on("POST", f"http://[::1]:41394{SUMMARY}", (200, summary_body()))
     assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
 
 
@@ -227,7 +229,7 @@ def test_local_server_updated_while_running(proc, http):
     # An update replaces the binary on disk: the link then ends in " (deleted)".
     proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,), exe=LS.decode() + " (deleted)")
     proc.listen(41394, 5555)
-    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, SUMMARY_BODY))
+    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, summary_body()))
     assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
 
 

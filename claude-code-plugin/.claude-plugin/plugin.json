@@ -1,0 +1,9 @@
+{
+  "name": "aiu-claude-usage",
+  "version": "0.1.0",
+  "description": "Writes Claude Code's own rate-limit readings (5-hour and weekly windows) to ~/.local/state/aiu/claude-usage.json for aiu, so aiu never reads a Claude.ai token.",
+  "author": { "name": "citizen-lambda" },
+  "homepage": "https://github.com/citizenu03bb/aiu",
+  "repository": "https://github.com/citizenu03bb/aiu",
+  "license": "GPL-3.0-or-later"
+}

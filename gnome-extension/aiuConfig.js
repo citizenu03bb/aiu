@@ -34,6 +34,7 @@ const OPTION_TITLES = {
     key_cmd: N_('Command that prints the key'),
     key_file: N_('File that holds the key'),
     claude_cmd: N_('claude program'),
+    read_token: N_('Read the claude sign-in token'),
     vibe_allowance_eur: N_('Vibe allowance (EUR)'),
     api_allowance_eur: N_('API allowance (EUR)'),
 };
@@ -56,6 +57,15 @@ export function optionTitle(option) {
     return option in OPTION_TITLES ? _(OPTION_TITLES[option]) : option;
 }
 
+/** What a switch does, under its title; empty for an option with no help here. */
+const OPTION_HELP = {
+    read_token: N_('Off by default. On, aiu reads the claude command-line tool\'s sign-in token and sends it to Anthropic\'s usage endpoint, which adds credits and other windows. Anthropic\'s terms say developers may not collect, store, or intermediate Claude.ai credentials or session tokens (code.claude.com/docs/en/legal-and-compliance). The aiu-claude-usage plugin for Claude Code needs no token.'),
+};
+
+export function optionHelp(option) {
+    return option in OPTION_HELP ? _(OPTION_HELP[option]) : '';
+}
+
 function valueText(value) {
     return value === null || value === undefined ? '' : String(value);
 }
@@ -65,9 +75,10 @@ export class SchemaError extends Error {}
 
 /**
  * `aiu config show --json` as the window lays it out: one entry per provider,
- * in aiu's order, with its `enabled` value and the text fields it takes
- * (key sources, claude_cmd, Mistral's allowances). Throws on anything else,
- * a SchemaError for an unknown schema.
+ * in aiu's order, with its `enabled` value, the text fields it takes
+ * (key sources, claude_cmd, Mistral's allowances) and its other switches
+ * (claude's read_token). Throws on anything else, a SchemaError for an
+ * unknown schema.
  */
 export function parseConfigShow(text) {
     const raw = JSON.parse(text);
@@ -90,12 +101,16 @@ export function parseConfigShow(text) {
                 fromFile: o.source === 'file',
                 editable: keyCmdAllowed || !RUNS_CODE.includes(name),
             }));
+        const switches = Object.entries(options)
+            .filter(([name, o]) => name !== 'enabled' && o && o.type === 'bool')
+            .map(([name, o]) => ({ option: name, active: o.value === true, fromFile: o.source === 'file' }));
         return {
             id,
             name: displayName(id),
             enabled: options.enabled ? options.enabled.value === true : null,
             hasKeySources: 'key_env' in options || 'key_cmd' in options || 'key_file' in options,
             fields,
+            switches,
         };
     });
     return {

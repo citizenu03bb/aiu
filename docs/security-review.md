@@ -32,12 +32,42 @@ documented residual risk.
 | L1 | Fixed | #8, #12 | `load_config` (`aiu/config.py`) drops every `key_cmd` when the config or its directory is someone else's or writable by others (group write is accepted for the user's private group: `_writable_by_others`, `aiu/util.py`) |
 | L2 | Fixed | #8, #11 | `load_env_file` (`aiu/keys.py`) reads only the names the config uses, parses like a shell, warns on a readable file, and exports nothing. A launcher that sources `~/.env` (as older installs did) undoes this: run `aiu.py` directly |
 | L3 | Fixed, one residual | #8, #31 | `aiu cookie import mistral` (`cookie_import`, `aiu/cookies.py`) copies the `admin.mistral.ai` cookies from one browser profile into the keyring (`secret-tool store`, value on stdin) and sets `key_cmd`; nothing else touches the disk. Residual: it is still a full console session, readable by any process of the user that can query the unlocked keyring, and the manual `~/.env` copy remains as a fallback |
-| L4 | Fixed, one residual | #10, #12 | `_refresh_claude_token` (`aiu/probes/claude.py`) runs `claude` only from known locations or `claude_cmd`, never one others can write, and backs off for an hour after a failure. A race with an interactive `claude` over the same refresh token is not addressed |
+| L4 | Fixed, one residual; off by default since wave 8 | #10, #12, task R | `_refresh_claude_token` (`aiu/probes/claude.py`) runs `claude` only from known locations or `claude_cmd`, never one others can write, and backs off for an hour after a failure. A race with an interactive `claude` over the same refresh token is not addressed. Since wave 8 the whole token read, refresh included, runs only with `claude.read_token = true` (see below) |
 | L5 | Fixed | #10 | `AiuClient` kills `aiu` on cancel and disable, with a 120 s watchdog |
 | L6 | Fixed, one residual | #10 | `consult` feeds `codex` and `pi` on stdin; `agy` has no documented stdin mode and still gets the prompt as the value of `-p` |
 
 L3 was taken further in ROADMAP wave 6 (task N), after v0.4.1: see its
 status note at the end of the L3 finding.
+
+**Claude and Anthropic's terms (ROADMAP wave 8, task R).** Anthropic's
+legal and compliance page says "developers may not collect, store, or
+intermediate Claude.ai credentials or session tokens"
+(code.claude.com/docs/en/legal-and-compliance). Until v0.5.0 aiu read Claude
+Code's OAuth token from `~/.claude/.credentials.json` on every run and sent it
+to `api/oauth/usage`. Now:
+
+- By default the `claude` probe reads `claude-usage.json` in aiu's state
+  directory, written by the `aiu-claude-usage` plugin in `claude-code-plugin/`
+  from Claude Code's plugin API (`session.measure`, `$.session.usage()`). The
+  plugin writes four fields per window and a timestamp, reads no token or
+  conversation content, runs no program and calls no network. aiu then opens
+  neither the credentials file nor a connection, and never runs `claude` (so
+  L4 does not arise). Tests assert that with the HTTP fake and a guard on
+  opening the credentials file.
+- aiu treats that file as untrusted input: at most 64 KiB, `schema` 1 and
+  `source` `claude-code`, every field type-checked, otherwise absent
+  (`docs/json-schema.md`). Its values only become numbers and labels in rows;
+  nothing in it is run, followed or sent anywhere. Anyone who can write the
+  user's `~/.local/state` can already change aiu's history and much else.
+- The token read, the `claude auth status` refresh (L4) and the endpoint call
+  run only with `claude.read_token = true`, off by default and absent from the
+  starter configs, whose comment quotes the line above. `aiu config set
+  claude.read_token true` prints the same notice the first time it turns the
+  option on, and the preferences window shows it under the switch.
+- What changes for existing users: anyone who relied on the token read (for
+  credits such as `Cloud Credit`, or with no plugin installed) must set
+  `read_token = true`; until they install the plugin or do so, the Claude row
+  is an error that says which.
 
 **Gemini CLI fallback removed (ROADMAP wave 8, task S, after v0.5.0).** The
 Gemini CLI FAQ forbids third-party software from piggybacking on the Gemini
@@ -485,6 +515,7 @@ The extensions.gnome.org zip from task B is the path for users.
 read-only (`aiu.py:294-302`). Its token and account id go only to
 `chatgpt.com` (`:310-319`). aiu never refreshes it or writes to it. The same
 holds for `~/.claude/.credentials.json`: only the Claude CLI writes it (L4).
+Since wave 8 aiu reads it only with `claude.read_token = true`.
 
 **I7. Notifications quote their input correctly.**
 - `_gvariant_str` (`aiu.py:1227-1228`) escapes `\`, `'` and newlines, and

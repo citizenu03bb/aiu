@@ -51,8 +51,10 @@ def trpc(payload):
 
 PROVIDERS = ("claude", "codex", "openai", "deepseek", "openrouter", "gemini", "mistral")
 KEY_ENV = {"openai": "OPENAI_ADMIN_KEY", "deepseek": "DEEPSEEK_API_KEY", "openrouter": "OPENROUTER_API_KEY"}
+# claude.read_token: these scenarios read Claude through the token, as MAIN
+# did; MAIN ignores the option. The plugin's file is tested in test_probe_claude.
 CONFIG = "".join(f"[{name}]\nenabled = true\n" + (f'key_env = "{KEY_ENV[name]}"\n' if name in KEY_ENV else "")
-                 + "\n" for name in PROVIDERS)
+                 + ("read_token = true\n" if name == "claude" else "") + "\n" for name in PROVIDERS)
 
 
 # What Antigravity's local server answers, when a scenario says (run).
@@ -91,6 +93,10 @@ def answers(home, http, monkeypatch):
         "is_available": True, "balance_infos": [{"currency": "USD", "total_balance": "4.20"},
                                                 {"currency": "CNY", "total_balance": "12.00"}]}))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
+    # A key without a cap of its own: the account's credits give the balance.
+    http.on("GET", "openrouter.ai/api/v1/key", (200, {"data": {
+        "label": "aiu", "limit": None, "limit_remaining": None, "limit_reset": None, "usage": 0.0,
+        "usage_daily": 0.0, "usage_weekly": 0.0, "usage_monthly": 0.0, "is_free_tier": False}}))
     http.on("GET", "openrouter.ai/api/v1/credits", (200, {"data": {"total_credits": 20, "total_usage": 7.5}}))
     monkeypatch.setitem(ANTIGRAVITY, "summary", {"response": {"groups": [{"displayName": "Gemini Models", "buckets": [
         {"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.75, "resetTime": iso(2 * 3600)},
@@ -121,6 +127,7 @@ def failures(home, http, monkeypatch):
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-fake")
     http.on("GET", "api.deepseek.com/user/balance", (200, ["not", "an", "object"]))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
+    http.on("GET", "openrouter.ai/api/v1/key", httpx.ConnectError("offline"))
     http.on("GET", "openrouter.ai/api/v1/credits", httpx.ConnectError("offline"))
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "ory_session_x=fake")
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
@@ -141,6 +148,7 @@ def snapshot(home, http, monkeypatch):
                                             "reset_at": int(NOW + 5 * 86400)}},
         "credits": {"balance": "9.99"},
     }))
+    http.on("GET", "openrouter.ai/api/v1/key", httpx.ConnectError("offline"))
     http.on("GET", "openrouter.ai/api/v1/credits", httpx.ConnectError("offline"))
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
             (307, "", {"location": "https://auth.mistral.ai/ui/login"}))

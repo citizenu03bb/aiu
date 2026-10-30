@@ -13,7 +13,7 @@ import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk?version=4.0';
 import { FETCH_TIMEOUT_SECONDS, findAiu, INSTALL_GUIDE_URL, installCommand, schemaProblem } from './aiuClient.js';
 import {
-    AiuRunner, clampInterval, fieldValue, intervalMinutes, optionTitle, parseConfigShow,
+    AiuRunner, clampInterval, fieldValue, intervalMinutes, optionHelp, optionTitle, parseConfigShow,
     providerStatus, REFRESH_KEY, REFRESH_MAX_SECONDS, SchemaError, setArgv, showArgv, statusText,
 } from './aiuConfig.js';
 import { _, fmt } from './i18n.js';
@@ -43,7 +43,7 @@ function keySourceHelp(provider) {
 
 function signInHelp(provider) {
     if (provider === 'claude') {
-        return _('Nothing to enter here: aiu reads the sign-in of the claude command-line tool. Run claude once to sign in. Set the program only if claude is installed where aiu does not look.');
+        return _('Nothing to enter here: aiu reads the usage Claude Code reports, through its aiu-claude-usage plugin. Install it at a claude prompt with /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu (in the desktop app: + next to the prompt box, Plugins, Add marketplace). Set the program only if you read the sign-in token and claude is installed where aiu does not look.');
     }
     return fmt(_('Nothing to enter here: aiu reads the sign-in of the {provider} command-line tool. Run it once to sign in.'),
         { provider });
@@ -242,6 +242,12 @@ export class PrefsController {
                 if (!this._isPending(p.id, 'enabled')) {
                     ui.toggle.active = p.enabled === true;
                 }
+                for (const sw of p.switches) {
+                    const swToggle = ui.switches.get(sw.option);
+                    if (swToggle && !this._isPending(p.id, sw.option)) {
+                        swToggle.active = sw.active;
+                    }
+                }
                 for (const field of p.fields) {
                     const f = ui.fields.get(field.option);
                     if (!f) {
@@ -270,12 +276,28 @@ export class PrefsController {
         const expander = plainRow(Adw.ExpanderRow, { title: p.name });
         const toggle = new Gtk.Switch({ valign: Gtk.Align.CENTER, tooltip_text: _('Read this provider') });
         expander.add_suffix(toggle);
-        const ui = { provider: p, expander, toggle, fields: new Map(), errorOption: null };
+        const ui = { provider: p, expander, toggle, fields: new Map(), switches: new Map(), errorOption: null };
         toggle.connect('notify::active', () => {
             if (!this._updating) {
                 this._enqueue(ui, 'enabled', toggle.active, null);
             }
         });
+
+        for (const sw of p.switches) {
+            const row = plainRow(Adw.ActionRow, {
+                title: optionTitle(sw.option), subtitle: optionHelp(sw.option), subtitle_selectable: true,
+            });
+            const swToggle = new Gtk.Switch({ valign: Gtk.Align.CENTER });
+            row.add_suffix(swToggle);
+            row.activatable_widget = swToggle;
+            swToggle.connect('notify::active', () => {
+                if (!this._updating) {
+                    this._enqueue(ui, sw.option, swToggle.active, null);
+                }
+            });
+            ui.switches.set(sw.option, swToggle);
+            expander.add_row(row);
+        }
 
         for (const field of p.fields) {
             const row = plainRow(Adw.EntryRow, {

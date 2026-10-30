@@ -6,7 +6,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import System from 'system';
 import {
-    AiuRunner, clampInterval, fieldValue, intervalMinutes, looksLikeSecret, parseConfigShow,
+    AiuRunner, clampInterval, fieldValue, intervalMinutes, looksLikeSecret, optionHelp, optionTitle, parseConfigShow,
     providerStatus, REFRESH_DEFAULT_SECONDS, REFRESH_KEY, REFRESH_MAX_SECONDS, REFRESH_MIN_SECONDS,
     SCHEMA_ID, SchemaError, setArgv, showArgv, statusText,
 } from '../aiuConfig.js';
@@ -40,7 +40,10 @@ function showJson({ allowed = true, problems = [] } = {}) {
         key_cmd_allowed: allowed,
         key_cmd_problems: problems,
         providers: {
-            claude: { section: true, options: { enabled: opt('bool', true, 'file'), claude_cmd: opt('string', null) } },
+            claude: {
+                section: true,
+                options: { enabled: opt('bool', true, 'file'), read_token: opt('bool', true, 'file'), claude_cmd: opt('string', null) },
+            },
             codex: { section: true, options: { enabled: opt('bool', false, 'file') } },
             openai: { section: true, options: { enabled: opt('bool', false), ...keySources('OPENAI_ADMIN_KEY') } },
             mistral: {
@@ -68,6 +71,11 @@ function testParse() {
     assertEqual(config.providers[0].fields, [
         { option: 'claude_cmd', type: 'string', text: '', fromFile: false, editable: true },
     ], 'claude fields');
+    assertEqual(config.providers[0].switches, [{ option: 'read_token', active: true, fromFile: true }],
+        'claude switches, enabled left to the provider switch');
+    assertEqual(config.providers.slice(1).map(p => p.switches.length), [0, 0, 0], 'no other switches');
+    assertEqual([optionTitle('read_token'), optionHelp('read_token').startsWith('Off by default.'),
+        optionHelp('claude_cmd')], ['Read the claude sign-in token', true, ''], 'switch title and help');
     assertEqual(config.providers[3].fields.map(f => [f.option, f.type, f.text, f.fromFile]), [
         ['key_env', 'string', 'MISTRAL_ADMIN_COOKIE', true],
         ['key_cmd', 'string', '', false],
@@ -86,10 +94,13 @@ function testParse() {
         'mistral.vibe_allowance_eur=true', 'mistral.api_allowance_eur=true',
     ], 'only key_cmd and claude_cmd turn read-only');
 
-    // An option of a type the window does not know is left out, not guessed.
-    const odd = parseConfigShow(JSON.stringify({ providers: { x: { options: { flag: opt('bool', true), n: opt('number', 2) } } } }));
-    assertEqual([odd.path, odd.providers[0].name, odd.providers[0].enabled, odd.providers[0].fields.map(f => f.option)],
-        [null, 'x', null, ['n']], 'unknown provider and option types');
+    // A bool is a switch under its own name; a type the window does not know is left out, not guessed.
+    const odd = parseConfigShow(JSON.stringify({
+        providers: { x: { options: { flag: opt('bool', true), n: opt('number', 2), list: opt('array', []) } } },
+    }));
+    assertEqual([odd.path, odd.providers[0].name, odd.providers[0].enabled, odd.providers[0].fields.map(f => f.option),
+        odd.providers[0].switches.map(f => f.option), optionTitle('flag')],
+    [null, 'x', null, ['n'], ['flag'], 'flag'], 'unknown provider and option types');
 
     for (const bad of ['', 'not json', '{}', '[]', '{"providers": null}']) {
         let threw = false;
@@ -126,6 +137,8 @@ function testContract() {
         ['mistral', 'vibe_allowance_eur', 'number', '8.5', false, true],
         ['mistral', 'api_allowance_eur', 'number', '5', true, true],
     ], 'contract: values and where they come from');
+    assertEqual(config.providers.flatMap(p => p.switches.map(f => [p.id, f.option, f.active, f.fromFile])),
+        [['claude', 'read_token', false, false]], 'contract: switches, off by default');
     const readOnly = config.providers.flatMap(p => p.fields.filter(f => !f.editable).map(f => `${p.id}.${f.option}`));
     assertEqual(readOnly, ['claude.claude_cmd', 'openai.key_cmd', 'deepseek.key_cmd', 'openrouter.key_cmd',
         'mistral.key_cmd'], 'contract: commands are read-only in an untrusted config');

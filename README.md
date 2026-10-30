@@ -99,11 +99,11 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 
 | Provider     | What it shows                | Setup needed |
 |--------------|------------------------------|--------------|
-| `claude`     | 5h / weekly / monthly quota  | none — reads `~/.claude/.credentials.json` |
+| `claude`     | 5h / weekly quota (+ credits with `read_token`) | aiu's Claude Code plugin, `aiu-claude-usage` (see [claude](#claude)) |
 | `codex`      | ChatGPT/Codex 5h + weekly quota | none — reads `~/.codex/auth.json` (OAuth) |
 | `openai`     | month-to-date USD spend      | an **Admin** API key (off unless you use the API) |
 | `deepseek`   | remaining balance            | a normal API key |
-| `openrouter` | total spend + remaining credits | a normal API key |
+| `openrouter` | total spend + remaining credits | `aiu login openrouter` (or a normal API key) |
 | `gemini`     | Gemini 5h + weekly quota     | none — the Antigravity desktop app must be open |
 | `mistral`    | monthly Vibe Code + API allowance (€ spent / € included) | the admin.mistral.ai **session cookie** (no API key works) |
 
@@ -200,7 +200,7 @@ can read the file: `chmod 600 ~/.env`.
 
 ```sh
 DEEPSEEK_API_KEY=sk-...
-OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_API_KEY=sk-or-...    # only if you don't use `aiu login openrouter`
 OPENAI_ADMIN_KEY=sk-admin-...   # Costs API needs an ADMIN key, not a normal sk-
 MISTRAL_ADMIN_COOKIE='...'      # only if you don't use `aiu cookie import mistral`; quotes required
 ```
@@ -251,15 +251,15 @@ aiu config set openai.key_env ""   # an empty string turns a key source off
 ```
 
 `show` lists each provider's settings: `enabled`, the key sources it uses
-(`key_env`, `key_cmd`, `key_file`), and its own options (`claude_cmd`,
-Mistral's allowances), each with its value and whether the file sets it
+(`key_env`, `key_cmd`, `key_file`), and its own options (`read_token`,
+`claude_cmd`, Mistral's allowances), each with its value and whether the file sets it
 (`"source": "file"`) or aiu's default applies. `--json` also gives the config
 path and whether `key_cmd` may run (`key_cmd_allowed`, with the reasons when
 not). It shows values only: it never runs `key_cmd`, reads a `key_file` or
 `~/.env`, or prints a key.
 
 `set` changes one setting per call: a known provider and option, with
-`true`/`false` for `enabled`, a number for the allowances, and a variable name
+`true`/`false` for `enabled` and `read_token`, a number for the allowances, and a variable name
 for `key_env`. Errors go to stderr with a non-zero exit, and they never quote
 the value you typed. The edit is line-level: comments, blank lines, order and
 keys `aiu` doesn't know stay as they are. It changes the value in place,
@@ -272,19 +272,63 @@ not yours, and refuses `key_cmd` and `claude_cmd` when the config fails the
 check above (yours, not writable by group or others).
 
 ### claude
-Nothing to configure, and no app needs to be open. The OAuth token is read
-locally from `~/.claude/.credentials.json` (same source Claude Code uses).
-Only the `claude` CLI rewrites that file: the desktop app keeps its own token,
-so the file goes stale 8h after the last CLI run. When it has expired, `aiu`
-runs `claude auth status`, which refreshes it without spending a request. That
-needs the `claude` CLI installed. Without it, run `claude` once when you see
-"token expired".
+aiu reads the figures Claude Code itself reports: the 5-hour and weekly
+windows its status line shows. A small Claude Code plugin in this repository,
+[`aiu-claude-usage`](claude-code-plugin/README.md), writes them to
+`~/.local/state/aiu/claude-usage.json` (`$XDG_STATE_HOME/aiu/` when set) after
+each turn that moves a window; aiu reads that file. The plugin reads no token
+and no prompt content. Install it once, at the prompt of a Claude Code session
+in a terminal:
 
-Besides quotas, any dollar grant in the same response (an entry with
-`limit_dollars`, e.g. the cloud-session credit) shows up as a `credit` row:
-amount left / grant size, plus expiry. These entries use codenamed keys that
-Anthropic renames, so they are matched by shape; unknown ones render as
-`Credit (<key>)`.
+```
+/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu
+```
+
+(`y` to add the marketplace, then the user scope.) In the Claude desktop app,
+where `/plugin` does not run: **+** next to the prompt box, **Plugins**,
+**Add marketplace** with `citizenu03bb/aiu`, then **Add plugin**. It works in
+the desktop app as well as the CLI, and nothing else needs to run: aiu reads
+the last reading Claude Code left.
+
+A reading older than an hour says its age in the row's note (`Claude Code
+reading from 2h 5m ago`): usage from claude.ai or another machine since then is
+not in it. A window that has reset since the reading shows 0 % with its next
+reset unknown; once every window has reset, the row says to use Claude Code to
+take a new reading. Without the file (and without `read_token`), the row is an
+error that says how to install the plugin.
+
+**Credits and other windows: `read_token` (off by default).** The file holds
+only the windows Claude Code reports. Dollar grants (the cloud-session credit,
+`Cloud Credit`), `Weekly Sonnet`, `Weekly Opus` and the other windows only
+Anthropic's usage endpoint knows need the token read that aiu used to do
+unconditionally: it reads Claude Code's OAuth token from
+`~/.claude/.credentials.json` and sends it to that endpoint, the one the Claude
+apps use for their own usage card. Anthropic's terms say "developers may not
+collect, store, or intermediate Claude.ai credentials or session tokens"
+([legal and compliance](https://code.claude.com/docs/en/legal-and-compliance)),
+so it only runs if you turn it on:
+
+```sh
+aiu config set claude.read_token true    # prints that notice
+```
+
+With it on, the plugin's windows come first and the token read adds what the
+file lacks; without the plugin, it is the whole Claude reading, as before.
+Only the `claude` CLI rewrites the credentials file: the desktop app keeps its
+own token, so the file goes stale 8h after the last CLI run. When it has
+expired, `aiu` runs `claude auth status`, which refreshes it without spending a
+request. That needs the `claude` CLI installed (`claude_cmd` if it is not in
+a usual place). Without it, run `claude` once when you see "token expired".
+
+Any dollar grant in that response (an entry with `limit_dollars`) shows up as
+a `credit` row: amount left / grant size, plus expiry. These entries use
+codenamed keys that Anthropic renames, so they are matched by shape; unknown
+ones render as `Credit (<key>)`.
+
+**Upgrading from 0.5 or earlier.** aiu no longer reads Claude Code's token
+unless `read_token = true`. Install the plugin (recommended), or set
+`aiu config set claude.read_token true` to keep the old behaviour, credits
+included. Until you do one of them, the Claude row is an error that says so.
 
 ### openai
 The Costs API needs an **Admin** key (starts with `sk-admin-...`), *not* a
@@ -306,6 +350,46 @@ enabled = true
 key_env = "DEEPSEEK_API_KEY"
 ```
 Shows balance from `GET /user/balance` (granted + topped-up).
+
+### openrouter
+Sign in once in the browser, and OpenRouter issues aiu a key of its own:
+
+```sh
+aiu login openrouter                     # --no-browser: only print the address
+aiu config set openrouter.enabled true
+aiu --only openrouter                    # check it
+```
+
+This is OpenRouter's documented [OAuth PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth)
+flow. `aiu` listens once on `127.0.0.1` (a random port, loopback only),
+opens `openrouter.ai/auth` with an S256 code challenge and `key_label=aiu`,
+and prints that address too for a machine without a browser. After you
+authorize it there, OpenRouter sends the browser back to the listener with a
+code; `aiu` exchanges code and verifier at `POST /api/v1/auth/keys` for a user
+API key named *aiu* (it shows in openrouter.ai/settings/keys, where you can
+revoke it). The listener answers only `GET /callback?code=…` with its own
+`Host`, and closes after 5 minutes or on Ctrl-C. The key is stored with
+`secret-tool` (label *aiu openrouter key*, value on stdin) and
+`openrouter.key_cmd` is set to `secret-tool lookup service aiu provider
+openrouter` through `aiu config set` (when the config fails the trust check,
+the command is printed for you to run). The key is never printed. You run it
+yourself: `aiu`, `--json`, `--alert` and the GNOME extension never do.
+
+- It needs `secret-tool` (Debian/Ubuntu: `libsecret-tools`).
+- If `OPENROUTER_API_KEY` is still set in your environment or in `~/.env`,
+  aiu reads it first (`key_env` comes before `key_cmd`); the command says so.
+  Delete it, or `aiu config set openrouter.key_env ""`.
+
+The probe reads [`GET /api/v1/key`](https://openrouter.ai/docs/api/reference/limits),
+which describes the key it is called with. A key with a spending limit shows
+that key's spend (`usage`, today's in the note) and what is left of its limit
+(`limit_remaining`, with its reset period). A key without one (`aiu login`
+asks for none) spends the account's credits: the rows then come from
+`GET /api/v1/credits`, as before (account spend and balance). OpenRouter
+documents that endpoint for management keys; if it turns the key away, only
+the key's own spend is shown. A key `/key` does not describe (a management
+key) falls back to `/credits` too. *Existing users:* a pasted key keeps
+working unchanged, and an unlimited key shows the same two rows as before.
 
 ### gemini
 A Google account's Gemini usage (Antigravity, Google One AI Pro) is a
@@ -363,14 +447,17 @@ The subscription probes call **undocumented** endpoints, the same ones the
 vendors' own CLIs use. They can change or break without notice, and this
 project is not affiliated with Anthropic, OpenAI or Google:
 
-- `claude`: Claude Code's OAuth usage endpoint (if it 404s after a Claude
-  update, re-check it against the `onWatch` source);
+- `claude`, only with `read_token = true`: Claude Code's OAuth usage endpoint
+  (if it 404s after a Claude update, re-check it against the `onWatch`
+  source). The default reads a local file Claude Code's plugin API fills, and
+  calls nothing;
 - `codex`: `chatgpt.com/backend-api/wham/usage`;
 - `gemini`: the Antigravity desktop language server's `RetrieveUserQuotaSummary`
   on 127.0.0.1, and nothing else.
 
 Tokens and keys are read locally at run time and only ever sent to the
-provider they belong to. `aiu` stores no secret, has no telemetry, and makes
+provider they belong to. `aiu` stores no secret (except in the keyring, when
+you run `aiu cookie import` or `aiu login`), has no telemetry, and makes
 no other network call. No probe writes to another program's files.
 
 ## Notes / limits

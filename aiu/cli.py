@@ -11,6 +11,7 @@ from aiu import __version__, keys
 from aiu.config import CONFIG_PATH, config_main, load_config
 from aiu.cookies import cookie_main
 from aiu.history import record_history
+from aiu.login import PROVIDERS as LOGIN_PROVIDERS, login_main
 from aiu.notify import alert, ensure_desktop_entry
 from aiu.probes import collect
 from aiu.render import render_html, render_json, render_table
@@ -29,7 +30,7 @@ def main() -> int:
     ap.add_argument("--alert", action="store_true",
                     help="warn about quota lost at reset / running dry, expiring credits (cron-friendly)")
     # Without a subcommand, aiu takes its snapshot as it always has.
-    sub = ap.add_subparsers(dest="command", metavar="{config,cookie}")
+    sub = ap.add_subparsers(dest="command", metavar="{config,cookie,login}")
     cp = sub.add_parser("config", help="show or change the config (for scripts and the GNOME extension)")
     cp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
     csub = cp.add_subparsers(dest="config_action", required=True)
@@ -47,7 +48,15 @@ def main() -> int:
     kimp.add_argument("--browser", required=True, choices=["chrome", "chromium", "brave", "firefox"])
     kimp.add_argument("--profile", metavar="NAME",
                       help="profile directory or name (default: Default, or Firefox's default)")
+    lp = sub.add_parser("login", help="sign in to a provider in the browser, keep the key it "
+                                      "issues in the keyring (run by you only)")
+    lp.add_argument("--config", default=argparse.SUPPRESS, help=argparse.SUPPRESS)
+    lp.add_argument("provider", choices=sorted(LOGIN_PROVIDERS))
+    lp.add_argument("--no-browser", action="store_true",
+                    help="only print the sign-in address, open it yourself")
     args = ap.parse_args()
+    if args.command == "login":
+        return login_main(args)
     if args.command == "config":
         return config_main(args)
     if args.command == "cookie":

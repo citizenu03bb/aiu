@@ -210,6 +210,7 @@ STARTER_CHANGES = [
     ("openrouter.key_file", "~/.config/openrouter/key", "~/.config/openrouter/key",
      ("", 'key_file = "~/.config/openrouter/key"')),
     ("claude.claude_cmd", "~/bin/claude", "~/bin/claude", ("", 'claude_cmd = "~/bin/claude"')),
+    ("claude.read_token", "false", False, ("# read_token = true", "read_token = false")),
 ]
 
 
@@ -233,6 +234,52 @@ def test_set_round_trips_on_the_starter_config(monkeypatch, capsys, cfg, option,
     assert snap == before_snap
     assert tomllib.loads(after) == {**tomllib.loads(before),
                                     provider: {**tomllib.loads(before)[provider], name: value}}
+
+
+READ_TOKEN_NOTICE = (
+    "aiu now reads Claude Code's sign-in token (~/.claude/.credentials.json) and sends it to "
+    "Anthropic's usage endpoint, as the Claude apps do. Anthropic's terms say: \"developers may "
+    "not collect, store, or intermediate Claude.ai credentials or session tokens\" "
+    "(code.claude.com/docs/en/legal-and-compliance). The aiu-claude-usage plugin for Claude Code "
+    "needs no token: /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu. "
+    "To turn this off: aiu config set claude.read_token false\n")
+
+
+def test_read_token_is_off_by_default(monkeypatch, capsys, cfg):
+    snap = show(monkeypatch, capsys, cfg)
+    assert opt(snap, "claude", "read_token") == {"type": "bool", "value": False, "source": "default"}
+    assert "read_token" not in tomllib.loads(cfg.read_text())["claude"]
+    assert "read_token" not in tomllib.loads(config.CONFIG_TEMPLATE_FR)["claude"]
+
+
+def test_turning_read_token_on_prints_the_notice_once(monkeypatch, capsys, cfg):
+    config.ensure_config(cfg)
+    code, out, err = run(monkeypatch, capsys, cfg, "config", "set", "claude.read_token", "true")
+    assert (code, err) == (0, "")
+    assert out == f"claude.read_token set in {cfg}\n" + READ_TOKEN_NOTICE
+    # The commented-out line of the starter config, uncommented in place.
+    assert "\nread_token = true\n" in cfg.read_text() and "# read_token" not in cfg.read_text()
+    assert tomllib.loads(cfg.read_text())["claude"]["read_token"] is True
+    _, again, _ = run(monkeypatch, capsys, cfg, "config", "set", "claude.read_token", "TRUE")
+    assert again == f"claude.read_token set in {cfg}\n"
+    _, off, _ = run(monkeypatch, capsys, cfg, "config", "set", "claude.read_token", "false")
+    assert off == f"claude.read_token set in {cfg}\n"
+    _, on, _ = run(monkeypatch, capsys, cfg, "config", "set", "claude.read_token", "true")
+    assert on.endswith(READ_TOKEN_NOTICE)
+
+
+def test_read_token_notice_in_french(monkeypatch, capsys, cfg):
+    monkeypatch.setenv("AIU_LANG", "fr")
+    _, out, _ = run(monkeypatch, capsys, cfg, "config", "set", "claude.read_token", "true")
+    notice = out.splitlines()[1]
+    assert notice.startswith("aiu lit désormais le jeton de connexion de Claude Code")
+    assert "« developers may not collect, store, or intermediate Claude.ai credentials" in notice
+    assert notice.endswith("Pour le désactiver : aiu config set claude.read_token false")
+
+
+def test_read_token_takes_a_bool(monkeypatch, capsys, cfg):
+    code, out, err = run(monkeypatch, capsys, cfg, "config", "set", "claude.read_token", "yes")
+    assert (code, out) == (1, "") and err == "aiu config: read_token takes true or false\n"
 
 
 def test_appended_setting_goes_after_the_last_one_not_the_next_comment(monkeypatch, capsys, cfg):

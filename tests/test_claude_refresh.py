@@ -40,21 +40,21 @@ def setup(monkeypatch, tokens, refresh_ok=True):
 
 def test_expired_token_is_refreshed_first(monkeypatch):
     refreshes, sent = setup(monkeypatch, [("old", (NOW - 3600) * 1000), ("new", (NOW + 8 * 3600) * 1000)])
-    rows = claude.probe_claude({"claude_cmd": "/opt/claude"})
-    assert refreshes == [{"claude_cmd": "/opt/claude"}] and sent == ["Bearer new"]
+    rows = claude.probe_claude({"read_token": True, "claude_cmd": "/opt/claude"})
+    assert refreshes == [{"read_token": True, "claude_cmd": "/opt/claude"}] and sent == ["Bearer new"]
     assert rows[0].metric == "5-Hour Limit" and "expired" not in rows[0].note
 
 
 def test_valid_token_is_left_alone(monkeypatch):
     refreshes, sent = setup(monkeypatch, [("tok", (NOW + 3600) * 1000)])
-    claude.probe_claude({})
+    claude.probe_claude({"read_token": True})
     assert refreshes == [] and sent == ["Bearer tok"]
 
 
 def test_failed_refresh_still_warns(monkeypatch):
     refreshes, sent = setup(monkeypatch, [("old", (NOW - 3600) * 1000)], refresh_ok=False)
-    rows = claude.probe_claude({})
-    assert refreshes == [{}] and sent == ["Bearer old"]
+    rows = claude.probe_claude({"read_token": True})
+    assert refreshes == [{"read_token": True}] and sent == ["Bearer old"]
     assert "token expired" in rows[0].note
 
 

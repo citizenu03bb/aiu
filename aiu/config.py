@@ -33,11 +33,20 @@ CONFIG_TEMPLATE = """\
 #                                 config); ignored if others can write this file
 #   key_file = "/path"         -> read the file's first line
 # A key that still holds control characters is refused.
-# Claude Max needs no key here: the OAuth token is read from
-# ~/.claude/.credentials.json automatically.
 
+# Claude Max needs no key: aiu reads the usage figures Claude Code reports,
+# written by aiu's plugin for Claude Code. Install it at a claude prompt:
+#   /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu
+# (desktop app: + next to the prompt box, Plugins, Add marketplace).
+# With read_token on, aiu also reads Claude Code's sign-in token from
+# ~/.claude/.credentials.json and sends it to Anthropic's usage endpoint, as
+# the Claude apps do: that adds credits (Cloud Credit) and windows the plugin
+# does not see. Off unless you turn it on. Anthropic's terms say "developers
+# may not collect, store, or intermediate Claude.ai credentials or session
+# tokens" (code.claude.com/docs/en/legal-and-compliance).
 [claude]
 enabled = true
+# read_token = true
 
 # Codex CLI + Pi sign in via ChatGPT OAuth (no API key) -> subscription quota,
 # like claude. Token read from ~/.codex/auth.json.
@@ -56,6 +65,9 @@ enabled = false
 key_env = "DEEPSEEK_API_KEY"
 # key_cmd = "jq -r .api_key ~/.config/deepseek/config.json"
 
+# `aiu login openrouter` signs in in the browser, keeps the key OpenRouter
+# issues in the keyring and sets key_cmd (comment key_env out, or leave the
+# variable unset: key_env is read first).
 [openrouter]
 enabled = false
 key_env = "OPENROUTER_API_KEY"
@@ -96,11 +108,22 @@ CONFIG_TEMPLATE_FR = """\
 #                                 peuvent écrire ce fichier
 #   key_file = "/chemin"       -> lit la première ligne du fichier
 # Une clé qui contient encore des caractères de contrôle est refusée.
-# Claude Max n'a pas besoin de clé ici : le jeton OAuth est lu
-# automatiquement dans ~/.claude/.credentials.json.
 
+# Claude Max n'a pas besoin de clé : aiu lit les chiffres d'usage que Claude
+# Code annonce, écrits par le plugin d'aiu pour Claude Code. Installe-le à une
+# invite claude :
+#   /plugin install aiu-claude-usage --marketplace citizenu03bb/aiu
+# (application de bureau : + à côté de la zone de saisie, Plugins, Add marketplace).
+# Avec read_token activé, aiu lit aussi le jeton de connexion de Claude Code
+# dans ~/.claude/.credentials.json et l'envoie au point d'accès d'usage
+# d'Anthropic, comme les applications Claude : cela ajoute les crédits (Cloud
+# Credit) et les fenêtres que le plugin ne voit pas. Désactivé tant que tu ne
+# l'actives pas. Les conditions d'Anthropic disent : « developers may not
+# collect, store, or intermediate Claude.ai credentials or session tokens »
+# (code.claude.com/docs/en/legal-and-compliance).
 [claude]
 enabled = true
+# read_token = true
 
 # Codex CLI + Pi se connectent par OAuth ChatGPT (pas de clé API) -> quota
 # d'abonnement, comme claude. Jeton lu dans ~/.codex/auth.json.
@@ -119,6 +142,9 @@ enabled = false
 key_env = "DEEPSEEK_API_KEY"
 # key_cmd = "jq -r .api_key ~/.config/deepseek/config.json"
 
+# `aiu login openrouter` se connecte dans le navigateur, garde la clé que
+# donne OpenRouter dans le trousseau et règle key_cmd (commente key_env, ou
+# laisse la variable vide : key_env est lu en premier).
 [openrouter]
 enabled = false
 key_env = "OPENROUTER_API_KEY"
@@ -196,6 +222,9 @@ def load_config(path: Path) -> dict:
 
 # provider -> option -> (type, default when the file does not set it)
 CONFIG_OPTIONS = {p.NAME: p.OPTIONS for p in REGISTRY}
+# What `aiu config set` prints when an option is turned on: provider.option -> text.
+CONFIG_NOTICES = {f"{p.NAME}.{name}": text for p in REGISTRY
+                  for name, text in getattr(p, "NOTICES", {}).items()}
 # Options that make aiu run a program: only set in a config that passes the
 # trust check (an empty value, which turns them off, is always allowed).
 CONFIG_RUNS_CODE = ("key_cmd", "claude_cmd")
@@ -379,6 +408,17 @@ def config_set(path: Path, option: str, raw: str) -> None:
         os.close(lock)  # releases the flock
 
 
+def _config_value_of(path: Path, option: str):
+    """provider.option as the file sets it now; None when unset or unreadable."""
+    provider, _, name = option.partition(".")
+    try:
+        with open(path, "rb") as f:
+            section = tomllib.load(f).get(provider)
+    except (OSError, ValueError):
+        return None
+    return section.get(name) if isinstance(section, dict) else None
+
+
 def config_snapshot(path: Path) -> dict:
     """The config as `aiu config show --json` prints it: each provider's options
     with their value and whether the file sets it, and whether key_cmd may run."""
@@ -424,6 +464,7 @@ def config_main(args: argparse.Namespace) -> int:
         if args.config_action == "show":
             snap = config_snapshot(path)
         else:
+            was_on = _config_value_of(path, args.option) is True
             config_set(path, args.option, args.value)
     except ConfigError as e:
         print(tr("aiu config: {error}", error=e), file=sys.stderr)
@@ -438,6 +479,9 @@ def config_main(args: argparse.Namespace) -> int:
         return 1
     if args.config_action == "set":
         print(tr("{option} set in {path}", option=args.option, path=path))
+        notice = CONFIG_NOTICES.get(args.option)
+        if notice and not was_on and _config_value_of(path, args.option) is True:  # just turned on
+            print(tr(notice))
     elif args.config_json:
         print(json.dumps({"schema": JSON_SCHEMA, **snap}, indent=2, ensure_ascii=False, default=str))
     else:
