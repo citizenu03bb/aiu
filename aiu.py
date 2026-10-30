@@ -928,7 +928,7 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
         if dry:
             p = min(dry, key=lambda p: p["runway"])
             lot = {"status": "conserve", "ttr": p["ttr"], "dry": p["ttr"] - p["runway"],
-                   "metric": p["r"].metric,
+                   "metric": p["r"].metric, "leftover": p["leftover"], "runway": p["runway"],
                    "what": f"{p['r'].metric} {p['left'] * 100:.0f}% libre : à sec dans ~{_dur(p['runway'])}, "
                            f"reset dans {_dur(p['ttr'])} → ~{_dur(p['ttr'] - p['runway'])} sans {prov}"}
         elif len(known) < len(projs):
@@ -944,11 +944,13 @@ def _lots(rows: list[Row], now: float) -> list[dict]:
             if all(q["leftover"] > ON_TRACK_BAND for q in known):
                 need = p["left"] / p["ttr"]
                 lot = {"status": "burn", "ttr": p["ttr"], "metric": p["r"].metric,
+                       "leftover": p["leftover"],
                        "what": f"{p['r'].metric} : reset dans {_dur(p['ttr'])}, ~{p['leftover'] * 100:.0f}% "
                                f"du plafond perdu à ton allure ({p['pace'] * 360000:.2f}%/h ; "
                                f"tout utiliser = {need * 360000:.2f}%/h, ×{need / p['pace']:.1f})"}
             else:
                 lot = {"status": "on_track", "ttr": p["ttr"], "metric": p["r"].metric,
+                       "leftover": p["leftover"],
                        "what": f"{p['r'].metric} {p['left'] * 100:.0f}% libre, reset dans "
                                f"{_dur(p['ttr'])} — au rythme"}
         # Short windows only gate availability; flag them when they'd run dry first.
@@ -973,6 +975,9 @@ def route_order(rows: list[Row], now: float | None = None) -> list[dict]:
                              -l["dry"] if l["status"] == "conserve" else l["ttr"]))
     return [{"provider": l["prov"], "metric": l["metric"], "status": l["status"],
              "ttr_secs": None if l["ttr"] == float("inf") else round(l["ttr"]),
+             # projected fraction of the cap left at reset (<0: short by that much)
+             "leftover": round(l["leftover"], 3) if "leftover" in l else None,
+             "runway_secs": round(l["runway"]) if "runway" in l else None,
              "detail": l["what"]} for l in lots]
 
 
