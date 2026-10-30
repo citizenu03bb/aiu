@@ -19,13 +19,13 @@ def quota(provider, metric, used, ttr, window):
 
 
 def credit(left, ttr, note=""):
-    return Row("claude_max", "Cloud Credit", "credit", used=left, limit=100, unit="USD",
+    return Row("claude", "Cloud Credit", "credit", used=left, limit=100, unit="USD",
                reset="expires soon", reset_epoch=NOW + ttr, note=note)
 
 
 SNAPSHOT = [
-    quota("claude_max", "5-Hour Limit", .37, 8885, W5),
-    quota("claude_max", "Weekly (all models)", .86, 21485, WK),
+    quota("claude", "5-Hour Limit", .37, 8885, W5),
+    quota("claude", "Weekly (all models)", .86, 21485, WK),
     credit(98.46, 514625),
     quota("codex", "5-Hour Limit", .29, 14612, W5),
     quota("codex", "Weekly Limit", .81, 437723, WK),
@@ -47,8 +47,8 @@ def statuses(rows):
 
 def test_snapshot_burns_claude_first_and_conserves_the_others():
     assert statuses(SNAPSHOT) == [
-        ("claude_max", "Weekly (all models)", "burn"),
-        ("claude_max", "Cloud Credit", "burn"),
+        ("claude", "Weekly (all models)", "burn"),
+        ("claude", "Cloud Credit", "burn"),
         ("codex", "Weekly Limit", "conserve"),   # dry for longer than gemini -> first
         ("gemini", "Weekly Limit", "conserve"),
     ]
@@ -56,12 +56,12 @@ def test_snapshot_burns_claude_first_and_conserves_the_others():
 
 def test_advice_carries_leftover_and_runway():
     lots = {a["metric"] + a["provider"]: a for a in aiu.route_order(SNAPSHOT, NOW)}
-    claude = lots["Weekly (all models)claude_max"]
+    claude = lots["Weekly (all models)claude"]
     assert claude["leftover"] == pytest.approx(0.11, abs=0.01)
     assert claude["runway_secs"] is None
     codex = lots["Weekly Limitcodex"]
     assert codex["leftover"] < 0 and 10 * H < codex["runway_secs"] < 12 * H
-    assert lots["Cloud Creditclaude_max"]["leftover"] is None
+    assert lots["Cloud Creditclaude"]["leftover"] is None
 
 
 def test_headroom_is_not_the_signal():
@@ -71,7 +71,7 @@ def test_headroom_is_not_the_signal():
 
 
 def test_young_window_has_unknown_pace():
-    rows = [quota("claude_max", "Weekly (all models)", .02, WK - H, WK)]
+    rows = [quota("claude", "Weekly (all models)", .02, WK - H, WK)]
     assert statuses(rows)[0][2] == "?"
 
 
@@ -88,14 +88,14 @@ def test_locked_or_expired_credit_is_not_routed():
 
 
 def test_extra_usage_is_paid_overage_not_free_quota():
-    rows = [quota("claude_max", "Extra Usage", .1, 20 * D, 30 * D)]
+    rows = [quota("claude", "Extra Usage", .1, 20 * D, 30 * D)]
     assert aiu.route_order(rows, NOW) == []
 
 
 def test_alert_on_snapshot(capsys):
     assert aiu.alert(SNAPSHOT) == 1
     out = capsys.readouterr().out
-    assert "claude_max · Weekly (all models): ~11% du plafond perdu au reset" in out
+    assert "claude · Weekly (all models): ~11% du plafond perdu au reset" in out
     assert "Cloud Credit: 98.46 USD non dépensés" in out
     assert "codex · Weekly Limit: à sec dans" in out
     assert "gemini · Weekly Limit: à sec dans" in out
@@ -116,5 +116,5 @@ def test_alert_all_clear(capsys):
 def test_advise_renders_without_error(capsys):
     assert aiu.advise(SNAPSHOT, NOW) == 0
     out = capsys.readouterr().out
-    assert "Brûle d'abord claude_max" in out
+    assert "Brûle d'abord claude" in out
     assert "Spend (total)" not in out   # lifetime spend is sunk, not overflow capacity

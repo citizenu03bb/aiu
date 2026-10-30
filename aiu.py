@@ -11,7 +11,7 @@
 aiu — one local snapshot of every AI subscription/quota you pay for.
 
 Sources (each is a pluggable probe):
-  - claude_max : Claude Max session quotas (5h / weekly / monthly), read from the
+  - claude     : Claude Max session quotas (5h / weekly / monthly), read from the
                  same OAuth-usage endpoint Claude Code uses. Token is read locally
                  from ~/.claude/.credentials.json. Nothing leaves your machine
                  except the authenticated call to Anthropic. Also reports promo
@@ -29,7 +29,7 @@ Usage:
   ./aiu.py                 # pretty table
   ./aiu.py --json          # machine-readable
   ./aiu.py --html out.html # local HTML page
-  ./aiu.py --only claude_max,deepseek
+  ./aiu.py --only claude,deepseek
   ./aiu.py --config ~/.config/ai-usage/config.toml
 
 Config lives at ~/.config/ai-usage/config.toml (a template is written on first run).
@@ -68,11 +68,11 @@ CONFIG_TEMPLATE = """\
 # Claude Max needs no key here: the OAuth token is read from
 # ~/.claude/.credentials.json automatically.
 
-[claude_max]
+[claude]
 enabled = true
 
 # Codex CLI + Pi sign in via ChatGPT OAuth (no API key) -> subscription quota,
-# like claude_max. Token read from ~/.codex/auth.json.
+# like claude. Token read from ~/.codex/auth.json.
 [codex]
 enabled = true
 
@@ -182,10 +182,10 @@ def _read_claude_token() -> tuple[str | None, int | None]:
         return None, None
 
 
-def probe_claude_max(cfg: dict) -> list[Row]:
+def probe_claude(cfg: dict) -> list[Row]:
     token, expires_at = _read_claude_token()
     if not token:
-        return [Row("claude_max", "—", "error",
+        return [Row("claude", "—", "error",
                     note="no token in ~/.claude/.credentials.json (run `claude` once)")]
     warn = ""
     if expires_at and (expires_at / 1000) < datetime.now(timezone.utc).timestamp():
@@ -199,12 +199,12 @@ def probe_claude_max(cfg: dict) -> list[Row]:
     try:
         r = httpx.get(ANTHROPIC_USAGE_URL, headers=headers, timeout=30)
     except Exception as e:
-        return [Row("claude_max", "—", "error", note=f"{warn}network: {e}")]
+        return [Row("claude", "—", "error", note=f"{warn}network: {e}")]
     if r.status_code in (401, 403):
-        return [Row("claude_max", "—", "error",
+        return [Row("claude", "—", "error",
                     note=f"{warn}auth rejected ({r.status_code}) — run `claude` to refresh")]
     if r.status_code != 200:
-        return [Row("claude_max", "—", "error", note=f"{warn}HTTP {r.status_code}")]
+        return [Row("claude", "—", "error", note=f"{warn}HTTP {r.status_code}")]
     data = r.json()
     rows: list[Row] = []
     for key, label in CLAUDE_QUOTA_LABELS.items():
@@ -217,14 +217,14 @@ def probe_claude_max(cfg: dict) -> list[Row]:
         reset_h = _humanize_reset(reset) if reset else None
         # API reports utilization already as a 0-100 percentage (Claude console
         # "1% used" == API value 1.0). Store as a 0-1 fraction internally.
-        rows.append(Row("claude_max", label, "quota",
+        rows.append(Row("claude", label, "quota",
                         used=float(entry["utilization"]) / 100.0, limit=1.0, unit="%",
                         reset=reset_h, note=warn.strip(),
                         reset_epoch=_iso_epoch(reset) if reset else None,
                         window_secs=CLAUDE_WINDOW.get(key)))
     rows.extend(_claude_credits(data, warn))
     if not rows:
-        rows.append(Row("claude_max", "—", "quota", note=f"{warn}no active quotas reported"))
+        rows.append(Row("claude", "—", "quota", note=f"{warn}no active quotas reported"))
     return rows
 
 
@@ -244,7 +244,7 @@ def _claude_credits(data: dict, warn: str) -> list[Row]:
             left = limit - float(entry.get("used_dollars") or 0)
         reset = entry.get("resets_at")
         note = warn + (f"locked: {entry['locked_reason']}" if entry.get("locked_reason") else "")
-        rows.append(Row("claude_max", CLAUDE_CREDIT_LABELS.get(key, f"Credit ({key})"), "credit",
+        rows.append(Row("claude", CLAUDE_CREDIT_LABELS.get(key, f"Credit ({key})"), "credit",
                         used=round(float(left), 2), limit=limit, unit="USD",
                         reset=f"expires {_humanize_reset(reset)}" if reset else None,
                         note=note.strip(),
@@ -762,7 +762,7 @@ def probe_gemini(cfg: dict) -> list[Row]:
 
 
 PROBES = {
-    "claude_max": probe_claude_max,
+    "claude": probe_claude,
     "codex": probe_codex,
     "openai": probe_openai,
     "deepseek": probe_deepseek,
@@ -811,10 +811,17 @@ def load_config(path: Path) -> dict:
         return tomllib.load(f)
 
 
+# Former provider names, still accepted in the config file and in --only.
+PROVIDER_ALIASES = {"claude_max": "claude"}
+
+
 def collect(config: dict, only: set[str] | None) -> list[Row]:
     rows: list[Row] = []
+    if only is not None:
+        only = {PROVIDER_ALIASES.get(n, n) for n in only}
+    old_names = {new: old for old, new in PROVIDER_ALIASES.items()}
     for name, probe in PROBES.items():
-        cfg = config.get(name, {})
+        cfg = config.get(name) or config.get(old_names.get(name, ""), {})
         if only is not None:
             if name not in only:
                 continue
@@ -891,7 +898,7 @@ def render_html(rows: list[Row], path: Path) -> None:
 # ---------------------------------------------------------------------------
 # What each flat-fee subscription is best at (free at the margin -> route here first).
 PROVIDER_HINTS = {
-    "claude_max": "raisonnement profond / agentique",
+    "claude": "raisonnement profond / agentique",
     "gemini": "volume / tâches jetables (Flash)",
     "codex": "2e voix de code / diversité",
 }

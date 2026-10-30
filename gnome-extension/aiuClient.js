@@ -5,7 +5,7 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 const DISPLAY_NAMES = {
-    claude_max: 'Claude Max',
+    claude: 'Claude',
     codex: 'Codex',
     gemini: 'Gemini',
     deepseek: 'DeepSeek',

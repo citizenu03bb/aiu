@@ -10,7 +10,7 @@ aiu --advise              # where to route: earliest-expiring surplus first
 aiu --alert               # warn (+ desktop notify) on quota lost at reset / running dry
 aiu --json                # machine-readable
 aiu --html /tmp/u.html    # local HTML page
-aiu --only claude_max     # subset, ignores enabled flags
+aiu --only claude         # subset, ignores enabled flags
 watch -n 60 aiu           # poor man's live view
 ```
 
@@ -41,7 +41,8 @@ Remaining headroom alone is not the signal: 16% left that resets in 6h is worth
 using now, 30% left that must last 5 days is not. Earliest-deadline-first is
 optimal for work any subscription can do (why this rule:
 [docs/routing-algorithms.md](docs/routing-algorithms.md)). `aiu --json` carries the same
-ordering under `"advice"`, which `consult auto` uses.
+ordering under `"advice"`, which the [GNOME indicator](gnome-extension/README.md)
+and [`consult.py`](consult.py) `auto` read instead of keeping their own logic.
 `aiu --alert` flags long windows projected to lose ≥5% of their cap at a reset
 within 48h, windows projected to sit empty ≥24h before their reset, promo
 credits with ≥25% unspent within 14 days of expiry, and probe errors, and
@@ -72,7 +73,7 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 
 | Provider     | What it shows                | Setup needed |
 |--------------|------------------------------|--------------|
-| `claude_max` | 5h / weekly / monthly quota  | none — reads `~/.claude/.credentials.json` |
+| `claude`     | 5h / weekly / monthly quota  | none — reads `~/.claude/.credentials.json` |
 | `codex`      | ChatGPT/Codex 5h + weekly quota | none — reads `~/.codex/auth.json` (OAuth) |
 | `openai`     | month-to-date USD spend      | an **Admin** API key (off unless you use the API) |
 | `deepseek`   | remaining balance            | a normal API key |
@@ -111,7 +112,8 @@ command, stdout used) → `key_file` (file contents). `secrets.env` populates th
 `key_env` route; use `key_cmd`/`key_file` instead if a key already lives
 elsewhere (e.g. `pass`, a CLI config).
 
-### claude_max
+### claude
+(Formerly `claude_max`; that name is still accepted in the config and in `--only`.)
 Nothing to configure. The OAuth token is read locally from
 `~/.claude/.credentials.json` (same source Claude Code uses). If you see
 "auth rejected", just run `claude` once to refresh the token.
@@ -185,7 +187,7 @@ The subscription probes call **undocumented** endpoints, the same ones the
 vendors' own CLIs use. They can change or break without notice, and this
 project is not affiliated with Anthropic, OpenAI or Google:
 
-- `claude_max`: Claude Code's OAuth usage endpoint (if it 404s after a Claude
+- `claude`: Claude Code's OAuth usage endpoint (if it 404s after a Claude
   update, re-check it against the `onWatch` source);
 - `codex`: `chatgpt.com/backend-api/wham/usage`;
 - `gemini`: Code Assist's `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`.

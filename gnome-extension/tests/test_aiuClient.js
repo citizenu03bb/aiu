@@ -10,14 +10,14 @@ async function run() {
     const mock = {
         captured_at: "2026-10-29T16:00:00Z",
         rows: [
-            { provider: "claude_max", metric: "—", kind: "error", note: "token expired" },
+            { provider: "claude", metric: "—", kind: "error", note: "token expired" },
             { provider: "codex", metric: "5-Hour Limit", kind: "quota", used: 1.0, used_pct: 100.0, reset: "in 40m" },
             { provider: "gemini", metric: "5-Hour Limit", kind: "quota", used: 0.1, used_pct: 10.0, reset: "in 4h" },
             { provider: "deepseek", metric: "Balance (USD)", kind: "balance", used: 6.31, unit: "USD" }
         ],
         advice: [
-            { provider: "claude_max", metric: "Weekly (all models)", status: "burn", ttr_secs: 21485, leftover: 0.112, runway_secs: null, detail: "" },
-            { provider: "claude_max", metric: "Cloud Credit", status: "burn", ttr_secs: 514625, leftover: null, runway_secs: null, detail: "" },
+            { provider: "claude", metric: "Weekly (all models)", status: "burn", ttr_secs: 21485, leftover: 0.112, runway_secs: null, detail: "" },
+            { provider: "claude", metric: "Cloud Credit", status: "burn", ttr_secs: 514625, leftover: null, runway_secs: null, detail: "" },
             { provider: "codex", metric: "Weekly Limit", status: "conserve", ttr_secs: 437723, leftover: -1.764, runway_secs: 39180, detail: "" },
             { provider: "gemini", metric: "Weekly Limit", status: "conserve", ttr_secs: 424800, leftover: -1.226, runway_secs: 77100, detail: "" }
         ]
@@ -46,7 +46,7 @@ async function run() {
             "💡 Pas de surplus qui expire : route par fit de tâche"],
         [[{ provider: "gemini", metric: "Gemini Flash", status: "?", ttr_secs: 600, leftover: null }],
             "💡 Brûle d'abord Gemini\nGemini Flash : reset dans 10min (allure inconnue)"],
-        [[{ provider: "claude_max", metric: "Cloud Credit", status: "burn", ttr_secs: 90000, leftover: null },
+        [[{ provider: "claude", metric: "Cloud Credit", status: "burn", ttr_secs: 90000, leftover: null },
           { provider: "gemini", metric: "Weekly Limit", status: "conserve", ttr_secs: 9, leftover: -0.5 }],
             "💡 Brûle d'abord Claude Max\nCloud Credit : expire dans 1j1h\nÀ ménager : Gemini"],
         [[{ provider: "codex", metric: "Weekly Limit", status: "conserve", ttr_secs: 9, leftover: -0.5 }],

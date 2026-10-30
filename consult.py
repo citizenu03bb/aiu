@@ -23,7 +23,7 @@ import subprocess
 import sys
 
 TIMEOUT = 300
-SUBS = ("gemini", "codex")  # flat-fee subs reachable here (claude_max = the caller)
+SUBS = ("gemini", "codex")  # flat-fee subs reachable here (claude = the caller)
 
 
 def _run(cmd: list[str]):
@@ -65,8 +65,8 @@ def pick_auto() -> str:
     for a in advice:  # burn / unknown pace by deadline, then on track, then conserve
         if a["status"] == "conserve":
             break
-        if a["provider"] == "claude_max" and a["status"] == "burn" and a is advice[0]:
-            print(f"[consult] note: claude_max's own surplus expires first "
+        if a["provider"] == "claude" and a["status"] == "burn" and a is advice[0]:
+            print(f"[consult] note: claude's own surplus expires first "
                   f"({a['detail']}) — doing it yourself may be better", file=sys.stderr)
         if a["provider"] in SUBS:
             return a["provider"]
