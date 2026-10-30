@@ -8,7 +8,9 @@ import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import Pango from 'gi://Pango';
 import GLib from 'gi://GLib';
-import { displayName, formatDuration, resetText } from './aiuClient.js';
+import {
+    INSTALL_GUIDE_URL, displayName, formatDuration, installCommand, needsSetup, resetText,
+} from './aiuClient.js';
 import { dataMaxHeight } from './menuLayout.js';
 import { _, N_, fmt } from './i18n.js';
 
@@ -219,14 +221,81 @@ export class MenuView {
 
     _addWebLink(submenu, label, url) {
         const item = new PopupMenu.PopupMenuItem(label);
-        item.connect('activate', () => {
-            try {
-                Gio.AppInfo.launch_default_for_uri(url, null);
-            } catch (e) {
-                console.error(`[aiu-indicator] Could not open ${url}: ${e.message}`);
-            }
-        });
+        item.connect('activate', () => this._openUri(url));
         submenu.menu.addMenuItem(item);
+    }
+
+    _openUri(uri) {
+        try {
+            Gio.AppInfo.launch_default_for_uri(uri, null);
+        } catch (e) {
+            console.error(`[aiu-indicator] Could not open ${uri}: ${e.message}`);
+        }
+    }
+
+    /** A small button for the setup boxes; the menu stays open when it is clicked. */
+    _actionButton(label, onClicked) {
+        const button = new St.Button({
+            label,
+            style_class: 'button aiu-action-btn',
+            can_focus: true,
+            track_hover: true,
+        });
+        button.connect('clicked', () => onClicked(button));
+        return button;
+    }
+
+    /** aiu is not installed: say what this extension needs and how to get it. */
+    showInstall() {
+        this._dataBox.destroy_all_children();
+        this._headerSubtitle.text = _('Setup needed');
+
+        const { tool, command } = installCommand();
+        const box = new St.BoxLayout({ vertical: true, style_class: 'aiu-setup-box', x_expand: true });
+        const lines = [
+            [_('👋 One step left: install aiu'), 'aiu-advice-title'],
+            [_('This panel shows what the aiu command-line tool reads from your AI subscriptions. Install it with:'), 'aiu-advice-text'],
+            [command, 'aiu-setup-command'],
+        ];
+        if (!tool) {
+            lines.push([_('This needs pipx (sudo apt install pipx) or uv first.'), 'aiu-advice-text']);
+        }
+        lines.push([_('Then check again. aiu writes a starter config on its first run.'), 'aiu-advice-text']);
+        for (const [text, style] of lines) {
+            const label = new St.Label({ text, style_class: style, x_expand: true });
+            setLineWrap(label, true);
+            box.add_child(label);
+        }
+
+        const buttons = new St.BoxLayout({ style_class: 'aiu-setup-buttons', x_expand: true });
+        buttons.add_child(this._actionButton(_('Copy command'), button => {
+            St.Clipboard.get_default().set_text(St.ClipboardType.CLIPBOARD, command);
+            button.label = _('Copied ✓');
+        }));
+        buttons.add_child(this._actionButton(_('Install guide'), () => this._openUri(INSTALL_GUIDE_URL)));
+        buttons.add_child(this._actionButton(_('Check again'), () => this._callbacks.onRefresh?.()));
+        box.add_child(buttons);
+        this._dataBox.add_child(box);
+    }
+
+    /** aiu runs but reads nothing yet: point at its config. */
+    _addSignInHint() {
+        const configPath = GLib.build_filenamev([GLib.get_home_dir(), '.config', 'ai-usage', 'config.toml']);
+        const box = new St.BoxLayout({ vertical: true, style_class: 'aiu-setup-box', x_expand: true });
+        for (const [text, style] of [
+            [_('👋 No subscription read yet'), 'aiu-advice-title'],
+            [_('Turn on the providers you use in ~/.config/ai-usage/config.toml and sign in to their command-line tools, then refresh. The notes below say what each one is missing.'), 'aiu-advice-text'],
+        ]) {
+            const label = new St.Label({ text, style_class: style, x_expand: true });
+            setLineWrap(label, true);
+            box.add_child(label);
+        }
+        const buttons = new St.BoxLayout({ style_class: 'aiu-setup-buttons', x_expand: true });
+        buttons.add_child(this._actionButton(_('Open config'),
+            () => this._openUri(Gio.File.new_for_path(configPath).get_uri())));
+        buttons.add_child(this._actionButton(_('Setup guide'), () => this._openUri(INSTALL_GUIDE_URL)));
+        box.add_child(buttons);
+        this._dataBox.add_child(box);
     }
 
     _launchTerminalAiu() {
@@ -288,6 +357,11 @@ export class MenuView {
         const dateObj = new Date(data.capturedAt);
         const timeStr = dateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         this._headerSubtitle.text = fmt(_('Last snapshot: {time}'), { time: timeStr });
+
+        // 0. First run: nothing read yet, so say how to set aiu up
+        if (needsSetup(data)) {
+            this._addSignInHint();
+        }
 
         // 1. Errors & Token warnings (if any)
         if (data.errors && data.errors.length > 0) {

@@ -6,6 +6,7 @@ import St from 'gi://St';
 import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GObject from 'gi://GObject';
+import { needsSetup } from './aiuClient.js';
 import { MenuView } from './menuView.js';
 
 export const AiuIndicator = GObject.registerClass(
@@ -107,7 +108,7 @@ class AiuIndicator extends PanelMenu.Button {
         this._menuView.setRefreshing(isRefreshing);
     }
 
-    updateData(data, { error = null } = {}) {
+    updateData(data, { error = null, missing = false } = {}) {
         this._lastFetchTime = Date.now();
         this._menuView.setRefreshing(false);
 
@@ -117,13 +118,21 @@ class AiuIndicator extends PanelMenu.Button {
         this._statusDot.remove_style_class_name('critical');
         this._statusDot.remove_style_class_name('unknown');
 
+        if (missing) {
+            // Not installed yet is a setup step, not an error: no red dot.
+            this._statusDot.add_style_class_name('unknown');
+            this._menuView.showInstall();
+            return;
+        }
+
         if (error) {
             this._statusDot.add_style_class_name('critical');
             this._menuView.update(null, { error });
             return;
         }
 
-        const statusColor = data?.statusColor || 'normal';
+        // Nothing signed in yet is still setup: grey, not the red of a failure.
+        const statusColor = needsSetup(data) ? 'unknown' : data?.statusColor || 'normal';
         this._statusDot.add_style_class_name(statusColor);
         this._menuView.update(data);
     }

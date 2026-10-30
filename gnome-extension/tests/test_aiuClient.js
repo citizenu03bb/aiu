@@ -3,7 +3,7 @@
 // the subprocess tests here run sh and sleep in its place.
 import GLib from 'gi://GLib';
 import System from 'system';
-import { AiuClient, resetText } from '../aiuClient.js';
+import { AiuClient, installCommand, needsSetup, resetText } from '../aiuClient.js';
 
 function run() {
     console.log('[Test] Instantiating AiuClient...');
@@ -86,6 +86,23 @@ function run() {
         }
     }
 
+    console.log('[Test] First run: install command and setup state...');
+    const installs = [
+        [['uv', 'pipx'], 'uv', 'uv tool install git+https://github.com/citizenu03bb/aiu'],
+        [['pipx'], 'pipx', 'pipx install git+https://github.com/citizenu03bb/aiu'],
+        [[], null, 'pipx install git+https://github.com/citizenu03bb/aiu'],
+    ];
+    for (const [tools, wantTool, wantCommand] of installs) {
+        const got = installCommand(name => tools.includes(name));
+        if (got.tool !== wantTool || got.command !== wantCommand) {
+            throw new Error(`With ${tools}: expected ${wantTool} / ${wantCommand}, got ${JSON.stringify(got)}`);
+        }
+    }
+    const signedOut = client._processData({ rows: [mock.rows[0]], advice: [] });
+    if (!needsSetup(signedOut) || needsSetup(processed) || needsSetup(null)) {
+        throw new Error('needsSetup: true only when aiu read no quota and no balance');
+    }
+
     console.log('[Test] All offline AiuClient tests passed successfully! ✅');
 }
 
@@ -117,6 +134,12 @@ async function runSubprocess() {
     const ok = await fakeClient(['sh', '-c', 'echo \'{"rows": [], "advice": []}\'']).fetchSnapshot();
     if (!ok.success || ok.data.statusColor !== 'normal') {
         throw new Error(`Expected a parsed snapshot, got ${JSON.stringify(ok)}`);
+    }
+
+    console.log('[Test] A missing aiu is reported as such, not as an error...');
+    const missing = await fakeClient(null).fetchSnapshot();
+    if (missing.success || !missing.missing || missing.error) {
+        throw new Error(`Expected { missing: true }, got ${JSON.stringify(missing)}`);
     }
 
     console.log('[Test] cancel() (what disable() calls) kills aiu...');

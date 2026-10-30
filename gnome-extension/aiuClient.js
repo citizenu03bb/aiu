@@ -61,12 +61,34 @@ export function resetText(row, nowSecs = Date.now() / 1000) {
 /** A fetch still running after this long is killed (the probes' own timeouts are 15-60 s). */
 export const FETCH_TIMEOUT_SECONDS = 120;
 
+const AIU_SOURCE = 'git+https://github.com/citizenu03bb/aiu';
+export const INSTALL_GUIDE_URL = 'https://github.com/citizenu03bb/aiu#install';
+
+/**
+ * The command that installs aiu with the tool this machine has: uv, else pipx.
+ * Both put it in ~/.local/bin, where the client looks first. `tool` is null
+ * when neither is installed (the command then needs pipx first).
+ * The extension only shows and copies it: it never installs anything itself.
+ */
+export function installCommand(hasProgram = name => GLib.find_program_in_path(name) !== null) {
+    if (hasProgram('uv')) {
+        return { tool: 'uv', command: `uv tool install ${AIU_SOURCE}` };
+    }
+    return { tool: hasProgram('pipx') ? 'pipx' : null, command: `pipx install ${AIU_SOURCE}` };
+}
+
+/** aiu answered but read nothing: no provider is set up or signed in yet. */
+export function needsSetup(data) {
+    return !!data && data.quotas.length === 0 && data.balances.length === 0;
+}
+
 export class AiuClient {
     constructor({ timeoutSeconds = FETCH_TIMEOUT_SECONDS } = {}) {
         this._timeoutSeconds = timeoutSeconds;
         this._run = null; // { proc, cancellable, watchdogId, timedOut } of the fetch in flight
     }
 
+    /** The aiu command line, or null when aiu is not installed. */
     _resolveCommand() {
         const home = GLib.get_home_dir();
         const localBin = GLib.build_filenamev([home, '.local', 'bin', 'aiu']);
@@ -75,11 +97,7 @@ export class AiuClient {
         }
 
         const pathBin = GLib.find_program_in_path('aiu');
-        if (pathBin) {
-            return [pathBin, '--json'];
-        }
-
-        throw new Error(_("Cannot find 'aiu' (neither ~/.local/bin/aiu nor on the PATH)"));
+        return pathBin ? [pathBin, '--json'] : null;
     }
 
     /** Stop the fetch in flight, if any: its promise resolves with `cancelled`, its aiu is killed. */
@@ -109,17 +127,16 @@ export class AiuClient {
     /**
      * Fetch aiu snapshot asynchronously without blocking GNOME Shell main loop.
      * A newer fetch, cancel() or the watchdog kills the aiu process.
-     * @returns {Promise<{success: boolean, data?: object, error?: string, cancelled?: boolean}>}
+     * `missing` means aiu is not installed: the menu then shows how to install it.
+     * @returns {Promise<{success: boolean, data?: object, error?: string, cancelled?: boolean, missing?: boolean}>}
      */
     fetchSnapshot() {
         return new Promise((resolve) => {
             this.cancel();
 
-            let argv;
-            try {
-                argv = this._resolveCommand();
-            } catch (err) {
-                resolve({ success: false, error: err.message });
+            const argv = this._resolveCommand();
+            if (!argv) {
+                resolve({ success: false, missing: true });
                 return;
             }
 

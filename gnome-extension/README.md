@@ -3,6 +3,19 @@
 GNOME Shell extension shipped with [`aiu`](../README.md); it shows the output of `aiu --json`.
 It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested on GNOME Shell 50.1, Wayland) and a menu with everything `aiu` collects.
 
+## Getting started
+
+1. **Install `aiu`**, the command-line tool this panel shows. It goes into `~/.local/bin`, where the extension looks first:
+
+   ```bash
+   uv tool install git+https://github.com/citizenu03bb/aiu
+   ```
+
+   Or `pipx install git+https://github.com/citizenu03bb/aiu` (`sudo apt install pipx` first if needed).
+   Until `aiu` is there, the menu shows this command with **Copy command**, **Install guide** and **Check again** buttons, and the dot stays grey.
+2. **Turn on the extension** from [extensions.gnome.org](https://extensions.gnome.org), or from the release zip (see [Install](#install)).
+3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for, and sign in to their command-line tools (`claude`, `codex`…). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
+
 ## Features
 
 - **Centre of the panel**: in the panel's centre box (`_centerBox`, index 1), just right of the clock.
@@ -11,6 +24,7 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
   - Green dot: nothing to do.
   - Yellow dot: free quota will be lost at a reset within 24 h (use it).
   - Red dot: a window is full (≥ 95 %) or a probe failed (e.g. an expired Claude token).
+  - Grey dot: setup is not finished (`aiu` is not installed, or no provider can be read yet).
 - **Menu**:
   - **Subscriptions**: in routing order, each with a badge (burn first / unknown pace / on track / conserve), bars to scale coloured by what to do with them, and the time to the reset (e.g. `Reset in 4h27m · runs dry in ~11h33m at your pace`).
   - **Credits & paid APIs**: free credits with their expiry, prepaid balances, and lifetime spend (greyed out).
