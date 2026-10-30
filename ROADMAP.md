@@ -329,11 +329,13 @@ manual review). Its rule is that clipboard access must be declared in the
 description, so v0.3.1 says there that **Copy command** writes the install
 command to the clipboard on click and never reads it.
 
-## Wave 6: merged, real import pending
+## Wave 6: done
 
-N merged on 2026-10-30 in #31. Left: the maintainer imports their real
-Mistral session once by hand (steps in #31), then removes
-`MISTRAL_ADMIN_COOKIE` from `~/.env`.
+N merged on 2026-10-30 in #31. The first real import (Chrome) showed that
+Mistral sets its session on `.mistral.ai`, not `admin.mistral.ai`; #33 reads
+what a browser sends to `admin.mistral.ai` (RFC 6265 domain match). The
+maintainer's session now lives in the keyring and `MISTRAL_ADMIN_COOKIE` is
+gone from their `~/.env`. Not released yet.
 
 ### N. `aiu cookie import mistral`
 
