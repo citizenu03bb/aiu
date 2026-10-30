@@ -56,6 +56,7 @@ class AiuIndicator extends PanelMenu.Button {
                     this._callbacks.onRefresh();
                 }
             },
+            onPreferences: () => this._callbacks.onPreferences?.(),
         });
 
         // Refresh when menu is opened if data is stale (> 2 minutes)

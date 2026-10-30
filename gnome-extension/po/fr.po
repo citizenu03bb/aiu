@@ -118,6 +118,10 @@ msgid "💻 Open aiu in a terminal"
 msgstr "💻 Ouvrir aiu dans le terminal"
 
 #: menuView.js
+msgid "⚙️ Preferences…"
+msgstr "⚙️ Préférences…"
+
+#: menuView.js
 msgid "🌐 Web consoles"
 msgstr "🌐 Consoles Web"
 

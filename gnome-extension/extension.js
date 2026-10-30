@@ -18,6 +18,7 @@ export default class AiuExtension extends Extension {
         this._settingsId = this._settings.connect(`changed::${REFRESH_KEY}`, () => this._schedule());
         this._indicator = new AiuIndicator(this.path, {
             onRefresh: () => this._fetch(),
+            onPreferences: () => this.openPreferences(),
         });
 
         // Remove any stale indicator from a previous cycle
