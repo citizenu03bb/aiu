@@ -37,7 +37,7 @@ async function run() {
     if (processed.quotas.length !== 2) {
         throw new Error(`Expected 2 quotas, got: ${processed.quotas.length}`);
     }
-    const expected = "💡 Brûle d'abord Claude Max\nWeekly (all models) : ~11 % perdu au reset dans 5h58\nÀ ménager : Codex, Gemini";
+    const expected = "💡 Brûle d'abord Claude\nWeekly (all models) : ~11 % perdu au reset dans 5h58\nÀ ménager : Codex, Gemini";
     if (processed.advice !== expected) {
         throw new Error(`Expected advice "${expected}", got: ${processed.advice}`);
     }
@@ -48,7 +48,7 @@ async function run() {
             "💡 Brûle d'abord Gemini\nGemini Flash : reset dans 10min (allure inconnue)"],
         [[{ provider: "claude", metric: "Cloud Credit", status: "burn", ttr_secs: 90000, leftover: null },
           { provider: "gemini", metric: "Weekly Limit", status: "conserve", ttr_secs: 9, leftover: -0.5 }],
-            "💡 Brûle d'abord Claude Max\nCloud Credit : expire dans 1j1h\nÀ ménager : Gemini"],
+            "💡 Brûle d'abord Claude\nCloud Credit : expire dans 1j1h\nÀ ménager : Gemini"],
         [[{ provider: "codex", metric: "Weekly Limit", status: "conserve", ttr_secs: 9, leftover: -0.5 }],
             "💡 Aucun forfait n'a de surplus\nRéserve chacun à ce que lui seul sait faire, déborde sur l'API payante"],
         [undefined, null],
