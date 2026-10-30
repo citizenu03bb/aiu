@@ -1,11 +1,20 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""`aiu --json` prints the same bytes as before the split into a package
-(ROADMAP wave 7, task O): every probe answers from recorded replies, the clock
-is frozen, and the output is compared with a fixture recorded from the last
-single-file aiu.py, and with that aiu.py itself where git history has it.
-No network.
+"""`aiu --json` prints what it printed before the split into a package (ROADMAP
+wave 7, task O), plus the `"schema": 1` line of task P: every probe answers
+from recorded replies, the clock is frozen, and the output is compared with a
+fixture and, where git history has it, with the last single-file aiu.py (MAIN)
+run side by side. No network.
 
-The fixtures hold the output of aiu.py at MAIN. To record them again:
+MAIN printed no schema: the fixtures hold its output with `"schema": 1` added
+as the first key (with_schema), and the side-by-side test compares the package
+with MAIN's output plus that same line, so any other difference still fails.
+
+tests/fixtures/snapshot.json is the contract with the GNOME extension
+(docs/json-schema.md): the package's output when most providers answer and two
+fail. gnome-extension/tests/test_aiuClient.js reads the same file through
+AiuClient, so renaming a field on either side alone fails a test.
+
+To record the fixtures again (MAIN's output plus the schema, and snapshot.json):
   AIU_RECORD_JSON=1 uv run --with pytest pytest tests/test_json_output.py"""
 import importlib.util
 import json
@@ -21,7 +30,7 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
-from aiu import cli, keys  # noqa: E402
+from aiu import cli, keys, render  # noqa: E402
 from aiu.probes import gemini, mistral  # noqa: E402
 
 MAIN = "7204525"  # main just before the split: aiu.py was the whole program
@@ -118,6 +127,23 @@ def failures(home, http, monkeypatch):
 SCENARIOS = {"answers": answers, "failures": failures}
 
 
+def snapshot(home, http, monkeypatch):
+    """The answers, but codex's week runs dry before its reset and openrouter and
+    mistral fail: rows of every kind, errors, and advice of each status."""
+    http.on("GET", "chatgpt.com/backend-api/wham/usage", (200, {
+        "plan_type": "plus",
+        "rate_limit": {"primary_window": {"used_percent": 20, "limit_window_seconds": 18000,
+                                          "reset_at": int(NOW + 3600)},
+                       "secondary_window": {"used_percent": 90, "limit_window_seconds": 604800,
+                                            "reset_at": int(NOW + 5 * 86400)}},
+        "credits": {"balance": "9.99"},
+    }))
+    http.on("GET", "openrouter.ai/api/v1/credits", httpx.ConnectError("offline"))
+    http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
+            (307, "", {"location": "https://auth.mistral.ai/ui/login"}))
+    answers(home, http, monkeypatch)  # the first route that matches answers
+
+
 class FrozenDatetime(datetime):
     @classmethod
     def now(cls, tz=None):
@@ -141,6 +167,12 @@ def frozen(monkeypatch):
     else:
         os.environ["TZ"] = tz
     time.tzset()
+
+
+def with_schema(out: str) -> str:
+    """MAIN's output with the one line task P adds: `"schema": 1` as the first key."""
+    assert out.startswith("{\n") and '"schema"' not in out
+    return out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
 
 
 def run(monkeypatch, capsys, home, tmp_path, main, local_quota):
@@ -195,10 +227,12 @@ def test_json_matches_the_recorded_output(monkeypatch, capsys, home, http, tmp_p
         _, recorded, _ = run(monkeypatch, capsys, home, tmp_path, old.main,
                              (old, "_query_local_quota_summary"))
         fixture.parent.mkdir(exist_ok=True)
-        fixture.write_text(recorded)
+        fixture.write_text(with_schema(recorded))
     assert code == 0 and err == ""
     assert out == fixture.read_text()
-    rows = json.loads(out)["rows"]
+    snap = json.loads(out)
+    assert list(snap)[0] == "schema" and snap["schema"] == 1
+    rows = snap["rows"]
     assert list(dict.fromkeys(r["provider"] for r in rows)) == list(PROVIDERS)
     assert all((r["kind"] == "error") == (scenario == "failures") for r in rows)
 
@@ -211,4 +245,22 @@ def test_json_matches_main_side_by_side(monkeypatch, capsys, home, http, tmp_pat
     SCENARIOS[scenario](home, http, monkeypatch)
     before = run(monkeypatch, capsys, home, tmp_path, old.main, (old, "_query_local_quota_summary"))
     after = run_package(monkeypatch, capsys, home, tmp_path)
-    assert after == before
+    code, out, err = before
+    assert after == (code, with_schema(out), err)
+
+
+def test_snapshot_fixture_is_current(monkeypatch, capsys, home, http, tmp_path, frozen):
+    """tests/fixtures/snapshot.json is what aiu prints today: change a field
+    and this fails until the fixture, and so the extension's test, follow."""
+    snapshot(home, http, monkeypatch)
+    code, out, err = run_package(monkeypatch, capsys, home, tmp_path)
+    fixture = FIXTURES / "snapshot.json"
+    if os.environ.get("AIU_RECORD_JSON"):
+        fixture.write_text(out)
+    assert code == 0 and err == ""
+    assert out == fixture.read_text(), "aiu --json changed: see docs/json-schema.md"
+    snap = json.loads(out)
+    assert snap["schema"] == render.JSON_SCHEMA == 1
+    assert {r["kind"] for r in snap["rows"]} == {"quota", "credit", "balance", "spend", "error"}
+    assert {r["provider"] for r in snap["rows"] if r["kind"] == "error"} == {"openrouter", "mistral"}
+    assert {lot["status"] for lot in snap["advice"]} == {"burn", "?", "conserve"}

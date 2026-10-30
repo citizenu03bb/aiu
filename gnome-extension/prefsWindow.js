@@ -11,10 +11,10 @@ import Adw from 'gi://Adw?version=1';
 import GLib from 'gi://GLib';
 import Gio from 'gi://Gio';
 import Gtk from 'gi://Gtk?version=4.0';
-import { FETCH_TIMEOUT_SECONDS, findAiu, INSTALL_GUIDE_URL, installCommand } from './aiuClient.js';
+import { FETCH_TIMEOUT_SECONDS, findAiu, INSTALL_GUIDE_URL, installCommand, schemaProblem } from './aiuClient.js';
 import {
     AiuRunner, clampInterval, fieldValue, intervalMinutes, optionTitle, parseConfigShow,
-    providerStatus, REFRESH_KEY, REFRESH_MAX_SECONDS, setArgv, showArgv, statusText,
+    providerStatus, REFRESH_KEY, REFRESH_MAX_SECONDS, SchemaError, setArgv, showArgv, statusText,
 } from './aiuConfig.js';
 import { _, fmt } from './i18n.js';
 
@@ -204,7 +204,8 @@ export class PrefsController {
             try {
                 config = parseConfigShow(res.stdout);
             } catch (err) {
-                error = fmt(_('aiu config show printed something else: {error}'), { error: err.message });
+                error = err instanceof SchemaError ? err.message
+                    : fmt(_('aiu config show printed something else: {error}'), { error: err.message });
             }
         }
         this._showErrorRow.visible = !config;
@@ -424,6 +425,10 @@ export class PrefsController {
                 snapshot = JSON.parse(res.stdout);
             } catch (err) {
                 error = fmt(_('aiu returned invalid JSON: {error}'), { error: err.message });
+            }
+            error = schemaProblem(snapshot) || error;
+            if (error) {
+                snapshot = null;
             }
         }
         if (!snapshot || !Array.isArray(snapshot.rows)) {

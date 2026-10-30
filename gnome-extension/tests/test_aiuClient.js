@@ -3,11 +3,82 @@
 // the subprocess tests here run sh and sleep in its place.
 import GLib from 'gi://GLib';
 import System from 'system';
-import { AiuClient, installCommand, needsSetup, resetText } from '../aiuClient.js';
+import { AiuClient, installCommand, needsSetup, resetText, SCHEMA, schemaProblem } from '../aiuClient.js';
+
+function assertEqual(got, want, what) {
+    const g = JSON.stringify(got);
+    const w = JSON.stringify(want);
+    if (g !== w) {
+        throw new Error(`${what}: expected ${w}, got ${g}`);
+    }
+}
+
+/** A file of tests/fixtures/ at the repository root, which the Python tests write from aiu itself. */
+function readFixture(name) {
+    const [here] = GLib.filename_from_uri(import.meta.url);
+    const path = GLib.build_filenamev([GLib.path_get_dirname(here), '..', '..', 'tests', 'fixtures', name]);
+    return new TextDecoder().decode(GLib.file_get_contents(path)[1]);
+}
+
+/**
+ * What aiu --json prints, from recorded probe answers and a frozen clock
+ * (tests/test_json_output.py writes it): every field the menu reads is checked
+ * here, so a field renamed in aiu or in the extension alone fails one side
+ * (docs/json-schema.md).
+ */
+function runContract(client) {
+    console.log('[Test] tests/fixtures/snapshot.json through _processData...');
+    const raw = JSON.parse(readFixture('snapshot.json'));
+    assertEqual([raw.schema, SCHEMA, schemaProblem(raw)], [1, 1, null], 'contract: schema');
+    const data = client._processData(raw);
+    const now = Date.parse(raw.captured_at) / 1000;
+    assertEqual(data.capturedAt, '2026-10-26T07:33:20+00:00', 'contract: captured_at');
+    assertEqual(data.quotas.map(q => [q.provider, q.metric, q.used_pct, q.note, resetText(q, now)]), [
+        ['claude', '5-Hour Limit', 12, '', 'in 2h00m'],
+        ['claude', 'Weekly (all models)', 40, '', 'in 3d0h'],
+        ['claude', 'Weekly Sonnet', 5, '', 'in 3d0h'],
+        ['codex', '5-Hour Limit', 20, 'plus', 'in 1h00m'],
+        ['codex', 'Weekly Limit', 90, '', 'in 5d0h'],
+        ['gemini', 'Gemini Pro', 25, 'Gemini Code Assist', 'in 20h00m'],
+        ['gemini', 'Gemini Flash', 10, '', 'in 20h00m'],
+        ['gemini', 'Gemini Flash Lite', 0, '', 'in 20h00m'],
+    ], 'contract: quotas');
+    assertEqual(data.balances.map(b => [b.provider, b.metric, b.kind, b.used, b.limit, b.unit, b.note,
+        resetText(b, now)]), [
+        ['claude', 'Cloud Credit', 'credit', 31.5, 50, 'USD', '', 'in 10d0h'],
+        ['codex', 'Credits', 'balance', 9.99, null, 'USD', '', null],
+        ['openai', 'Spend (MTD)', 'spend', 1.73, null, 'USD', '', null],
+        ['deepseek', 'Balance (USD)', 'balance', 4.2, null, 'USD', '', null],
+        ['deepseek', 'Balance (CNY)', 'balance', 12, null, 'CNY', '', null],
+    ], 'contract: balances');
+    assertEqual(data.errors.map(e => [e.provider, e.note]), [
+        ['openrouter', 'network: cannot connect'],
+        ['mistral', 'session rejected (307) — copy a fresh Cookie header from admin.mistral.ai'],
+    ], 'contract: errors');
+    assertEqual(data.routing.map(l => [l.provider, l.metric, l.status, l.ttr_secs, l.leftover, l.runway_secs]), [
+        ['gemini', 'Gemini Pro', '?', 72000, null, null],
+        ['claude', 'Weekly (all models)', 'burn', 259200, 0.3, null],
+        ['claude', 'Cloud Credit', 'burn', 864000, null, null],
+        ['codex', 'Weekly Limit', 'conserve', 432000, -2.15, 19200],
+    ], 'contract: advice lots');
+    assertEqual([data.statusColor, data.worstQuotaPct, needsSetup(data)], ['critical', 90, false], 'contract: status');
+    assertEqual(data.advice, '💡 Burn Gemini first\nGemini Pro: reset in 20h00m (unknown pace)\nConserve: Codex',
+        'contract: advice');
+
+    // An aiu older than the schema field prints none: that is schema 1.
+    delete raw.schema;
+    assertEqual(schemaProblem(raw), null, 'no schema reads as schema 1');
+    for (const [schema, words] of [[2, 'update the extension'], [0, 'update aiu'], [null, 'update aiu']]) {
+        const problem = schemaProblem({ ...raw, schema });
+        assertEqual(!!problem?.includes(words), true, `schema ${schema}: ${problem}`);
+    }
+    console.log('[Test] The snapshot fixture is read as aiu wrote it ✅');
+}
 
 function run() {
     console.log('[Test] Instantiating AiuClient...');
     const client = new AiuClient();
+    runContract(client);
 
     console.log('[Test] Testing _processData with synthetic mock data...');
     const mock = {
@@ -134,6 +205,12 @@ async function runSubprocess() {
     const ok = await fakeClient(['sh', '-c', 'echo \'{"rows": [], "advice": []}\'']).fetchSnapshot();
     if (!ok.success || ok.data.statusColor !== 'normal') {
         throw new Error(`Expected a parsed snapshot, got ${JSON.stringify(ok)}`);
+    }
+
+    console.log('[Test] An unknown schema is a clear message, not a parse error...');
+    const unknown = await fakeClient(['sh', '-c', 'echo \'{"schema": 2, "rows": []}\'']).fetchSnapshot();
+    if (unknown.success || !unknown.error.includes('update the extension')) {
+        throw new Error(`Expected "update the extension", got ${JSON.stringify(unknown)}`);
     }
 
     console.log('[Test] A missing aiu is reported as such, not as an error...');

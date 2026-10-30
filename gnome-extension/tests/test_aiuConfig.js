@@ -8,8 +8,15 @@ import System from 'system';
 import {
     AiuRunner, clampInterval, fieldValue, intervalMinutes, looksLikeSecret, parseConfigShow,
     providerStatus, REFRESH_DEFAULT_SECONDS, REFRESH_KEY, REFRESH_MAX_SECONDS, REFRESH_MIN_SECONDS,
-    SCHEMA_ID, setArgv, showArgv, statusText,
+    SCHEMA_ID, SchemaError, setArgv, showArgv, statusText,
 } from '../aiuConfig.js';
+
+/** A file of tests/fixtures/ at the repository root, which the Python tests write from aiu itself. */
+function readFixture(name) {
+    const [here] = GLib.filename_from_uri(import.meta.url);
+    const path = GLib.build_filenamev([GLib.path_get_dirname(here), '..', '..', 'tests', 'fixtures', name]);
+    return new TextDecoder().decode(GLib.file_get_contents(path)[1]);
+}
 
 function assertEqual(got, want, what) {
     const g = JSON.stringify(got);
@@ -94,6 +101,58 @@ function testParse() {
         assertEqual(threw, true, `parseConfigShow(${JSON.stringify(bad)}) throws`);
     }
     console.log('[Test] aiu config show --json is read into rows ✅');
+}
+
+// What aiu config show --json prints (tests/test_config_cmd.py records it): a
+// field renamed in aiu/config.py or here alone fails one side (docs/json-schema.md).
+function testContract() {
+    const config = parseConfigShow(readFixture('config-show.json'));
+    assertEqual(config.path, '/home/me/.config/ai-usage/config.toml', 'contract: path');
+    assertEqual([config.keyCmdAllowed, config.keyCmdProblems],
+        [false, ['/home/me/.config/ai-usage/config.toml is writable by group or others']], 'contract: trust check');
+    assertEqual(config.providers.map(p => [p.id, p.enabled, p.hasKeySources]), [
+        ['claude', true, false],
+        ['codex', false, false],
+        ['openai', false, true],
+        ['deepseek', false, true],
+        ['openrouter', false, true],
+        ['gemini', false, false],
+        ['mistral', true, true],
+    ], 'contract: providers');
+    assertEqual(config.providers.flatMap(p => p.fields.filter(f => f.text || f.fromFile)
+        .map(f => [p.id, f.option, f.type, f.text, f.fromFile, f.editable])), [
+        ['openai', 'key_env', 'string', 'OPENAI_ADMIN_KEY', true, true],
+        ['mistral', 'key_env', 'string', 'MISTRAL_ADMIN_COOKIE', false, true],
+        ['mistral', 'vibe_allowance_eur', 'number', '8.5', false, true],
+        ['mistral', 'api_allowance_eur', 'number', '5', true, true],
+    ], 'contract: values and where they come from');
+    const readOnly = config.providers.flatMap(p => p.fields.filter(f => !f.editable).map(f => `${p.id}.${f.option}`));
+    assertEqual(readOnly, ['claude.claude_cmd', 'openai.key_cmd', 'deepseek.key_cmd', 'openrouter.key_cmd',
+        'mistral.key_cmd'], 'contract: commands are read-only in an untrusted config');
+
+    // The status lines read aiu --json too (tests/test_json_output.py records it).
+    const snapshot = JSON.parse(readFixture('snapshot.json'));
+    assertEqual(config.providers.map(p => providerStatus({ ...p, enabled: true }, snapshot)), [
+        { state: 'ok' }, { state: 'ok' }, { state: 'ok' }, { state: 'ok' },
+        { state: 'error', note: 'network: cannot connect' }, { state: 'ok' },
+        { state: 'error', note: 'session rejected (307) — copy a fresh Cookie header from admin.mistral.ai' },
+    ], 'contract: status of each provider');
+
+    // A schema it does not know is a clear message, not a parse error; none at all is schema 1.
+    const raw = JSON.parse(readFixture('config-show.json'));
+    for (const [schema, words] of [[2, 'update the extension'], [0, 'update aiu'], ['1', 'update aiu']]) {
+        let error = null;
+        try {
+            parseConfigShow(JSON.stringify({ ...raw, schema }));
+        } catch (err) {
+            error = err;
+        }
+        assertEqual([error instanceof SchemaError, !!error?.message.includes(words)], [true, true],
+            `schema ${JSON.stringify(schema)}: ${error?.message}`);
+    }
+    delete raw.schema;
+    assertEqual(parseConfigShow(JSON.stringify(raw)), config, 'an aiu without schema reads as schema 1');
+    console.log('[Test] aiu config show --json fixture read through parseConfigShow ✅');
 }
 
 function testValues() {
@@ -239,6 +298,7 @@ async function testRunner() {
 let failed = false;
 try {
     testParse();
+    testContract();
     testValues();
     testStatus();
     testInterval();

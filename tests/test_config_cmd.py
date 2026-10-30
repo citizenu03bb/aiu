@@ -7,6 +7,7 @@ import json
 import os
 import sys
 import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -135,6 +136,29 @@ def test_show_reports_an_untrusted_config(monkeypatch, capsys, cfg):
     assert snap["key_cmd_problems"] == [f"{cfg} is writable by group or others"]
     _, out, _ = run(monkeypatch, capsys, cfg, "config", "show")
     assert "key_cmd is ignored:" in out
+
+
+def test_show_json_fixture_is_current(monkeypatch, capsys, home):
+    """tests/fixtures/config-show.json is what `aiu config show --json` prints
+    today for HAND_EDITED in an untrusted file, with the home directory written
+    /home/me. gnome-extension/tests/test_aiuConfig.js reads the same file
+    through parseConfigShow, so renaming a field on either side alone fails a
+    test (docs/json-schema.md). AIU_RECORD_JSON=1 records it again."""
+    monkeypatch.setattr(util, "_private_group", lambda gid: False)
+    path = home / ".config" / "ai-usage" / "config.toml"
+    path.parent.mkdir(parents=True, mode=0o700)
+    path.write_text(HAND_EDITED)
+    path.chmod(0o620)
+    code, out, err = run(monkeypatch, capsys, path, "config", "show", "--json")
+    out = out.replace(str(home), "/home/me")
+    fixture = Path(__file__).parent / "fixtures" / "config-show.json"
+    if os.environ.get("AIU_RECORD_JSON"):
+        fixture.write_text(out)
+    assert code == 0 and err == ""
+    assert out == fixture.read_text(), "aiu config show --json changed: see docs/json-schema.md"
+    snap = json.loads(out)
+    assert list(snap)[0] == "schema" and snap["schema"] == 1
+    assert snap["key_cmd_problems"] == ["/home/me/.config/ai-usage/config.toml is writable by group or others"]
 
 
 def test_show_table(monkeypatch, capsys, cfg):
@@ -455,7 +479,7 @@ def test_without_a_subcommand_aiu_takes_its_snapshot(monkeypatch, capsys, cfg):
     cfg.write_text("")  # nothing enabled: no probe, no network
     code, out, _ = run(monkeypatch, capsys, cfg, "--json")
     assert code == 0
-    assert set(json.loads(out)) == {"captured_at", "rows", "advice"}
+    assert set(json.loads(out)) == {"schema", "captured_at", "rows", "advice"}
 
 
 def test_config_option_after_the_subcommand(monkeypatch, capsys, cfg):

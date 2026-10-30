@@ -11,7 +11,7 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
-import { displayName } from './aiuClient.js';
+import { displayName, schemaProblem } from './aiuClient.js';
 import { _, N_, fmt } from './i18n.js';
 
 /** GSettings schema of the extension-only settings (schemas/). */
@@ -60,13 +60,21 @@ function valueText(value) {
     return value === null || value === undefined ? '' : String(value);
 }
 
+/** aiu printed a `schema` this extension does not read: the message says which to update. */
+export class SchemaError extends Error {}
+
 /**
  * `aiu config show --json` as the window lays it out: one entry per provider,
  * in aiu's order, with its `enabled` value and the text fields it takes
- * (key sources, claude_cmd, Mistral's allowances). Throws on anything else.
+ * (key sources, claude_cmd, Mistral's allowances). Throws on anything else,
+ * a SchemaError for an unknown schema.
  */
 export function parseConfigShow(text) {
     const raw = JSON.parse(text);
+    const problem = schemaProblem(raw);
+    if (problem) {
+        throw new SchemaError(problem);
+    }
     if (!raw || typeof raw !== 'object' || !raw.providers || typeof raw.providers !== 'object') {
         throw new Error(_('aiu config show listed no providers'));
     }

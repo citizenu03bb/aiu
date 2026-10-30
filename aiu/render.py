@@ -11,6 +11,11 @@ from aiu.i18n import tr
 from aiu.routing import route_order
 from aiu.rows import Row
 
+# The version of the JSON that `aiu --json` and `aiu config show --json` print
+# (docs/json-schema.md). Adding a field keeps it; renaming or removing one, or
+# changing its type, bumps it.
+JSON_SCHEMA = 1
+
 
 def render_table(rows: list[Row]) -> None:
     from rich.console import Console
@@ -87,6 +92,7 @@ def render_html(rows: list[Row], path: Path) -> None:
 
 def render_json(rows: list[Row], hist: list[dict] | None) -> None:
     """The snapshot as `aiu --json` prints it, read by the GNOME extension and consult."""
-    print(json.dumps({"captured_at": datetime.now(timezone.utc).isoformat(),
+    print(json.dumps({"schema": JSON_SCHEMA,
+                      "captured_at": datetime.now(timezone.utc).isoformat(),
                       "rows": [r.to_public() for r in rows],
                       "advice": route_order(rows, hist=hist)}, indent=2))

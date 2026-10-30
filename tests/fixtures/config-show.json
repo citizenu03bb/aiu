@@ -1,0 +1,155 @@
+{
+  "schema": 1,
+  "path": "/home/me/.config/ai-usage/config.toml",
+  "key_cmd_allowed": false,
+  "key_cmd_problems": [
+    "/home/me/.config/ai-usage/config.toml is writable by group or others"
+  ],
+  "providers": {
+    "claude": {
+      "section": true,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": true,
+          "source": "file"
+        },
+        "claude_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        }
+      }
+    },
+    "codex": {
+      "section": false,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": false,
+          "source": "default"
+        }
+      }
+    },
+    "openai": {
+      "section": true,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": false,
+          "source": "file"
+        },
+        "key_env": {
+          "type": "string",
+          "value": "OPENAI_ADMIN_KEY",
+          "source": "file"
+        },
+        "key_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "key_file": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        }
+      }
+    },
+    "deepseek": {
+      "section": false,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": false,
+          "source": "default"
+        },
+        "key_env": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "key_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "key_file": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        }
+      }
+    },
+    "openrouter": {
+      "section": false,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": false,
+          "source": "default"
+        },
+        "key_env": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "key_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "key_file": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        }
+      }
+    },
+    "gemini": {
+      "section": false,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": false,
+          "source": "default"
+        }
+      }
+    },
+    "mistral": {
+      "section": true,
+      "options": {
+        "enabled": {
+          "type": "bool",
+          "value": true,
+          "source": "file"
+        },
+        "key_env": {
+          "type": "string",
+          "value": "MISTRAL_ADMIN_COOKIE",
+          "source": "default"
+        },
+        "key_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "key_file": {
+          "type": "string",
+          "value": null,
+          "source": "default"
+        },
+        "vibe_allowance_eur": {
+          "type": "number",
+          "value": 8.5,
+          "source": "default"
+        },
+        "api_allowance_eur": {
+          "type": "number",
+          "value": 5,
+          "source": "file"
+        }
+      }
+    }
+  }
+}

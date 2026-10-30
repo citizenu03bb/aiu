@@ -50,6 +50,15 @@ msgstr "JSON invalide retourné par aiu : {error}"
 msgid "aiu did not answer within {seconds} s, stopped"
 msgstr "aiu n'a pas répondu en {seconds} s, arrêté"
 
+# aiu --json or aiu config show --json with a schema this extension does not read
+#: aiuClient.js
+msgid "aiu speaks a newer format (schema {schema}): update the extension"
+msgstr "aiu utilise un format plus récent (schéma {schema}) : mettez à jour l'extension"
+
+#: aiuClient.js
+msgid "aiu speaks an older format (schema {schema}): update aiu (uv tool upgrade aiu, or pipx upgrade aiu)"
+msgstr "aiu utilise un format plus ancien (schéma {schema}) : mettez à jour aiu (uv tool upgrade aiu, ou pipx upgrade aiu)"
+
 # Advice box
 #: aiuClient.js
 msgid "Conserve: {providers}"

@@ -58,6 +58,25 @@ export function resetText(row, nowSecs = Date.now() / 1000) {
         : _('passed, refresh the snapshot');
 }
 
+/** The `schema` of `aiu --json` and `aiu config show --json` this extension reads (docs/json-schema.md). */
+export const SCHEMA = 1;
+
+/**
+ * Why the extension cannot read what aiu printed, or null when it can. An aiu
+ * from before the schema field prints no `schema`: that is schema 1.
+ */
+export function schemaProblem(raw) {
+    const schema = raw && typeof raw === 'object' && 'schema' in raw ? raw.schema : SCHEMA;
+    if (schema === SCHEMA) {
+        return null;
+    }
+    if (typeof schema === 'number' && schema > SCHEMA) {
+        return fmt(_('aiu speaks a newer format (schema {schema}): update the extension'), { schema });
+    }
+    return fmt(_('aiu speaks an older format (schema {schema}): update aiu (uv tool upgrade aiu, or pipx upgrade aiu)'),
+        { schema: JSON.stringify(schema) });
+}
+
 /** A fetch still running after this long is killed (the probes' own timeouts are 15-60 s). */
 export const FETCH_TIMEOUT_SECONDS = 120;
 
@@ -188,6 +207,11 @@ export class AiuClient {
                             success: false,
                             error: `${fmt(_('aiu returned invalid JSON: {error}'), { error: parseErr.message })}\n${stdout.slice(0, 150)}`
                         });
+                        return;
+                    }
+                    const problem = schemaProblem(parsed);
+                    if (problem) {
+                        resolve({ success: false, error: problem });
                         return;
                     }
 
