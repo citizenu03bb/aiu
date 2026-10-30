@@ -19,6 +19,12 @@ dependencies = [
     "rich>=13.7",
 ]
 
+# `aiu cookie import mistral --browser chrome|chromium|brave` decrypts the
+# browser's cookies with AES; the standard library has none. Only that command
+# imports it: pipx install 'aiu[cookies] @ git+…' or pipx inject aiu cryptography.
+[project.optional-dependencies]
+cookies = ["cryptography>=42"]
+
 [project.urls]
 Homepage = "https://github.com/citizenu03bb/aiu"
 
@@ -31,3 +37,8 @@ py-modules = ["aiu", "consult"]
 
 [tool.setuptools.dynamic]
 version = {attr = "aiu.__version__"}
+
+# `uv run` installs the dev group, so the tests (CI included) can build and
+# decrypt Chromium cookie fixtures.
+[dependency-groups]
+dev = ["cryptography>=42"]

@@ -120,12 +120,48 @@ no public usage API, and API keys are rejected (verified Oct 2026: the Vibe key
 only opens `/api/vibe/whoami`). `aiu` calls the same tRPC endpoints as the
 console's Usage page (`usage.costBreakdown` for tokens per billing metric,
 `usage.prices` for €/token) and multiplies them; this matches the dashboard's
-"Total Estimated Cost" to the cent. Setup: in admin.mistral.ai, DevTools →
-Network → any `/api/local-trpc/` request → copy the whole `Cookie` request
-header into `MISTRAL_ADMIN_COOKIE`, in single quotes (the cookie contains `;`
-and spaces, and `~/.env` is read like a shell reads it; better, keep it in a
-keyring, see *Secrets*), then set `enabled = true`.
-When the session expires the row says "session rejected": copy it again.
+"Total Estimated Cost" to the cent.
+
+Setup: sign in to admin.mistral.ai in your browser, then import that session
+into the GNOME keyring:
+
+```sh
+aiu cookie import mistral --browser firefox   # or chrome, chromium, brave
+aiu config set mistral.enabled true
+aiu --only mistral                            # check it
+```
+
+`cookie import` reads the `admin.mistral.ai` cookies (that host only) from one
+browser profile (`Default`, or Firefox's default profile; pick another with
+`--profile NAME`, a directory like `Profile 1` or the name the browser shows),
+stores them with `secret-tool` (label *aiu mistral cookie*), and sets
+`mistral.key_cmd` to `secret-tool lookup service aiu provider mistral`
+through `aiu config set`. Running it again replaces the stored session. You
+run it yourself: `aiu`, `--json`, `--alert` and the GNOME extension never do.
+
+- It needs `secret-tool` (Debian/Ubuntu: `libsecret-tools`). Chrome, Chromium
+  and Brave encrypt their cookies, so for them it also needs the
+  `cryptography` package: `pipx inject aiu cryptography` (or install
+  `aiu[cookies]`); with the standalone script,
+  `uv run --with cryptography ./aiu.py cookie import mistral --browser chrome`.
+  Firefox needs neither.
+- For those three it reads the browser's own *Safe Storage* secret from the
+  keyring (that browser's entry only), so the keyring must be unlocked.
+- The cookie database is opened read-only where it is; while the browser is
+  writing to it, it is copied into a private temporary directory (`0700`),
+  read there and deleted. The session and the browser's key are written
+  nowhere but the keyring, and no message prints them.
+- If `MISTRAL_ADMIN_COOKIE` is still set in your environment or in `~/.env`,
+  aiu reads it first (`key_env` comes before `key_cmd`); the command says so.
+  Delete that plain-text copy.
+
+Fallback, by hand: in admin.mistral.ai, DevTools → Network → any
+`/api/local-trpc/` request → copy the whole `Cookie` request header into
+`MISTRAL_ADMIN_COOKIE`, in single quotes (the cookie contains `;` and spaces,
+and `~/.env` is read like a shell reads it), then set `enabled = true`.
+
+When the session expires the row says "session rejected": sign in again and
+re-run the import (or copy the header again).
 Vibe's local session logs (`~/.vibe/logs`) are not a substitute, because they
 undercount the server's token totals by roughly 3×.
 
@@ -166,7 +202,7 @@ can read the file: `chmod 600 ~/.env`.
 DEEPSEEK_API_KEY=sk-...
 OPENROUTER_API_KEY=sk-or-...
 OPENAI_ADMIN_KEY=sk-admin-...   # Costs API needs an ADMIN key, not a normal sk-
-MISTRAL_ADMIN_COOKIE='...'      # whole Cookie header from admin.mistral.ai; quotes required, it expires
+MISTRAL_ADMIN_COOKIE='...'      # only if you don't use `aiu cookie import mistral`; quotes required
 ```
 
 **Prefer a keyring to `~/.env`.** The file is plain text, often shared with
@@ -197,7 +233,8 @@ them can run code as you.
   own provider over TLS.
 - `MISTRAL_ADMIN_COOKIE` is a whole admin.mistral.ai session, not a read-only
   key: until it expires it can create API keys and change billing. Keep it in
-  a keyring (`key_cmd` in `[mistral]`) rather than in `~/.env`.
+  a keyring rather than in `~/.env`: `aiu cookie import mistral` puts it there
+  and sets `key_cmd` (see `mistral` above).
 
 ### `aiu config`
 Reads and changes the config for scripts and the GNOME indicator, so nothing
