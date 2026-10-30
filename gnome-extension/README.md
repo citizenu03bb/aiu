@@ -28,6 +28,15 @@ cd gnome-extension   # depuis votre clone du dépôt aiu
 make install         # puis déconnexion / reconnexion (Wayland)
 ```
 
+Sans clone, depuis le zip joint à chaque [release GitHub](https://github.com/citizenu03bb/aiu/releases) (ou construit avec `make pack`, au format attendu par extensions.gnome.org) :
+
+```bash
+gnome-extensions install --force aiu-indicator@citizenu03bb.github.io.shell-extension.zip
+gnome-extensions enable aiu-indicator@citizenu03bb.github.io   # après déconnexion / reconnexion
+```
+
+`make test` lance les tests unitaires hors ligne (ceux de la CI) ; `make test-live` interroge le vrai `aiu`, donc vos fournisseurs, et ne tourne qu'en local.
+
 GNOME Shell garde le JavaScript d'une extension en mémoire pour toute la session : après une mise à jour, déconnectez-vous puis reconnectez-vous (`make reload` ne recharge pas les modules).
 
 ## Commandes Make

@@ -15,8 +15,15 @@ watch -n 60 aiu           # poor man's live view
 ```
 
 ## Install
-Needs [`uv`](https://docs.astral.sh/uv/) (the script declares its own
-dependencies) and Python ≥ 3.11.
+Needs Python ≥ 3.11. With [`pipx`](https://pipx.pypa.io/) (or
+`uv tool install` with the same URL), which provides both `aiu` and `consult`:
+
+```bash
+pipx install git+https://github.com/citizenu03bb/aiu
+```
+
+Or run straight from a clone with [`uv`](https://docs.astral.sh/uv/): the script
+declares its own dependencies.
 
 ```bash
 git clone https://github.com/citizenu03bb/aiu.git

@@ -1,8 +1,9 @@
-// test_aiuClient.js - Unit test for aiuClient parsing and execution
-import GLib from 'gi://GLib';
+// test_aiuClient.js - Offline unit tests for aiuClient parsing (run in CI).
+// The test that calls the real aiu CLI is test_aiuClient_live.js (local only).
+import System from 'system';
 import { AiuClient } from '../aiuClient.js';
 
-async function run() {
+function run() {
     console.log('[Test] Instantiating AiuClient...');
     const client = new AiuClient();
 
@@ -68,32 +69,12 @@ async function run() {
         }
     }
 
-    console.log('[Test] Testing real async execution with aiu CLI...');
-    const loop = GLib.MainLoop.new(null, false);
-    let realRes = null;
-
-    client.fetchSnapshot().then((res) => {
-        realRes = res;
-        loop.quit();
-    });
-
-    loop.run();
-
-    if (!realRes.success) {
-        throw new Error(`fetchSnapshot failed: ${realRes.error}`);
-    }
-
-    console.log('[Test] Real fetchSnapshot succeeded!');
-    console.log(' - CapturedAt:', realRes.data.capturedAt);
-    console.log(' - Status:', realRes.data.statusColor);
-    console.log(' - Rows count (quotas + balances + errors):',
-        realRes.data.quotas.length + realRes.data.balances.length + realRes.data.errors.length);
-    console.log(' - Advice:', realRes.data.advice);
-
-    console.log('[Test] All AiuClient tests passed successfully! ✅');
+    console.log('[Test] All offline AiuClient tests passed successfully! ✅');
 }
 
-run().catch((err) => {
+try {
+    run();
+} catch (err) {
     console.error('[Test Failed]', err);
-    imports.system.exit(1);
-});
+    System.exit(1);
+}
