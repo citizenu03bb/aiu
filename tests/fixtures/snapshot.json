@@ -141,40 +141,40 @@
     },
     {
       "provider": "gemini",
-      "metric": "Gemini Pro",
+      "metric": "5-Hour Limit",
       "kind": "quota",
       "used": 0.25,
       "limit": 1.0,
       "unit": "%",
-      "reset": "in 20h 0m",
-      "note": "Gemini Code Assist",
-      "reset_epoch": 1793072000.0,
-      "window_secs": null,
+      "reset": "in 2h 0m",
+      "note": "",
+      "reset_epoch": 1793007200.0,
+      "window_secs": 18000,
       "used_pct": 25.0
     },
     {
       "provider": "gemini",
-      "metric": "Gemini Flash",
+      "metric": "Weekly Limit",
       "kind": "quota",
-      "used": 0.09999999999999998,
+      "used": 0.020000000000000018,
       "limit": 1.0,
       "unit": "%",
-      "reset": "in 20h 0m",
+      "reset": "in 6d 20h",
       "note": "",
-      "reset_epoch": 1793072000.0,
-      "window_secs": null,
-      "used_pct": 10.0
+      "reset_epoch": 1793590400.0,
+      "window_secs": 604800,
+      "used_pct": 2.0
     },
     {
       "provider": "gemini",
-      "metric": "Gemini Flash Lite",
+      "metric": "Image generation",
       "kind": "quota",
       "used": 0.0,
       "limit": 1.0,
       "unit": "%",
-      "reset": "in 20h 0m",
+      "reset": null,
       "note": "",
-      "reset_epoch": 1793072000.0,
+      "reset_epoch": null,
       "window_secs": null,
       "used_pct": 0.0
     },
@@ -193,17 +193,6 @@
   ],
   "advice": [
     {
-      "provider": "gemini",
-      "metric": "Gemini Pro",
-      "status": "?",
-      "ttr_secs": 72000,
-      "leftover": null,
-      "runway_secs": null,
-      "pace_from_history": false,
-      "early_pace": false,
-      "detail": "Gemini Pro 75% free, reset in 20h00m (unknown pace)"
-    },
-    {
       "provider": "claude",
       "metric": "Weekly (all models)",
       "status": "burn",
@@ -213,6 +202,17 @@
       "pace_from_history": false,
       "early_pace": false,
       "detail": "Weekly (all models): reset in 3d0h, ~30% of the cap lost at your pace (0.42%/h; using it all = 0.83%/h, \u00d72.0)"
+    },
+    {
+      "provider": "gemini",
+      "metric": "Weekly Limit",
+      "status": "?",
+      "ttr_secs": 590400,
+      "leftover": null,
+      "runway_secs": null,
+      "pace_from_history": false,
+      "early_pace": false,
+      "detail": "Weekly Limit 98% free, reset in 6d20h (unknown pace)"
     },
     {
       "provider": "claude",

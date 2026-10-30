@@ -27,7 +27,7 @@ documented residual risk.
 |----|--------|----------|-----------|
 | H1 | Fixed | #7 | `_query_local_quota_summary` (`aiu/probes/gemini.py`): only sockets of a user-owned Antigravity `language_server`, its own CSRF token, no port spray, no `verify=False` |
 | M1 | Fixed | #8, #9 | `resolve_key` (`aiu/keys.py`) keeps the first line and refuses control characters; probes write their own words into notes and `collect` (`aiu/probes/__init__.py`) redacts token-like text (`_redact`, `aiu/probes/common.py`) |
-| M2 | Fixed | #6 | `_gemini_persist` (`aiu/probes/gemini.py`): `flock`, temp file 0600, `fsync`, `os.replace`; nothing written if the refresh token changed meanwhile |
+| M2 | Gone | #6, wave 8 (S) | Fixed in #6 (`_gemini_persist`: `flock`, temp file 0600, `fsync`, `os.replace`). Since wave 8, task S, aiu no longer reads or writes `oauth_creds.json` at all: the Gemini CLI fallback was removed |
 | M3 | Fixed | #7 | `render_html` (`aiu/render.py`) escapes every value and sets `default-src 'none'` |
 | L1 | Fixed | #8, #12 | `load_config` (`aiu/config.py`) drops every `key_cmd` when the config or its directory is someone else's or writable by others (group write is accepted for the user's private group: `_writable_by_others`, `aiu/util.py`) |
 | L2 | Fixed | #8, #11 | `load_env_file` (`aiu/keys.py`) reads only the names the config uses, parses like a shell, warns on a readable file, and exports nothing. A launcher that sources `~/.env` (as older installs did) undoes this: run `aiu.py` directly |
@@ -38,6 +38,18 @@ documented residual risk.
 
 L3 was taken further in ROADMAP wave 6 (task N), after v0.4.1: see its
 status note at the end of the L3 finding.
+
+**Gemini CLI fallback removed (ROADMAP wave 8, task S, after v0.5.0).** The
+Gemini CLI FAQ forbids third-party software from piggybacking on the Gemini
+CLI's OAuth sign-in, so the `gemini` probe no longer reads
+`~/.gemini/oauth_creds.json`, refreshes that token, looks for the Gemini CLI's
+OAuth client (`GEMINI_CLIENT_ID` / `GEMINI_CLIENT_SECRET`, the `gemini` bundle)
+or calls `cloudcode-pa.googleapis.com`. Its only source is Antigravity's local
+language server, still under H1's checks. What the findings below say about
+that path is history: M2 no longer applies (nothing rewrites the file), L2's
+Gemini client names are no longer read from `~/.env`, and the Gemini
+`planName` / `tierName` (M3) and the refresh-token notes of I8 describe code
+that is gone.
 
 The two bugs found outside the security scope (the `--config` parent
 directory, inline comments in `~/.env`) were fixed in #8. I3 was updated in
@@ -181,6 +193,9 @@ A `key_file` that ends with a comment line, or a `\r\n` file, does the same.
   like `Bearer …`, `sk-…` or a cookie before it is stored in `note`.
 
 ### M2. `oauth_creds.json` is rewritten in place, without a lock
+
+*No longer applies: aiu stopped reading and writing this file in ROADMAP wave
+8, task S (see Status).*
 
 **Where.** `aiu.py:542-550`.
 

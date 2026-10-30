@@ -11,18 +11,18 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from aiu.probes import claude, gemini  # noqa: E402
+from aiu.probes import claude  # noqa: E402
 
 PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
-                "MISTRAL_ADMIN_COOKIE", "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET",
-                "AIU_ENV_FILE", "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME")
+                "MISTRAL_ADMIN_COOKIE", "AIU_ENV_FILE",
+                "XDG_DATA_HOME", "XDG_CACHE_HOME", "XDG_STATE_HOME")
 
 
 @pytest.fixture(autouse=True)
 def home(tmp_path, monkeypatch):
     """~ is an empty tmp dir; PATH holds only tmp/bin, and tmp/bin/claude is the
-    only place aiu looks for `claude`, so no real `claude` or `gemini` is found
-    unless a test puts a fake one there. The umask is 022 whatever the user's is,
+    only place aiu looks for `claude`, so no real `claude` is found unless a
+    test puts a fake one there. The umask is 022 whatever the user's is,
     so permission tests see the same modes locally and in CI."""
     umask = os.umask(0o022)
     home = tmp_path / "home"
@@ -37,7 +37,6 @@ def home(tmp_path, monkeypatch):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("LANG", "C.UTF-8")
     # Resolved at import time from the real home.
-    monkeypatch.setattr(gemini, "GEMINI_CREDS_PATH", home / ".gemini" / "oauth_creds.json")
     monkeypatch.setattr(claude, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))
     yield home
     os.umask(umask)

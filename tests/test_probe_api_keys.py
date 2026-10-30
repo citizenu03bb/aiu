@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from aiu import cli, keys, util  # noqa: E402
 from aiu.config import load_config  # noqa: E402
-from aiu.probes import deepseek, gemini, openai, openrouter  # noqa: E402
+from aiu.probes import deepseek, openai, openrouter  # noqa: E402
 
 OPENAI_URL = "https://api.openai.com/v1/organizations/costs"
 DEEPSEEK_URL = "https://api.deepseek.com/user/balance"
@@ -447,8 +447,8 @@ def test_env_file_override_and_missing(monkeypatch, home, tmp_path):
 
 
 def test_main_exports_nothing_from_env_file(monkeypatch, home, tmp_path, capsys):
-    """GEMINI_CLIENT_ID / _SECRET keep working from ~/.env, and no ~/.env value,
-    provider key or Gemini client, reaches os.environ."""
+    """No ~/.env value reaches os.environ, and names the config does not refer
+    to (the Gemini CLI's OAuth client, no longer used) are not even read."""
     forget(monkeypatch, "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY")
     monkeypatch.setattr(keys, "ENV_FILE", {})
     config = tmp_path / "cfg" / "config.toml"
@@ -456,15 +456,14 @@ def test_main_exports_nothing_from_env_file(monkeypatch, home, tmp_path, capsys)
     config.write_text('[deepseek]\nkey_env = "DEEPSEEK_API_KEY"\n')
     config.chmod(0o600)
     (home / ".env").write_text("GEMINI_CLIENT_ID=id.apps.googleusercontent.com\n"
-                               "GEMINI_CLIENT_SECRET='s3cret' # public CLI client\n"
+                               "GEMINI_CLIENT_SECRET='s3cret'\n"
                                "DEEPSEEK_API_KEY=sk-ds\n")
     (home / ".env").chmod(0o600)
     monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(config), "--only", "none", "--json"])
     assert cli.main() == 0
     for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY"):
         assert k not in os.environ
-    assert gemini._gemini_oauth_client() == ("id.apps.googleusercontent.com", "s3cret")
-    assert keys.ENV_FILE["DEEPSEEK_API_KEY"] == "sk-ds"
+    assert keys.ENV_FILE == {"DEEPSEEK_API_KEY": "sk-ds"}
 
 
 # ---------------------------------------------------------------------------

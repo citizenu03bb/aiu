@@ -1,164 +1,25 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Probe: Gemini Code Assist (Google One / AI Pro subscription quota via OAuth).
+"""Probe: Gemini (Antigravity / Google One AI Pro subscription quota).
 
-The Gemini CLI signs in with Google OAuth — usage is a subscription quota, not
-pay-per-token API spend. Read the same token the CLI uses and hit the internal
-Code Assist quota endpoint. Since Oct 2026 Google refuses that client for
-individual accounts (UNSUPPORTED_CLIENT), so for them the Antigravity desktop
-app's local language server (+ CSRF token from its command line) is the only
-source, read first below. The `agy` CLI keeps its login in the system keyring,
-not in oauth_creds.json, and its own local server's CSRF token never leaves
-memory, so aiu can't read quota through agy."""
+Usage is a subscription quota, not pay-per-token API spend. The only source is
+the Antigravity desktop app's local language server (+ CSRF token from its
+command line), while the app is open. aiu no longer uses the Gemini CLI's OAuth
+token and client against Code Assist: the Gemini CLI FAQ calls third-party
+software that piggybacks on that sign-in a violation that may get the account
+suspended. The `agy` CLI keeps its login in the system keyring and its own
+local server's CSRF token never leaves memory, so aiu can't read quota through
+agy."""
 from __future__ import annotations
 
 import glob
-import json
 import os
 import re
-import shutil
-import sys
-import time
-from pathlib import Path
 
 import httpx
 
-from aiu import keys
 from aiu.i18n import tr
 from aiu.probes.common import _humanize_reset, _iso_epoch
 from aiu.rows import Row
-
-
-GEMINI_CA_BASE = "https://cloudcode-pa.googleapis.com"
-GEMINI_CREDS_PATH = Path(os.path.expanduser("~/.gemini/oauth_creds.json"))
-GEMINI_TOKEN_URL = "https://oauth2.googleapis.com/token"
-# Refreshing the token needs the Gemini CLI's public "installed app" OAuth client.
-# It is not a user secret, but it is Google's to publish, not ours: take it from
-# the environment, else read it out of the locally installed Gemini CLI bundle.
-# The bundle holds several Google client IDs; only the named constants are the CLI's.
-_GEMINI_CLIENT_ID_RE = re.compile(r'OAUTH_CLIENT_ID\s*=\s*"([^"]+\.apps\.googleusercontent\.com)"')
-_GEMINI_CLIENT_SECRET_RE = re.compile(r'OAUTH_CLIENT_SECRET\s*=\s*"([^"]+)"')
-
-
-def _gemini_oauth_client() -> tuple[str, str] | None:
-    cid, secret = (os.environ.get(k) or keys.ENV_FILE.get(k)
-                   for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET"))
-    if cid and secret:
-        return cid, secret
-    cli = shutil.which("gemini")
-    if not cli:
-        return None
-    bundle = Path(os.path.realpath(cli)).parent   # .../@google/gemini-cli/bundle
-    for f in sorted(bundle.glob("*.js")):
-        try:
-            text = f.read_text(errors="ignore")
-        except OSError:
-            continue
-        m_id, m_secret = _GEMINI_CLIENT_ID_RE.search(text), _GEMINI_CLIENT_SECRET_RE.search(text)
-        if m_id and m_secret:
-            return m_id.group(1), m_secret.group(1)
-    return None
-
-
-def _gemini_refresh(refresh_token: str) -> str | None:
-    """Exchange the refresh token for a fresh access token and persist it back to
-    oauth_creds.json (Google does not rotate refresh tokens). Returns the new token,
-    which is good for this run even when it could not be saved."""
-    client = _gemini_oauth_client()
-    if not client:
-        return None
-    try:
-        r = httpx.post(GEMINI_TOKEN_URL, data={
-            "grant_type": "refresh_token", "refresh_token": refresh_token,
-            "client_id": client[0], "client_secret": client[1]}, timeout=20)
-        if r.status_code != 200:
-            return None
-        j = r.json()
-        at = j.get("access_token")
-        if not at:
-            return None
-        expiry = int((time.time() + int(j.get("expires_in", 3600))) * 1000)
-    except Exception:
-        return None
-    # persist so the next call (and the CLIs) reuse it
-    reason = _gemini_persist(refresh_token, at, expiry, j.get("id_token"))
-    if reason:
-        print(tr("[aiu] gemini: refreshed token kept for this run only, {path} left as is: {reason}",
-                 path=GEMINI_CREDS_PATH, reason=tr(reason)), file=sys.stderr)
-    return at
-
-
-def _gemini_persist(refresh_token: str, access_token: str, expiry_ms: int,
-                    id_token: str | None) -> str | None:
-    """Store a refreshed token in oauth_creds.json without ever leaving it empty or
-    half-written: under a lock shared by every aiu run, re-read the file, change only
-    the token fields, write a 0600 temp file next to the real file (a symlink stays a
-    symlink) and rename it over. Returns why nothing was written, or None."""
-    import fcntl
-    import tempfile
-    target = Path(os.path.realpath(GEMINI_CREDS_PATH))
-    tmp = None
-    try:
-        if target.stat().st_uid != os.getuid():
-            return "not owned by you"
-        lock = os.open(target.with_name(f".{target.name}.aiu-lock"),
-                       os.O_CREAT | os.O_WRONLY, 0o600)
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX)
-            creds = json.loads(target.read_text())
-            if not isinstance(creds, dict):
-                return "not a JSON object"
-            if creds.get("refresh_token") != refresh_token:
-                return "signed in again meanwhile"
-            creds["access_token"] = access_token
-            creds["expiry_date"] = expiry_ms
-            if id_token:
-                creds["id_token"] = id_token
-            fd, tmp = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
-            with os.fdopen(fd, "w") as f:  # mkstemp: O_EXCL, mode 0600
-                f.write(json.dumps(creds, indent=2))
-                f.flush()
-                os.fsync(f.fileno())
-            os.replace(tmp, target)
-            tmp = None
-        finally:
-            os.close(lock)  # releases the flock
-    except (OSError, ValueError) as e:
-        return type(e).__name__
-    finally:
-        if tmp:
-            try:
-                os.unlink(tmp)
-            except OSError:
-                pass
-    return None
-
-
-def _gemini_access_token(force: bool = False) -> str | None:
-    """Return a valid access token, refreshing via the refresh token if the stored
-    one is expired/near-expiry (60s buffer) or `force` is set."""
-    if not GEMINI_CREDS_PATH.is_file():
-        return None
-    try:
-        creds = json.loads(GEMINI_CREDS_PATH.read_text())
-    except Exception:
-        return None
-    tok = creds.get("access_token")
-    exp = creds.get("expiry_date", 0)  # epoch ms
-    stale = force or (not tok) or (exp and exp / 1000 < time.time() + 60)
-    if stale and creds.get("refresh_token"):
-        return _gemini_refresh(creds["refresh_token"]) or tok
-    return tok
-
-
-def _gemini_family(model_id: str) -> tuple[str, str]:
-    m = model_id.lower()
-    if "flash" in m and "lite" in m:
-        return "flash_lite", "Gemini Flash Lite"
-    if "pro" in m:
-        return "pro", "Gemini Pro"
-    if "flash" in m:
-        return "flash", "Gemini Flash"
-    return model_id, model_id
 
 
 def _parse_summary_response(data: dict) -> list[Row] | None:
@@ -327,103 +188,11 @@ def _query_local_quota_summary() -> list[Row] | None:
 
 
 def probe_gemini(cfg: dict) -> list[Row]:
-    local_rows = _query_local_quota_summary()
-    if local_rows is not None:
-        return local_rows
-
-    # access tokens expire ~hourly; _gemini_access_token refreshes via the refresh
-    # token (and persists) so aiu doesn't depend on a CLI having run recently.
-    token = _gemini_access_token()
-    if not token:
-        return [Row("gemini", "—", "error",
-                    note="Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback "
-                         "— open Antigravity to read the quota")]
-    r = None
-    project, plan, unsupported = None, "", None
-    for attempt in (1, 2):
-        headers = {
-            "Authorization": f"Bearer {token}",
-            "Content-Type": "application/json",
-            "User-Agent": "aiu/1.0",
-        }
-        try:
-            tr = httpx.post(f"{GEMINI_CA_BASE}/v1internal:loadCodeAssist", headers=headers,
-                            json={"metadata": {"ideType": "IDE_UNSPECIFIED",
-                                               "platform": "PLATFORM_UNSPECIFIED",
-                                               "pluginType": "GEMINI"}}, timeout=20)
-            if tr.status_code == 200:
-                j = tr.json()
-                project = j.get("cloudaicompanionProject")
-                # The tier the account is on, else the one it would get (Oct 2026
-                # responses carry {id, name} objects; planName is the older field).
-                allowed = [t for t in j.get("allowedTiers") or [] if isinstance(t, dict)]
-                tier = j.get("currentTier") or next((t for t in allowed if t.get("isDefault")),
-                                                    allowed[0] if allowed else {})
-                plan = j.get("planName") or (tier.get("name") if isinstance(tier, dict) else None) or ""
-                # Since Oct 2026 Google refuses the Gemini CLI client for individual
-                # accounts ("migrate to Antigravity"): the quota calls then 403.
-                if not j.get("currentTier"):
-                    unsupported = next((t.get("tierName") or t.get("tierId") for t in
-                                        j.get("ineligibleTiers") or []
-                                        if t.get("reasonCode") == "UNSUPPORTED_CLIENT"), None)
-        except Exception:
-            pass
-        try:
-            r = httpx.post(f"{GEMINI_CA_BASE}/v1internal:retrieveUserQuota", headers=headers,
-                           json=({"project": project} if project else {}), timeout=20)
-        except Exception as e:
-            return [Row("gemini", "—", "error", note=f"network: {e}")]
-        if unsupported and r.status_code == 403:
-            return [Row("gemini", "—", "error",
-                        note=f"Google no longer accepts the Gemini CLI sign-in for {unsupported} "
-                             "— open the Antigravity desktop app to read the quota")]
-        if r.status_code in (401, 403) and attempt == 1:  # force one refresh + retry
-            token = _gemini_access_token(force=True)
-            if not token:
-                break
-            continue
-        break
-    if r is not None and r.status_code == 403:
-        # Google answers 401 for a bad or expired token, so a 403 the refresh and
-        # retry did not clear means the account or project may not read the quota.
-        return [Row("gemini", "—", "error",
-                    note="permission denied (403) — this account or its Code Assist project "
-                         "may not read the quota; open the Antigravity desktop app instead")]
-    if r is None or r.status_code == 401:
-        if not _gemini_oauth_client():
-            return [Row("gemini", "—", "error",
-                        note="token expired and can't refresh: install gemini-cli or set "
-                             "GEMINI_CLIENT_ID / GEMINI_CLIENT_SECRET")]
-        return [Row("gemini", "—", "error",
-                    note="auth rejected (401) — refresh token invalid, run `agy` to re-sign in")]
-    if r.status_code != 200:
-        return [Row("gemini", "—", "error", note=f"HTTP {r.status_code}")]
-    fam: dict[str, tuple[str, float, str | None]] = {}
-    try:
-        for b in r.json().get("buckets") or []:
-            frac = b.get("remainingFraction")
-            if frac is None:
-                continue
-            fid, label = _gemini_family(b.get("modelId", ""))
-            used_frac = 1.0 - float(frac)
-            # Select the most constrained (highest usage) bucket per family
-            if fid not in fam or used_frac > fam[fid][1]:
-                fam[fid] = (label, used_frac, b.get("resetTime"))
-    except (ValueError, TypeError, AttributeError):
-        return [Row("gemini", "—", "error", note="malformed quota response (HTTP 200)")]
-    order = {"pro": 0, "flash": 1, "flash_lite": 2}
-    rows: list[Row] = []
-    for fid in sorted(fam, key=lambda x: order.get(x, 9)):
-        label, used, reset = fam[fid]
-        rows.append(Row("gemini", label, "quota",
-                        used=max(0.0, min(1.0, used)), limit=1.0, unit="%",
-                        reset=_humanize_reset(reset) if reset else None,
-                        note=plan if not rows else "",
-                        reset_epoch=_iso_epoch(reset) if reset else None))
-    if not rows:
-        rows.append(Row("gemini", "—", "quota",
-                        note=f"{plan}: no quota buckets returned" if plan else "no quota buckets returned"))
-    return rows
+    rows = _query_local_quota_summary()
+    if rows is not None:
+        return rows
+    return [Row("gemini", "—", "error",
+                note=tr("Antigravity desktop app not running — open it to read the Gemini quota"))]
 
 
 # The Probe protocol (aiu.probes): what collect() and `aiu config` read.

@@ -55,6 +55,10 @@ CONFIG = "".join(f"[{name}]\nenabled = true\n" + (f'key_env = "{KEY_ENV[name]}"\
                  + "\n" for name in PROVIDERS)
 
 
+# What Antigravity's local server answers, when a scenario says (run).
+ANTIGRAVITY: dict = {}
+
+
 def answers(home, http, monkeypatch):
     """Every provider answers: quotas, a credit, spend, balances."""
     (home / ".claude").mkdir()
@@ -88,15 +92,11 @@ def answers(home, http, monkeypatch):
                                                 {"currency": "CNY", "total_balance": "12.00"}]}))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
     http.on("GET", "openrouter.ai/api/v1/credits", (200, {"data": {"total_credits": 20, "total_usage": 7.5}}))
-    (home / ".gemini").mkdir()
-    (home / ".gemini" / "oauth_creds.json").write_text(json.dumps(
-        {"access_token": "ya29.fake", "expiry_date": (NOW + 3600) * 1000, "refresh_token": "1//fake"}))
-    http.on("POST", "v1internal:loadCodeAssist", (200, {
-        "cloudaicompanionProject": "proj-1", "currentTier": {"id": "standard-tier", "name": "Gemini Code Assist"}}))
-    http.on("POST", "v1internal:retrieveUserQuota", (200, {"buckets": [
-        {"modelId": "gemini-2.5-pro", "remainingFraction": 0.75, "resetTime": iso(20 * 3600)},
-        {"modelId": "gemini-2.5-flash", "remainingFraction": 0.9, "resetTime": iso(20 * 3600)},
-        {"modelId": "gemini-2.5-flash-lite", "remainingFraction": 1.0, "resetTime": iso(20 * 3600)}]}))
+    monkeypatch.setitem(ANTIGRAVITY, "summary", {"response": {"groups": [{"displayName": "Gemini Models", "buckets": [
+        {"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.75, "resetTime": iso(2 * 3600)},
+        {"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.98,
+         "resetTime": iso(6 * 86400 + 20 * 3600)},  # a young week: its pace is unknown
+        {"bucketId": "gemini-images", "displayName": "Image generation", "remainingFraction": 1.0}]}]}})
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "ory_session_x=fake; csrf_token=fake")
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown", (200, trpc({
         "groups": [{"billingMetric": "mistral-medium-3-5", "billingGroup": "input", "usageType": "vibe",
@@ -172,18 +172,30 @@ def frozen(monkeypatch):
     time.tzset()
 
 
+# Gemini's note without Antigravity, at MAIN and since the Gemini CLI fallback
+# went away (wave 8, task S).
+GEMINI_NOTE_MAIN = ("Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback "
+                    "\\u2014 open Antigravity to read the quota")
+GEMINI_NOTE = "Antigravity desktop app not running \\u2014 open it to read the Gemini quota"
+
+
 def since_main(out: str) -> str:
-    """MAIN's output with the lines added since: `"schema": 1` as the first key
-    (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q)."""
+    """MAIN's output with the changes made since: `"schema": 1` as the first key
+    (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q),
+    Gemini's note without Antigravity (task S)."""
     assert out.startswith("{\n") and '"schema"' not in out and '"early_pace"' not in out
     out = out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
+    out = out.replace(GEMINI_NOTE_MAIN, GEMINI_NOTE)
     return re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
 
 
 def run(monkeypatch, capsys, home, tmp_path, main, local_quota):
     """One `aiu --config <file> --json` with main(): (exit code, stdout, stderr).
-    Antigravity's local server is never looked for: it would scan this machine."""
-    monkeypatch.setattr(local_quota[0], local_quota[1], lambda: None)
+    Antigravity's local server is never looked for, it would scan this machine:
+    its reply is the scenario's ANTIGRAVITY summary, read by main's own parser."""
+    mod, name = local_quota
+    summary = ANTIGRAVITY.get("summary")
+    monkeypatch.setattr(mod, name, lambda: mod._parse_summary_response(summary) if summary else None)
     for state in (home / ".local" / "state" / "aiu").glob("*"):
         state.unlink()  # each run starts without a pace history
     cfg = tmp_path / "config.toml"
