@@ -15,6 +15,7 @@ from pathlib import Path
 from aiu.i18n import tr, ui_lang
 from aiu.keys import _CONTROL_RE
 from aiu.probes import REGISTRY
+from aiu.render import JSON_SCHEMA
 from aiu.util import _writable_by_others
 
 
@@ -434,7 +435,7 @@ def config_main(args: argparse.Namespace) -> int:
     if args.config_action == "set":
         print(tr("{option} set in {path}", option=args.option, path=path))
     elif args.config_json:
-        print(json.dumps(snap, indent=2, ensure_ascii=False, default=str))
+        print(json.dumps({"schema": JSON_SCHEMA, **snap}, indent=2, ensure_ascii=False, default=str))
     else:
         render_config(snap)
     return 0
