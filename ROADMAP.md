@@ -268,6 +268,9 @@ Left to the maintainer: upload the v0.3.0 zip to extensions.gnome.org.
 Merged on 2026-10-30: L in #24, M in #26 (the window checked in a headless
 GNOME Shell 50.1). Released in v0.4.0.
 
+v0.4.1 adds a Preferences… item to the panel menu (#28) and stops the
+progress bars from logging "not in the stage" warnings on every refresh.
+
 The extension gets a preferences window for aiu's config. aiu stays the only
 program that reads or writes `config.toml`: the extension goes through a new
 `aiu config` subcommand, so it never parses TOML and every rule from the
