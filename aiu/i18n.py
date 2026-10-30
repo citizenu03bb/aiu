@@ -205,4 +205,42 @@ FR = {
     "mistral is off: aiu config set mistral.enabled true":
         "mistral est désactivé : aiu config set mistral.enabled true",
     "Check it with: aiu --only mistral": "Vérifie avec : aiu --only mistral",
+    # aiu login openrouter
+    "aiu login: {error}": "aiu login : {error}",
+    "aiu login: cancelled; nothing was changed": "aiu login : annulé ; rien n'a été modifié",
+    "Wrong host.": "Mauvais hôte.",
+    "Not found.": "Introuvable.",
+    "No sign-in code in this request.": "Pas de code de connexion dans cette requête.",
+    "aiu got its OpenRouter sign-in. You can close this tab.":
+        "aiu a reçu sa connexion OpenRouter. Tu peux fermer cet onglet.",
+    "Sign in to OpenRouter and authorize aiu. If no browser opens, open this address on this "
+    "computer:":
+        "Connecte-toi à OpenRouter et autorise aiu. Si aucun navigateur ne s'ouvre, ouvre cette "
+        "adresse sur cet ordinateur :",
+    "no sign-in within {minutes} minutes; nothing was changed":
+        "pas de connexion en {minutes} minutes ; rien n'a été modifié",
+    "cannot reach OpenRouter to finish the sign-in ({error}); nothing was changed":
+        "impossible de joindre OpenRouter pour finir la connexion ({error}) ; "
+        "rien n'a été modifié",
+    "OpenRouter refused the sign-in code (HTTP {status}); nothing was changed, run this again":
+        "OpenRouter a refusé le code de connexion (HTTP {status}) ; rien n'a été modifié, "
+        "relance cette commande",
+    "OpenRouter's answer holds no usable key; nothing was changed":
+        "la réponse d'OpenRouter ne contient pas de clé utilisable ; rien n'a été modifié",
+    "the keyring did not store the key (is it locked?). Delete the unused key '{name}' at "
+    "https://openrouter.ai/settings/keys, then run this again":
+        "le trousseau n'a pas enregistré la clé (est-il verrouillé ?). Supprime la clé inutilisée "
+        "'{name}' sur https://openrouter.ai/settings/keys, puis relance cette commande",
+    "Stored a new OpenRouter key '{name}' in the keyring, labelled '{label}'.":
+        "Nouvelle clé OpenRouter '{name}' enregistrée dans le trousseau, "
+        "sous le libellé '{label}'.",
+    "aiu login: openrouter.key_cmd not set ({error}). Once that is fixed, run:":
+        "aiu login : openrouter.key_cmd non défini ({error}). Une fois corrigé, lance :",
+    "{name} is set in {where}, and aiu reads it before key_cmd: delete it there (it is a key "
+    "in plain text) so the keyring copy is used.":
+        "{name} est défini dans {where}, et aiu le lit avant key_cmd : supprime-le de là "
+        "(c'est une clé en clair) pour que la copie du trousseau serve.",
+    "openrouter is off: aiu config set openrouter.enabled true":
+        "openrouter est désactivé : aiu config set openrouter.enabled true",
+    "Check it with: aiu --only openrouter": "Vérifie avec : aiu --only openrouter",
 }

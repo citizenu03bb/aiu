@@ -103,7 +103,7 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 | `codex`      | ChatGPT/Codex 5h + weekly quota | none — reads `~/.codex/auth.json` (OAuth) |
 | `openai`     | month-to-date USD spend      | an **Admin** API key (off unless you use the API) |
 | `deepseek`   | remaining balance            | a normal API key |
-| `openrouter` | total spend + remaining credits | a normal API key |
+| `openrouter` | total spend + remaining credits | `aiu login openrouter` (or a normal API key) |
 | `gemini`     | Gemini 5h + weekly quota     | none — the Antigravity desktop app must be open |
 | `mistral`    | monthly Vibe Code + API allowance (€ spent / € included) | the admin.mistral.ai **session cookie** (no API key works) |
 
@@ -201,7 +201,7 @@ can read the file: `chmod 600 ~/.env`.
 
 ```sh
 DEEPSEEK_API_KEY=sk-...
-OPENROUTER_API_KEY=sk-or-...
+OPENROUTER_API_KEY=sk-or-...    # only if you don't use `aiu login openrouter`
 OPENAI_ADMIN_KEY=sk-admin-...   # Costs API needs an ADMIN key, not a normal sk-
 MISTRAL_ADMIN_COOKIE='...'      # only if you don't use `aiu cookie import mistral`; quotes required
 ```
@@ -308,6 +308,46 @@ key_env = "DEEPSEEK_API_KEY"
 ```
 Shows balance from `GET /user/balance` (granted + topped-up).
 
+### openrouter
+Sign in once in the browser, and OpenRouter issues aiu a key of its own:
+
+```sh
+aiu login openrouter                     # --no-browser: only print the address
+aiu config set openrouter.enabled true
+aiu --only openrouter                    # check it
+```
+
+This is OpenRouter's documented [OAuth PKCE](https://openrouter.ai/docs/guides/overview/auth/oauth)
+flow. `aiu` listens once on `127.0.0.1` (a random port, loopback only),
+opens `openrouter.ai/auth` with an S256 code challenge and `key_label=aiu`,
+and prints that address too for a machine without a browser. After you
+authorize it there, OpenRouter sends the browser back to the listener with a
+code; `aiu` exchanges code and verifier at `POST /api/v1/auth/keys` for a user
+API key named *aiu* (it shows in openrouter.ai/settings/keys, where you can
+revoke it). The listener answers only `GET /callback?code=…` with its own
+`Host`, and closes after 5 minutes or on Ctrl-C. The key is stored with
+`secret-tool` (label *aiu openrouter key*, value on stdin) and
+`openrouter.key_cmd` is set to `secret-tool lookup service aiu provider
+openrouter` through `aiu config set` (when the config fails the trust check,
+the command is printed for you to run). The key is never printed. You run it
+yourself: `aiu`, `--json`, `--alert` and the GNOME extension never do.
+
+- It needs `secret-tool` (Debian/Ubuntu: `libsecret-tools`).
+- If `OPENROUTER_API_KEY` is still set in your environment or in `~/.env`,
+  aiu reads it first (`key_env` comes before `key_cmd`); the command says so.
+  Delete it, or `aiu config set openrouter.key_env ""`.
+
+The probe reads [`GET /api/v1/key`](https://openrouter.ai/docs/api/reference/limits),
+which describes the key it is called with. A key with a spending limit shows
+that key's spend (`usage`, today's in the note) and what is left of its limit
+(`limit_remaining`, with its reset period). A key without one (`aiu login`
+asks for none) spends the account's credits: the rows then come from
+`GET /api/v1/credits`, as before (account spend and balance). OpenRouter
+documents that endpoint for management keys; if it turns the key away, only
+the key's own spend is shown. A key `/key` does not describe (a management
+key) falls back to `/credits` too. *Existing users:* a pasted key keeps
+working unchanged, and an unlimited key shows the same two rows as before.
+
 ### gemini
 A Google account's Gemini usage (Antigravity, Google One AI Pro) is a
 **subscription quota**, not pay-per-token API spend, so there's nothing to bill
@@ -365,7 +405,8 @@ project is not affiliated with Anthropic, OpenAI or Google:
   on 127.0.0.1, else Code Assist's `cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota`.
 
 Tokens and keys are read locally at run time and only ever sent to the
-provider they belong to. `aiu` stores no secret, has no telemetry, and makes
+provider they belong to. `aiu` stores no secret (except in the keyring, when
+you run `aiu cookie import` or `aiu login`), has no telemetry, and makes
 no other network call. The `gemini` probe refreshes its access token and
 writes it back to `~/.gemini/oauth_creds.json`, like the Gemini CLI does.
 

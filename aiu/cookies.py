@@ -74,19 +74,34 @@ def _keyring_lookup(*attrs: str) -> bytes | None:
     return out.stdout.removesuffix(b"\n") or None
 
 
-def _keyring_store(value: str) -> None:
-    """Store value under MISTRAL_KEYRING, replacing the previous one. The value
-    goes on stdin: argv can be read by every user through /proc."""
+def keyring_store(value: str, attrs: tuple[str, ...], label: str) -> bool:
+    """Store value under attrs, replacing the previous one; False when the
+    keyring did not take it. The value goes on stdin: argv can be read by every
+    user through /proc. Its stderr is not shown: we don't control what it holds."""
     try:
-        out = subprocess.run([_secret_tool(), "store", f"--label={MISTRAL_KEYRING_LABEL}",
-                              *MISTRAL_KEYRING], input=value.encode(), capture_output=True,
-                             timeout=120)
-        ok = out.returncode == 0
+        out = subprocess.run([_secret_tool(), "store", f"--label={label}", *attrs],
+                             input=value.encode(), capture_output=True, timeout=120)
     except subprocess.TimeoutExpired:
-        ok = False
-    if not ok:  # its stderr is not shown: we don't control what it holds
+        return False
+    return out.returncode == 0
+
+
+def _keyring_store(value: str) -> None:
+    if not keyring_store(value, MISTRAL_KEYRING, MISTRAL_KEYRING_LABEL):
         raise CookieError(tr("the keyring did not store the cookie (is it locked?); "
                              "nothing was changed"))
+
+
+def plain_copy_where(config: dict, var) -> str | None:
+    """Where key_env's variable is still set (the environment or ~/.env), else
+    None. key_env is read before key_cmd: a copy left there would still be used."""
+    if not var or not isinstance(var, str):
+        return None
+    if os.environ.get(var):
+        return tr("your environment")
+    if load_env_file(config).get(var):
+        return os.path.expanduser(os.environ.get("AIU_ENV_FILE", "~/.env"))
+    return None
 
 
 def _read_cookie_db(path: Path, read):
@@ -343,19 +358,11 @@ def cookie_import(path: Path, browser: str, profile: str | None) -> int:
     except (OSError, tomllib.TOMLDecodeError):
         return code
     section = config.get("mistral") if isinstance(config.get("mistral"), dict) else {}
-    # key_env is read before key_cmd: a copy left there would still be used.
     var = section.get("key_env", "MISTRAL_ADMIN_COOKIE")
-    if var and isinstance(var, str):
-        if os.environ.get(var):
-            where = tr("your environment")
-        elif load_env_file(config).get(var):
-            where = os.path.expanduser(os.environ.get("AIU_ENV_FILE", "~/.env"))
-        else:
-            where = None
-        if where:
-            print(tr("{name} is set in {where}, and aiu reads it before key_cmd: delete it there "
-                     "(it is the session in plain text) so the keyring copy is used.",
-                     name=var, where=where), file=sys.stderr)
+    if where := plain_copy_where(config, var):
+        print(tr("{name} is set in {where}, and aiu reads it before key_cmd: delete it there "
+                 "(it is the session in plain text) so the keyring copy is used.",
+                 name=var, where=where), file=sys.stderr)
     if section.get("enabled") is not True:
         print(tr("mistral is off: aiu config set mistral.enabled true"))
     print(tr("Check it with: aiu --only mistral"))
