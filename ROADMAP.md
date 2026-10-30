@@ -215,7 +215,11 @@ tag `v<version>` on `main`.
 
 Released on 2026-10-30.
 
-## Wave 4: after v0.1.0, in parallel
+## Wave 4: done
+
+Merged on 2026-10-30: J in #19 (checked in a headless GNOME Shell 50.1 at
+1280×720 and 1920×1080), K in #18. Not released yet: the next release is
+v0.2.0.
 
 ### J. Panel fits the screen
 
