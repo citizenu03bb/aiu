@@ -1,6 +1,6 @@
 {
   "name": "AI Usage (aiu)",
-  "description": "Your AI subscription quotas and balances (Claude, Codex, Gemini, Mistral, DeepSeek, OpenRouter, OpenAI) in the top bar, with advice on which one to use first.\n\nRequires the aiu command-line tool. Install it first with\nuv tool install git+https://github.com/citizenu03bb/aiu\nor pipx install git+https://github.com/citizenu03bb/aiu\nUntil then, the panel shows this command with a Copy button.\n\nClipboard: the panel writes the install command to the clipboard only when you click Copy command. It never reads the clipboard.\n\nEnglish and French.",
+  "description": "Your AI subscription quotas and balances (Claude, Codex, Gemini, Mistral, DeepSeek, OpenRouter, OpenAI) in the top bar, with advice on which one to use first.\n\nRequires the aiu command-line tool. Install it first with\nuv tool install git+https://github.com/citizenu03bb/aiu\nor pipx install git+https://github.com/citizenu03bb/aiu\nUntil then, the panel shows this command with a Copy button.\n\nPreferences: turn providers on or off and say where aiu finds each key (a variable, a command or a file, never the key itself).\n\nClipboard: the panel writes the install command to the clipboard only when you click Copy command. It never reads the clipboard.\n\nEnglish and French.",
   "uuid": "aiu-indicator@citizenu03bb.github.io",
   "gettext-domain": "aiu-indicator",
   "shell-version": [
@@ -13,6 +13,6 @@
     "51"
   ],
   "version": 1,
-  "version-name": "0.3.1",
+  "version-name": "0.4.0",
   "url": "https://github.com/citizenu03bb/aiu"
 }

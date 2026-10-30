@@ -263,7 +263,10 @@ Released on 2026-10-30, before the first upload to extensions.gnome.org.
 
 Left to the maintainer: upload the v0.3.0 zip to extensions.gnome.org.
 
-## Wave 5: preferences panel, in order (M needs L)
+## Wave 5: done
+
+Merged on 2026-10-30: L in #24, M in #26 (the window checked in a headless
+GNOME Shell 50.1). Released in v0.4.0.
 
 The extension gets a preferences window for aiu's config. aiu stays the only
 program that reads or writes `config.toml`: the extension goes through a new
