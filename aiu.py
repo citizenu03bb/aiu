@@ -1067,6 +1067,90 @@ def advise(rows: list[Row], now: float | None = None) -> int:
     return 0
 
 
+# Desktop notifications go through GNOME's org.gtk.Notifications (what GNotification
+# uses): one app source, one notification id that each run replaces in place, and
+# that an all-clear run removes. Plain notify-send (the fallback) opens a new source
+# per process, so its notifications pile up and can't be withdrawn.
+APP_ID = "io.github.citizenu03bb.aiu"
+NOTIFICATION_ID = "alert"
+NOTIFY_RETRIES = 16  # x 0.5s, only while the .desktop file is brand new
+DESKTOP_ENTRY = f"""[Desktop Entry]
+Type=Application
+Name=aiu
+Comment=AI subscription quotas and routing advice
+Exec=sh -c "aiu --advise; read -r _"
+Terminal=true
+Icon=utilities-system-monitor-symbolic
+NoDisplay=true
+X-GNOME-UsesNotifications=true
+"""
+
+
+def _desktop_entry_path() -> Path:
+    data = os.environ.get("XDG_DATA_HOME") or os.path.expanduser("~/.local/share")
+    return Path(data) / "applications" / f"{APP_ID}.desktop"
+
+
+def _gvariant_str(s: str) -> str:
+    return "'" + s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
+
+
+def _gtk_notifications(method: str, *args: str) -> bool:
+    """Call org.gtk.Notifications; False when unavailable (not GNOME, unknown app...)."""
+    if not shutil.which("gdbus"):
+        return False
+    try:
+        p = subprocess.run(["gdbus", "call", "--session", "--dest", "org.gtk.Notifications",
+                            "--object-path", "/org/gtk/Notifications",
+                            "--method", f"org.gtk.Notifications.{method}", APP_ID, *args],
+                           capture_output=True, text=True, timeout=5)
+        return p.returncode == 0
+    except Exception:
+        return False
+
+
+def ensure_desktop_entry() -> None:
+    """GNOME only accepts notifications from an app it knows, and takes a few seconds
+    to index a new .desktop file, so main() writes it early on every run."""
+    entry = _desktop_entry_path()
+    if entry.is_file():
+        return
+    try:
+        entry.parent.mkdir(parents=True, exist_ok=True)
+        entry.write_text(DESKTOP_ENTRY)
+    except OSError:
+        pass
+
+
+def _notify(title: str, body: str) -> None:
+    """Show (or update in place) aiu's single desktop notification."""
+    ensure_desktop_entry()
+    entry = _desktop_entry_path()
+    try:
+        fresh = time.time() - entry.stat().st_mtime < 15
+    except OSError:
+        fresh = False
+    payload = (f"{{'title': <{_gvariant_str(title)}>, 'body': <{_gvariant_str(body)}>, "
+               f"'priority': <'normal'>}}")
+    # A just-written .desktop file takes GNOME a moment to index: retry briefly.
+    for attempt in range(NOTIFY_RETRIES if fresh else 1):
+        if attempt:
+            time.sleep(0.5)
+        if _gtk_notifications("AddNotification", NOTIFICATION_ID, payload):
+            return
+    if shutil.which("notify-send"):
+        try:
+            subprocess.run(["notify-send", "-a", "aiu", title, body], timeout=5)
+        except Exception:
+            pass
+
+
+def _withdraw_notification() -> None:
+    """Remove a previous alert once nothing is wrong any more (no-op if none)."""
+    if _desktop_entry_path().is_file():
+        _gtk_notifications("RemoveNotification", NOTIFICATION_ID)
+
+
 def alert(rows: list[Row], notify: bool = True) -> int:
     """Warn about long-window quota projected to reset unused or to run dry long
     before its reset, and about expiring credits. Quiet-friendly for cron: prints only warnings (and a single OK line otherwise).
@@ -1101,17 +1185,14 @@ def alert(rows: list[Row], notify: bool = True) -> int:
     if warns:
         for w in warns:
             print(w)
-        # best-effort desktop notification so it lands without watching the terminal;
-        # the title carries the snapshot time so a notification left in the tray
-        # can't pass for current data
-        if notify and shutil.which("notify-send"):
+        # The title carries the snapshot time, so the notification can't pass for
+        # current data even if it sits in the tray.
+        if notify:
             taken = datetime.fromtimestamp(now).strftime("%H:%M")
-            try:
-                subprocess.run(["notify-send", "-a", "aiu", f"Quota AI · relevé {taken}",
-                                "\n".join(warns)], timeout=5)
-            except Exception:
-                pass
+            _notify(f"Quota AI · relevé {taken}", "\n".join(warns))
         return 1
+    if notify:
+        _withdraw_notification()
     print("✓ rien ne sera perdu au reset ni à sec longtemps")
     return 0
 
@@ -1132,6 +1213,8 @@ def main() -> int:
     args = ap.parse_args()
 
     load_env_file()
+    if args.alert:
+        ensure_desktop_entry()  # before probing, so GNOME has indexed it by notify time
     config = load_config(Path(os.path.expanduser(args.config)))
     only = set(s.strip() for s in args.only.split(",")) if args.only else None
     rows = collect(config, only)

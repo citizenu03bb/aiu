@@ -46,11 +46,18 @@ and [`consult.py`](consult.py) `auto` read instead of keeping their own logic.
 `aiu --alert` flags long windows projected to lose ≥5% of their cap at a reset
 within 48h, windows projected to sit empty ≥24h before their reset, promo
 credits with ≥25% unspent within 14 days of expiry, and probe errors, and
-fires a `notify-send` desktop notification.
+shows them in **one** desktop notification. On GNOME it goes through
+`org.gtk.Notifications`: each run replaces that notification in place (its
+title gives the snapshot time), and a run with nothing to report withdraws it,
+so stale warnings never pile up. For this `aiu --alert` writes
+`~/.local/share/applications/io.github.citizenu03bb.aiu.desktop` (hidden from
+the app grid); it also puts **aiu** in Settings → Notifications, where you can
+mute it or turn off its banners. Clicking the notification opens
+`aiu --advise` in a terminal. Elsewhere it falls back to plain `notify-send`.
 
 To run the alert automatically (twice daily, with desktop notifications), a
 **systemd --user timer** is the right tool — it runs inside your graphical
-session so `notify-send` has the DBUS it needs (plain cron does not):
+session so notifications have the D-Bus session they need (plain cron does not):
 ```ini
 # ~/.config/systemd/user/aiu-alert.service
 [Service]

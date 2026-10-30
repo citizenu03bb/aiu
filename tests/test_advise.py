@@ -41,12 +41,27 @@ def frozen_clock(monkeypatch):
     monkeypatch.setattr(aiu.time, "time", lambda: NOW)
 
 
+class Calls(list):
+    pass
+
+
 @pytest.fixture(autouse=True)
-def no_desktop(monkeypatch):
-    """Synthetic rows must never reach the real desktop: record any subprocess call."""
-    calls = []
-    monkeypatch.setattr(aiu.subprocess, "run", lambda *a, **k: calls.append(a[0]))
+def no_desktop(monkeypatch, tmp_path):
+    """Synthetic rows must never reach the real desktop: record subprocess calls
+    instead of running them, and keep the .desktop file out of the real home."""
+    calls = Calls()
+
+    def fake_run(argv, **_kw):
+        calls.append(argv)
+        return aiu.subprocess.CompletedProcess(argv, fake_run.returncode, "", "")
+
+    fake_run.returncode = 0
+    monkeypatch.setattr(aiu.subprocess, "run", fake_run)
+    monkeypatch.setattr(aiu.time, "sleep", lambda _s: None)
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    calls.run = fake_run
     return calls
+
 
 
 def statuses(rows):
@@ -122,12 +137,40 @@ def test_alert_all_clear(capsys):
     assert aiu.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)], notify=False) == 0
 
 
-def test_notification_title_carries_snapshot_time(monkeypatch, no_desktop):
-    monkeypatch.setattr(aiu.shutil, "which", lambda _: "/usr/bin/notify-send")
+TAKEN = aiu.datetime.fromtimestamp(NOW).strftime("%H:%M")
+
+
+def test_notification_replaces_one_gtk_notification(monkeypatch, no_desktop, tmp_path):
+    monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
     aiu.alert(SNAPSHOT)
     (argv,) = no_desktop
-    taken = aiu.datetime.fromtimestamp(NOW).strftime("%H:%M")
-    assert argv[:4] == ["notify-send", "-a", "aiu", f"Quota AI · relevé {taken}"]
+    assert argv[:9] == ["gdbus", "call", "--session", "--dest", "org.gtk.Notifications",
+                        "--object-path", "/org/gtk/Notifications", "--method",
+                        "org.gtk.Notifications.AddNotification"]
+    assert argv[9:11] == [aiu.APP_ID, aiu.NOTIFICATION_ID]   # same id every run = replace
+    assert f"'title': <'Quota AI · relevé {TAKEN}'>" in argv[11]
+    # GNOME only accepts notifications from an app it knows
+    assert (tmp_path / "applications" / f"{aiu.APP_ID}.desktop").is_file()
+
+
+def test_falls_back_to_notify_send_outside_gnome(monkeypatch, no_desktop):
+    monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
+    no_desktop.run.returncode = 1          # e.g. no org.gtk.Notifications service
+    aiu.alert(SNAPSHOT)
+    assert no_desktop[-1][:4] == ["notify-send", "-a", "aiu", f"Quota AI · relevé {TAKEN}"]
+
+
+def test_all_clear_withdraws_the_previous_alert(monkeypatch, no_desktop):
+    monkeypatch.setattr(aiu.shutil, "which", lambda name: f"/usr/bin/{name}")
+    aiu.alert(SNAPSHOT)                    # creates the .desktop entry
+    no_desktop.clear()
+    assert aiu.alert([quota("codex", "Weekly Limit", .5, WK / 2, WK)]) == 0
+    (argv,) = no_desktop
+    assert argv[8:] == ["org.gtk.Notifications.RemoveNotification", aiu.APP_ID, aiu.NOTIFICATION_ID]
+
+
+def test_gvariant_string_escaping():
+    assert aiu._gvariant_str("l'été\\x\nok") == "'l\\'été\\\\x\\nok'"
 
 
 def test_advise_renders_without_error(capsys):
