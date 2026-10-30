@@ -444,6 +444,25 @@ and a `uv tool install` from the branch all run.
 **Done when:** CI is green, and editing a field name on either side alone
 makes a test fail.
 
+### Q. Early fast pace means conserve (after O)
+
+**Goal:** a window that is clearly running dry is flagged before 10% of it
+has passed, instead of "unknown pace".
+
+- Today, under 10% elapsed and with no history, `_project` returns no pace.
+  Seen on 2026-10-31: Claude weekly at 12% used after 3.3% of the window,
+  about 3.6× the sustainable pace, still shown as "unknown pace".
+- Rule: under 10% elapsed, with no history, when used ≥ 2 × the elapsed
+  fraction and used ≥ 5%, the window is `conserve`, with an "early, fast
+  pace" hint. Slow early use stays unknown (it proves nothing about surplus).
+  History, when present, keeps priority.
+- Text through `tr()` with French; the panel badge follows the status.
+
+**Files:** `aiu/routing.py` (or wherever O puts `_project`), `tests/`,
+`docs/routing-algorithms.md`.
+**Done when:** CI is green, with tests for early-fast (conserve), early-slow
+(unknown) and history-present (history wins).
+
 ## Later
 
 - **`claude_cmd` from an untrusted config.** `aiu config set` refuses it like
