@@ -582,14 +582,16 @@ def _gemini_family(model_id: str) -> tuple[str, str]:
 
 
 def _parse_summary_response(data: dict) -> list[Row] | None:
-    groups = data.get("response", {}).get("groups", [])
+    # A local reply is checked like any server's: a wrong shape is no summary.
+    resp = data.get("response") if isinstance(data, dict) else None
+    groups = resp.get("groups") if isinstance(resp, dict) else None
     rows: list[Row] = []
-    for g in groups:
-        if g.get("displayName") == "Gemini Models":
-            buckets = g.get("buckets", [])
-            for b in buckets:
-                frac = b.get("remainingFraction")
-                if frac is None:
+    for g in groups if isinstance(groups, list) else []:
+        if isinstance(g, dict) and g.get("displayName") == "Gemini Models":
+            buckets = g.get("buckets")
+            for b in buckets if isinstance(buckets, list) else []:
+                frac = b.get("remainingFraction") if isinstance(b, dict) else None
+                if isinstance(frac, bool) or not isinstance(frac, (int, float)) or frac != frac:
                     continue
                 win = b.get("window", "")
                 bid = b.get("bucketId", "")
@@ -600,9 +602,11 @@ def _parse_summary_response(data: dict) -> list[Row] | None:
                     label = "Weekly Limit"
                     secs = 604800
                 else:
-                    label = b.get("displayName", "")
+                    label = str(b.get("displayName") or "")
                     secs = None
                 reset = b.get("resetTime")
+                if not isinstance(reset, str):
+                    reset = None
                 reset_h = _humanize_reset(reset) if reset else None
                 rows.append(Row("gemini", label, "quota",
                                 used=max(0.0, min(1.0, 1.0 - float(frac))),
@@ -620,25 +624,72 @@ def _parse_summary_response(data: dict) -> list[Row] | None:
 def _query_local_quota_summary() -> list[Row] | None:
     """Query Antigravity's local language server for quota summary.
     Antigravity IDE runs a local language server on localhost and requires the
-    x-codeium-csrf-token header matching its --csrf_token command-line argument."""
+    x-codeium-csrf-token header matching its --csrf_token command-line argument.
+    Any local user can listen on loopback, so the token only goes to listening
+    sockets that are ours and held by an Antigravity language_server of ours."""
     endpoint = "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
+    uid = os.getuid()
+    # /proc/net/tcp{,6} local address -> the host a request must use to reach it.
+    # Anything else (another interface, a v6-only wildcard) may be shadowed on
+    # loopback by someone else's socket, so it is never queried.
+    loopback = {
+        "0100007F": "127.0.0.1", "00000000": "127.0.0.1",
+        "00000000000000000000000001000000": "[::1]", "00000000000000000000000000000000": "[::1]",
+        "0000000000000000FFFF00000100007F": "127.0.0.1",
+    }
 
-    # 1. Discover running language_server instances, their CSRF tokens and listening ports
-    candidates: list[tuple[str | None, int]] = []
-    seen: set[tuple[str | None, int]] = set()
+    def owned(pid: str) -> bool:
+        # every uid of the process (real, effective, saved, fs) is ours
+        try:
+            with open(f"/proc/{pid}/status", "r") as f:
+                for line in f:
+                    if line.startswith("Uid:"):
+                        return all(int(u) == uid for u in line.split()[1:])
+        except Exception:
+            pass
+        return False
+
+    def antigravity_server(pid: str) -> bool:
+        # the executable, which unlike argv the process can't rewrite, is a
+        # language_server binary inside an Antigravity install
+        try:
+            exe = os.readlink(f"/proc/{pid}/exe").removesuffix(" (deleted)")
+        except Exception:
+            return False
+        dirs, _, name = exe.lower().rpartition("/")
+        return name.startswith("language_server") and "antigravity" in dirs
+
+    def main_log_csrf() -> str | None:
+        log_path = os.path.expanduser("~/.config/Antigravity/logs/main.log")
+        try:
+            with open(log_path, "r", errors="ignore") as f:
+                m = re.findall(r"--csrf_token\s+([0-9a-fA-F-]+)", f.read())
+            return m[-1] if m else None
+        except Exception:
+            return None
+
+    # 1. Discover our Antigravity language servers, their CSRF tokens and listening ports
+    candidates: list[tuple[str | None, str, int]] = []
+    seen: set[tuple[str, int]] = set()
+    log_read, log_csrf = False, None
 
     for p in glob.glob("/proc/[0-9]*/cmdline"):
         try:
-            with open(p, "rb") as f:
-                raw = f.read()
-            parts = raw.split(b"\0")
-            if not parts or not any(b"language_server" in part for part in parts):
+            pid = p.split("/")[2]
+            if not owned(pid) or not antigravity_server(pid):
                 continue
-            pid = int(p.split("/")[2])
+            with open(p, "rb") as f:
+                parts = f.read().split(b"\0")
             csrf = None
             for i, part in enumerate(parts):
                 if part == b"--csrf_token" and i + 1 < len(parts):
                     csrf = parts[i + 1].decode("utf-8", errors="ignore")
+            if not csrf:
+                # No token on the cmdline: fall back to the one Antigravity logged
+                # when it spawned its server, for this server's ports only.
+                if not log_read:
+                    log_read, log_csrf = True, main_log_csrf()
+                csrf = log_csrf
 
             inodes = set()
             fd_dir = f"/proc/{pid}/fd"
@@ -658,48 +709,22 @@ def _query_local_quota_summary() -> list[Row] | None:
                     with open(netpath, "r") as f:
                         for line in f.readlines()[1:]:
                             cols = line.strip().split()
-                            if len(cols) >= 10 and cols[3] == "0A" and cols[9] in inodes:
-                                port = int(cols[1].split(":")[1], 16)
-                                if (csrf, port) not in seen:
-                                    seen.add((csrf, port))
-                                    candidates.append((csrf, port))
+                            if (len(cols) < 10 or cols[3] != "0A" or cols[7] != str(uid)
+                                    or cols[9] not in inodes):
+                                continue
+                            ip_hex, port_hex = cols[1].split(":")
+                            host, port = loopback.get(ip_hex.upper()), int(port_hex, 16)
+                            if host and (host, port) not in seen:
+                                seen.add((host, port))
+                                candidates.append((csrf, host, port))
                 except Exception:
                     pass
         except Exception:
             continue
 
-    # Fallback CSRF token from Antigravity main.log if cmdline inspection was incomplete
-    fallback_csrf = None
-    log_path = os.path.expanduser("~/.config/Antigravity/logs/main.log")
-    if os.path.isfile(log_path):
-        try:
-            with open(log_path, "r", errors="ignore") as f:
-                txt = f.read()
-            m = re.findall(r"--csrf_token\s+([0-9a-fA-F-]+)", txt)
-            if m:
-                fallback_csrf = m[-1]
-        except Exception:
-            pass
-
-    # Fallback listening ports on 127.0.0.1 if none were resolved to a PID
-    if not candidates and fallback_csrf:
-        for netpath in ("/proc/net/tcp", "/proc/net/tcp6"):
-            try:
-                with open(netpath, "r") as f:
-                    for line in f.readlines()[1:]:
-                        cols = line.strip().split()
-                        if len(cols) >= 4 and cols[3] == "0A":
-                            ip_hex, port_hex = cols[1].split(":")
-                            if ip_hex in ("0100007F", "00000000"):
-                                port = int(port_hex, 16)
-                                if (fallback_csrf, port) not in seen:
-                                    seen.add((fallback_csrf, port))
-                                    candidates.append((fallback_csrf, port))
-            except Exception:
-                pass
-
-    # 2. Query candidates
-    for csrf, port in candidates:
+    # 2. Query candidates. https is verified like any other host: an Antigravity
+    # server with a self-signed certificate is skipped, never trusted blindly.
+    for csrf, host, port in candidates:
         headers = {
             "Content-Type": "application/json",
             "Connect-Protocol-Version": "1",
@@ -708,9 +733,9 @@ def _query_local_quota_summary() -> list[Row] | None:
             headers["x-codeium-csrf-token"] = csrf
 
         for scheme in ("http", "https"):
-            url = f"{scheme}://127.0.0.1:{port}{endpoint}"
+            url = f"{scheme}://{host}:{port}{endpoint}"
             try:
-                r = httpx.post(url, json={}, headers=headers, verify=False, timeout=0.5)
+                r = httpx.post(url, json={}, headers=headers, timeout=0.5)
                 if r.status_code == 200:
                     rows = _parse_summary_response(r.json())
                     if rows:
@@ -1007,14 +1032,23 @@ def render_html(rows: list[Row], path: Path) -> None:
         if r.kind == "credit" and r.used is not None:
             return f"{r.used:,.2f}/{r.limit:,.0f} {r.unit} left"
         return "—" if r.kind != "error" else "err"
+    # Provider text (plan names, credit keys, notes, a local server's reply) is
+    # untrusted: every value is escaped, and the CSP blocks scripts regardless.
+    from html import escape
+
+    def esc(v) -> str:
+        return escape(str(v), quote=True)
     lines = ["<table border=1 cellpadding=6 style='border-collapse:collapse;font-family:sans-serif'>",
              "<tr><th>Provider</th><th>Metric</th><th>Usage</th><th>Resets / note</th></tr>"]
     for r in rows:
         tail = " ".join(x for x in (r.reset or "", r.note) if x)
-        lines.append(f"<tr><td>{r.provider}</td><td>{r.metric}</td>"
-                     f"<td align=right>{cell(r)}</td><td>{tail}</td></tr>")
+        lines.append(f"<tr><td>{esc(r.provider)}</td><td>{esc(r.metric)}</td>"
+                     f"<td align=right>{esc(cell(r))}</td><td>{esc(tail)}</td></tr>")
     lines.append("</table>")
-    path.write_text("<!doctype html><meta charset=utf-8>\n" + "\n".join(lines))
+    path.write_text("<!doctype html><meta charset=utf-8>\n"
+                    "<meta http-equiv=\"Content-Security-Policy\" "
+                    "content=\"default-src 'none'; style-src 'unsafe-inline'\">\n"
+                    + "\n".join(lines))
     print(f"[aiu] wrote {path}", file=sys.stderr)
 
 
