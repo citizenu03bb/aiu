@@ -213,11 +213,41 @@ with every other task, and A's tests guard it against regressions.
 To cut the next release: bump `__version__` and `version-name`, merge, then
 tag `v<version>` on `main`.
 
+Released on 2026-10-30.
+
+## Wave 4: after v0.1.0, in parallel
+
+### J. Panel fits the screen
+
+**Goal:** the extension's menu never grows taller than the desktop.
+
+- With every provider enabled, the menu now overflows the screen height:
+  its bottom items (the terminal and web links) end up off-screen.
+- Put the data section (`_dataSection` in `menuView.js`) in a scroll view
+  capped to the monitor's work area, keeping the header and the bottom items
+  always visible; consider a more compact row layout (one line per metric)
+  as well.
+- Text stays plain `St.Label({ text })` (security review I4).
+
+**Files:** `gnome-extension/menuView.js`, `gnome-extension/stylesheet.css`,
+`gnome-extension/tests/`, `gnome-extension/po/` if strings change.
+**Done when:** CI is green and, with a snapshot of 20+ rows on a 1080p
+screen, the whole menu fits and the data section scrolls.
+
+### K. Snapshot history
+
+**Goal:** a pace right after a reset, instead of "unknown pace".
+
+- Keep a small local history of readings (bounded size, user-only file
+  permissions) and estimate the pace from it when the current window has
+  less than 10% elapsed (SPARE's main idea in docs/routing-algorithms.md).
+- SURPLUS-EDF stays the routing rule; only the pace estimate changes.
+
+**Files:** `aiu.py` (pace and storage), `tests/`, `docs/routing-algorithms.md`.
+**Done when:** CI is green and `--advise` shows a projected pace right after a
+reset when the history holds the previous window.
+
 ## Later
 
-- **Snapshot history.** Keep a small local history of readings so the pace
-  can be estimated right after a reset, when the current window has less than
-  10% elapsed and is shown as "unknown pace" (SPARE's main idea in
-  docs/routing-algorithms.md).
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
   starts to matter which kind of work gets the spare quota.
