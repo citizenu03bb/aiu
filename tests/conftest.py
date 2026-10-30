@@ -2,6 +2,7 @@
 """Offline harness shared by every test: a throwaway home, no provider keys in
 the environment, no CLI on PATH, and an HTTP layer that only answers the calls
 a test scripted. Any other call fails the test instead of reaching the network."""
+import os
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,7 +22,9 @@ PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
 def home(tmp_path, monkeypatch):
     """~ is an empty tmp dir; PATH holds only tmp/bin, and tmp/bin/claude is the
     only place aiu looks for `claude`, so no real `claude` or `gemini` is found
-    unless a test puts a fake one there."""
+    unless a test puts a fake one there. The umask is 022 whatever the user's is,
+    so permission tests see the same modes locally and in CI."""
+    umask = os.umask(0o022)
     home = tmp_path / "home"
     (tmp_path / "bin").mkdir()
     home.mkdir()
@@ -32,7 +35,8 @@ def home(tmp_path, monkeypatch):
     # Resolved at import time from the real home.
     monkeypatch.setattr(aiu, "GEMINI_CREDS_PATH", home / ".gemini" / "oauth_creds.json")
     monkeypatch.setattr(aiu, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))
-    return home
+    yield home
+    os.umask(umask)
 
 
 class FakeHTTP:
