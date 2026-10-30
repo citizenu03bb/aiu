@@ -438,9 +438,9 @@ def test_env_file_override_and_missing(monkeypatch, home, tmp_path):
     assert aiu.load_env_file({"p": {"key_env": "AIU_FROM_OTHER"}}) == {}  # no file: silently nothing
 
 
-def test_main_exports_only_the_gemini_client(monkeypatch, home, tmp_path, capsys):
-    """GEMINI_CLIENT_ID / _SECRET keep working from ~/.env (the Gemini code reads
-    the environment); the provider keys stay out of os.environ."""
+def test_main_exports_nothing_from_env_file(monkeypatch, home, tmp_path, capsys):
+    """GEMINI_CLIENT_ID / _SECRET keep working from ~/.env, and no ~/.env value,
+    provider key or Gemini client, reaches os.environ."""
     forget(monkeypatch, "GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY")
     monkeypatch.setattr(aiu, "ENV_FILE", {})
     config = tmp_path / "cfg" / "config.toml"
@@ -453,9 +453,9 @@ def test_main_exports_only_the_gemini_client(monkeypatch, home, tmp_path, capsys
     (home / ".env").chmod(0o600)
     monkeypatch.setattr(sys, "argv", ["aiu", "--config", str(config), "--only", "none", "--json"])
     assert aiu.main() == 0
-    assert os.environ["GEMINI_CLIENT_ID"] == "id.apps.googleusercontent.com"
-    assert os.environ["GEMINI_CLIENT_SECRET"] == "s3cret"
-    assert "DEEPSEEK_API_KEY" not in os.environ
+    for k in ("GEMINI_CLIENT_ID", "GEMINI_CLIENT_SECRET", "DEEPSEEK_API_KEY"):
+        assert k not in os.environ
+    assert aiu._gemini_oauth_client() == ("id.apps.googleusercontent.com", "s3cret")
     assert aiu.ENV_FILE["DEEPSEEK_API_KEY"] == "sk-ds"
 
 
