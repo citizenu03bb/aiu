@@ -86,6 +86,7 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 | `deepseek`   | remaining balance            | a normal API key |
 | `openrouter` | total spend + remaining credits | a normal API key |
 | `gemini`     | Code Assist quota per model family | none — reads `~/.gemini/oauth_creds.json` (OAuth) |
+| `mistral`    | monthly Vibe Code + API allowance (€ spent / € included) | the admin.mistral.ai **session cookie** (no API key works) |
 
 **`codex`** covers OpenAI usage that runs on a ChatGPT subscription (the Codex
 CLI and Pi both sign in via ChatGPT OAuth — no API key). It's a quota, not API
@@ -93,8 +94,23 @@ spend, so the OpenAI Costs API never sees it; `aiu` reads the OAuth token from
 `~/.codex/auth.json` and polls `chatgpt.com/backend-api/wham/usage`. If you *also*
 hit the OpenAI API directly, enable `openai` separately.
 
-**Can't be polled** (verified June 2026): Cohere and Mistral expose no aggregate
-usage/spend API (dashboard only; Mistral's `vibe` CLI isn't even a thing here).
+**`mistral`** reports the two allowances every Mistral plan includes, Free
+included: €8.5/month for Vibe Code and €8.5/month for API/Studio, both reset on
+the 1st of the calendar month (local time), not on the renewal date. There is
+no public usage API, and API keys are rejected (verified Oct 2026: the Vibe key
+only opens `/api/vibe/whoami`). `aiu` calls the same tRPC endpoints as the
+console's Usage page (`usage.costBreakdown` for tokens per billing metric,
+`usage.prices` for €/token) and multiplies them; this matches the dashboard's
+"Total Estimated Cost" to the cent. Setup: in admin.mistral.ai, DevTools →
+Network → any `/api/local-trpc/` request → copy the whole `Cookie` request
+header into `MISTRAL_ADMIN_COOKIE`, in single quotes (the `aiu` wrapper sources
+`~/.env` with bash, and the cookie contains `;`), then set `enabled = true`.
+When the session expires the row says "session rejected": copy it again.
+Vibe's local session logs (`~/.vibe/logs`) are not a substitute, because they
+undercount the server's token totals by roughly 3×.
+
+**Can't be polled** (verified June 2026): Cohere exposes no aggregate
+usage/spend API (dashboard only).
 The Gemini CLI's `/stats` is REPL-only and per-session, not account quota.
 HuggingFace `whoami-v2` gives plan status (free/PRO) but no spend counter.
 `gcloud` isn't installed. None of these yield a scriptable usage number without
@@ -111,6 +127,7 @@ lines work. Add whatever you have:
 DEEPSEEK_API_KEY=sk-...
 OPENROUTER_API_KEY=sk-or-...
 OPENAI_ADMIN_KEY=sk-admin-...   # Costs API needs an ADMIN key, not a normal sk-
+MISTRAL_ADMIN_COOKIE='...'      # whole Cookie header from admin.mistral.ai; quotes required, it expires
 ```
 
 Each provider is enabled with `enabled = true` in the config. Keys are resolved

@@ -11,6 +11,7 @@ const DISPLAY_NAMES = {
     deepseek: 'DeepSeek',
     openrouter: 'OpenRouter',
     openai: 'OpenAI',
+    mistral: 'Mistral',
 };
 
 export function displayName(provider) {
