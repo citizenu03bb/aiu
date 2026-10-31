@@ -204,19 +204,27 @@ def config_trust_problems(path: Path) -> list[str]:
     return unsafe
 
 
+def runs_code(option: str) -> bool:
+    """Whether an option makes aiu run a program: every `*_cmd` (key_cmd, and
+    each vendor client's binary). The extension's aiuConfig.js follows the same rule."""
+    return option.endswith("_cmd")
+
+
 def load_config(path: Path) -> dict:
     """Read the config, writing the template on first run. Like OpenSSH, ignore
-    every key_cmd when config_trust_problems finds any."""
+    every option that runs a program when config_trust_problems finds any."""
     ensure_config(path)
     with open(path, "rb") as f:
         config = tomllib.load(f)
     unsafe = config_trust_problems(path)
-    cmds = [name for name, s in config.items() if isinstance(s, dict) and "key_cmd" in s]
+    cmds = [(name, opt) for name, s in config.items() if isinstance(s, dict)
+            for opt in s if runs_code(opt)]
     if unsafe and cmds:
-        print(tr("[aiu] key_cmd ignored for {names}: {reasons}",
-                 names=", ".join(cmds), reasons="; ".join(unsafe)), file=sys.stderr)
-        for name in cmds:
-            del config[name]["key_cmd"]
+        print(tr("[aiu] ignored, since the config is not safe: {options} ({reasons})",
+                 options=", ".join(f"{n}.{o}" for n, o in cmds), reasons="; ".join(unsafe)),
+              file=sys.stderr)
+        for name, opt in cmds:
+            del config[name][opt]
     return config
 
 
@@ -225,9 +233,6 @@ CONFIG_OPTIONS = {p.NAME: p.OPTIONS for p in REGISTRY}
 # What `aiu config set` prints when an option is turned on: provider.option -> text.
 CONFIG_NOTICES = {f"{p.NAME}.{name}": text for p in REGISTRY
                   for name, text in getattr(p, "NOTICES", {}).items()}
-# Options that make aiu run a program: only set in a config that passes the
-# trust check (an empty value, which turns them off, is always allowed).
-CONFIG_RUNS_CODE = ("key_cmd", "claude_cmd")
 _VAR_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 _TOML_HEADER_RE = re.compile(r"\s*\[(\[?)\s*(.+?)\s*\]\]?\s*(?:#.*)?")
 _TOML_COMMENT_RE = re.compile(r"\s*(?:#.*)?")
@@ -380,7 +385,9 @@ def config_set(path: Path, option: str, raw: str) -> None:
     target = Path(os.path.realpath(path))  # a symlinked config stays a symlink
     if target.stat().st_uid != os.getuid():
         raise ConfigError(tr("{path} is not yours", path=path))
-    if value and name in CONFIG_RUNS_CODE and (problems := config_trust_problems(path)):
+    # A program to run is only set in a config that passes the trust check
+    # (an empty value, which turns it off, is always allowed).
+    if value and runs_code(name) and (problems := config_trust_problems(path)):
         raise ConfigError(tr("{option} refused: {reasons}", option=option,
                              reasons="; ".join(problems)))
     # Under a lock shared by every aiu config run: two quick toggles from the
@@ -421,7 +428,8 @@ def _config_value_of(path: Path, option: str):
 
 def config_snapshot(path: Path) -> dict:
     """The config as `aiu config show --json` prints it: each provider's options
-    with their value and whether the file sets it, and whether key_cmd may run."""
+    with their value and whether the file sets it, and whether the options that
+    run a program (`*_cmd`) may: `key_cmd_allowed` keeps its schema 1 name."""
     ensure_config(path)
     try:
         with open(path, "rb") as f:
@@ -449,7 +457,8 @@ def render_config(snap: dict) -> None:
 
     print(tr("Config: {path}", path=snap["path"]))
     if snap["key_cmd_problems"]:
-        print(tr("key_cmd is ignored: {reasons}", reasons="; ".join(snap["key_cmd_problems"])))
+        print(tr("key_cmd and the other *_cmd options are ignored: {reasons}",
+                 reasons="; ".join(snap["key_cmd_problems"])))
     head = (tr("Provider"), tr("Option"), tr("Value"), tr("Source"))
     rows = [(provider, name, show(o["value"]), tr("file") if o["source"] == "file" else tr("default"))
             for provider, p in snap["providers"].items() for name, o in p["options"].items()]

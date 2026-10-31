@@ -25,8 +25,13 @@ export const REFRESH_MAX_SECONDS = 86400;
 /** `aiu config` reads a small file: it answers in well under a second. */
 export const CONFIG_TIMEOUT_SECONDS = 15;
 
-/** Options that make aiu run a program: read-only when the config fails aiu's trust check. */
-const RUNS_CODE = ['key_cmd', 'claude_cmd'];
+/**
+ * Whether an option makes aiu run a program: every `*_cmd`, as `runs_code` in
+ * aiu/config.py. Read-only when the config fails aiu's trust check.
+ */
+export function runsCode(option) {
+    return option.endsWith('_cmd');
+}
 
 /** Field titles, by option; any other option aiu lists shows under its own name. */
 const OPTION_TITLES = {
@@ -34,6 +39,8 @@ const OPTION_TITLES = {
     key_cmd: N_('Command that prints the key'),
     key_file: N_('File that holds the key'),
     claude_cmd: N_('claude program'),
+    codex_cmd: N_('codex program'),
+    agy_cmd: N_('agy program'),
     read_token: N_('Read the claude sign-in token'),
     vibe_allowance_eur: N_('Vibe allowance (EUR)'),
     api_allowance_eur: N_('API allowance (EUR)'),
@@ -76,7 +83,7 @@ export class SchemaError extends Error {}
 /**
  * `aiu config show --json` as the window lays it out: one entry per provider,
  * in aiu's order, with its `enabled` value, the text fields it takes
- * (key sources, claude_cmd, Mistral's allowances) and its other switches
+ * (key sources, the vendor programs (`*_cmd`), Mistral's allowances) and its other switches
  * (claude's read_token). Throws on anything else, a SchemaError for an
  * unknown schema.
  */
@@ -99,7 +106,7 @@ export function parseConfigShow(text) {
                 type: o.type,
                 text: valueText(o.value),
                 fromFile: o.source === 'file',
-                editable: keyCmdAllowed || !RUNS_CODE.includes(name),
+                editable: keyCmdAllowed || !runsCode(name),
             }));
         const switches = Object.entries(options)
             .filter(([name, o]) => name !== 'enabled' && o && o.type === 'bool')

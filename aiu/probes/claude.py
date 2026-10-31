@@ -8,18 +8,16 @@ from __future__ import annotations
 
 import json
 import os
-import subprocess
-import sys
 import time
 from pathlib import Path
 
 import httpx
 
-from aiu.i18n import tr
+from aiu.clis import find_cli, run_cli
 from aiu.probes.common import (_humanize_reset, _humanize_reset_unix, _iso_epoch, _json_object,
                                _malformed_note, _network_note)
 from aiu.rows import Row
-from aiu.util import _writable_by_others, state_dir
+from aiu.util import state_dir
 
 
 ANTHROPIC_USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
@@ -72,12 +70,9 @@ def _refresh_claude_token(cfg: dict | None = None) -> bool:
     Clean environment: a host Claude session's variables (ANTHROPIC_BASE_URL,
     host-managed auth) must not steer the child.
 
-    The binary is never taken from PATH (gnome-shell's, when run from the
-    extension): only `claude_cmd` from the [claude] config, or else the first
-    known install location. It is resolved once to its real path, skipped when
-    someone else can write it or its directory, and that exact file is run.
-    A failed run is not retried for CLAUDE_REFRESH_BACKOFF seconds.
-    It can race an interactive `claude` over the same refresh token; the
+    Which binary runs, and how, is aiu.clis: `claude_cmd` from the [claude]
+    config, or else the first of CLAUDE_LOCATIONS, never PATH. A failed run
+    is not retried for CLAUDE_REFRESH_BACKOFF seconds. It can race an interactive `claude` over the same refresh token; the
     backoff keeps that to one attempt per stale period."""
     marker = Path(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache")) \
         / "aiu" / "claude-refresh-failed"
@@ -86,37 +81,11 @@ def _refresh_claude_token(cfg: dict | None = None) -> bool:
             return False
     except OSError:
         pass
-    configured = (cfg or {}).get("claude_cmd")
-    candidates = [configured] if configured else CLAUDE_LOCATIONS
-    exe = None
-    for c in candidates:
-        path = Path(os.path.expanduser(str(c)))
-        real = Path(os.path.realpath(path))
-        if not (real.is_file() and os.access(real, os.X_OK)):
-            if configured:
-                print(tr("aiu: claude_cmd {path} is not an executable file", path=path),
-                      file=sys.stderr)
-            continue
-        # The link, its target and both directories: none writable by others.
-        try:
-            safe = all((st.st_uid in (0, os.getuid()) and not _writable_by_others(st))
-                       for st in (os.stat(p) for p in {path.parent, real, real.parent}))
-        except OSError:
-            safe = False
-        if safe:
-            exe = str(real)
-        else:
-            print(tr("aiu: not running {path}: writable by other users", path=path),
-                  file=sys.stderr)
-        break
+    exe = find_cli("claude_cmd", cfg, CLAUDE_LOCATIONS)
     if not exe:
         return False
-    env = {k: os.environ[k] for k in ("HOME", "PATH", "USER", "LANG") if k in os.environ}
-    try:
-        ok = subprocess.run([exe, "auth", "status"], env=env, capture_output=True,
-                            timeout=60).returncode == 0
-    except Exception:
-        ok = False
+    done = run_cli([exe, "auth", "status"], timeout=60)
+    ok = done is not None and done[0] == 0
     try:
         if ok:
             marker.unlink(missing_ok=True)

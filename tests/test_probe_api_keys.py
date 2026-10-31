@@ -585,7 +585,22 @@ def test_load_config_refuses_key_cmd_when_writable(monkeypatch, tmp_path, capsys
     assert "key_cmd" not in config["openai"]
     assert config["openai"]["key_env"] == "OPENAI_ADMIN_KEY"  # the rest still applies
     err = capsys.readouterr().err
-    assert "key_cmd ignored for openai" in err and why in err
+    assert "ignored, since the config is not safe: openai.key_cmd (" in err and why in err
+
+
+def test_load_config_drops_every_cmd_option(monkeypatch, tmp_path, capsys):
+    """Every *_cmd runs a program (aiu.config.runs_code): claude_cmd and any vendor
+    client's binary go with key_cmd, and the rest of each section stays."""
+    monkeypatch.setattr(util, "_private_group", lambda gid: False)
+    path = write_config(tmp_path / "cfg" / "config.toml", 0o620)
+    path.write_text(KEY_CMD_CONFIG + '[claude]\nread_token = true\nclaude_cmd = "/tmp/claude"\n'
+                    '[codex]\nenabled = true\ncodex_cmd = "/tmp/codex"\n')
+    config = load_config(path)
+    assert config["claude"] == {"read_token": True} and config["codex"] == {"enabled": True}
+    assert "key_cmd" not in config["openai"]
+    err = capsys.readouterr().err
+    assert "openai.key_cmd, claude.claude_cmd, codex.codex_cmd (" in err
+    assert "/tmp/claude" not in err
 
 
 def test_load_config_keeps_key_cmd_for_private_group(monkeypatch, tmp_path, capsys):

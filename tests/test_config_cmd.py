@@ -135,7 +135,7 @@ def test_show_reports_an_untrusted_config(monkeypatch, capsys, cfg):
     assert snap["key_cmd_allowed"] is False
     assert snap["key_cmd_problems"] == [f"{cfg} is writable by group or others"]
     _, out, _ = run(monkeypatch, capsys, cfg, "config", "show")
-    assert "key_cmd is ignored:" in out
+    assert "key_cmd and the other *_cmd options are ignored:" in out
 
 
 def test_show_json_fixture_is_current(monkeypatch, capsys, home):

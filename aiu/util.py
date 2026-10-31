@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Who else can write a file: shared by the config trust check (aiu.config)
-and the choice of a `claude` binary to run (aiu.probes.claude). And where aiu
-keeps its state: the pace history, and the Claude Code plugin's readings."""
+and the choice of a vendor's binary to run (aiu.clis). And where aiu keeps
+its state: the pace history, the Claude Code plugin's readings and the
+vendor clients' cached readings."""
 from __future__ import annotations
 
 import grp
