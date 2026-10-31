@@ -3,7 +3,9 @@
 // the subprocess tests here run sh and sleep in its place.
 import GLib from 'gi://GLib';
 import System from 'system';
-import { AiuClient, fullQuotaText, installCommand, needsSetup, resetText, SCHEMA, schemaProblem } from '../aiuClient.js';
+import {
+    AiuClient, fullQuotaText, headerPills, installCommand, needsSetup, resetText, SCHEMA, schemaProblem,
+} from '../aiuClient.js';
 
 function assertEqual(got, want, what) {
     const g = JSON.stringify(got);
@@ -35,16 +37,23 @@ function runContract(client) {
     // the `reset` text, which still says what it said at capture time.
     const now = Date.parse(raw.captured_at) / 1000 + 600;
     assertEqual(data.capturedAt, '2026-10-26T07:33:20+00:00', 'contract: captured_at');
-    assertEqual(data.quotas.map(q => [q.provider, q.metric, q.used_pct, q.note, resetText(q, now)]), [
-        ['claude', '5-Hour Limit', 12, '', 'in 1h50m'],
-        ['claude', 'Weekly (all models)', 40, '', 'in 2d23h'],
-        ['claude', 'Weekly Sonnet', 5, '', 'in 2d23h'],
-        ['codex', '5-Hour Limit', 20, 'plus', 'in 50m'],
-        ['codex', 'Weekly Limit', 90, '', 'in 4d23h'],
-        ['gemini', '5-Hour Limit', 25, '', 'in 1h50m'],
-        ['gemini', 'Weekly Limit', 2, '', 'in 6d19h'],
-        ['gemini', 'Claude and GPT Weekly', 0, '', 'in 6d19h'],
+    assertEqual(data.quotas.map(q => [q.provider, q.metric, q.used_pct, q.note, q.plan, resetText(q, now)]), [
+        ['claude', '5-Hour Limit', 12, '', 'pro', 'in 1h50m'],
+        ['claude', 'Weekly (all models)', 40, '', 'pro', 'in 2d23h'],
+        ['claude', 'Weekly Sonnet', 5, '', 'pro', 'in 2d23h'],
+        ['codex', '5-Hour Limit', 20, '', 'plus', 'in 50m'],
+        ['codex', 'Weekly Limit', 90, '', 'plus', 'in 4d23h'],
+        ['gemini', '5-Hour Limit', 25, '', '', 'in 1h50m'],
+        ['gemini', 'Weekly Limit', 2, '', '', 'in 6d19h'],
+        ['gemini', 'Claude and GPT Weekly', 0, '', '', 'in 6d19h'],
     ], 'contract: quotas');
+    // The pills beside each provider's name: its plan, then a note (none here).
+    const byProvider = {};
+    for (const q of data.quotas) {
+        (byProvider[q.provider] ||= []).push(q);
+    }
+    assertEqual(Object.entries(byProvider).map(([p, items]) => [p, headerPills(items)]),
+        [['claude', ['pro']], ['codex', ['plus']], ['gemini', []]], 'contract: header pills');
     // The bars show used_pct; `used` is only the fallback for a row without it.
     const pctOnly = client._processData({ ...raw, rows: raw.rows.map(r => ({ ...r, used: null })) });
     assertEqual(pctOnly.quotas.map(q => q.used_pct), data.quotas.map(q => q.used_pct), 'contract: used_pct');
@@ -80,10 +89,26 @@ function runContract(client) {
     console.log('[Test] The snapshot fixture is read as aiu wrote it ✅');
 }
 
+function runPills() {
+    console.log('[Test] Header pills...');
+    const row = (plan, note) => ({ provider: 'x', kind: 'quota', plan, note });
+    // The plan first, then the first note: an old reading's age stays in view.
+    assertEqual(headerPills([row('pro', ''), row('pro', 'Claude Code reading from 2h 5m ago')]),
+        ['pro', 'Claude Code reading from 2h 5m ago'], 'plan and note');
+    assertEqual(headerPills([row('Free', '€0.85 / €8.50'), row('Free', '€0.10 / €8.50')]),
+        ['Free', '€0.85 / €8.50'], 'the first note only');
+    assertEqual(headerPills([row('', ''), row('', '')]), [], 'neither');
+    // An aiu from before the plan field: Codex's plan in the first note, shown once.
+    assertEqual(headerPills([{ note: 'plus' }, { note: '' }]), ['plus'], 'older aiu');
+    assertEqual(headerPills([row('plus', 'plus')]), ['plus'], 'same text once');
+    console.log('[Test] Header pills ✅');
+}
+
 function run() {
     console.log('[Test] Instantiating AiuClient...');
     const client = new AiuClient();
     runContract(client);
+    runPills();
 
     console.log('[Test] Testing _processData with synthetic mock data...');
     const mock = {

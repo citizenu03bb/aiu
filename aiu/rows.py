@@ -20,6 +20,7 @@ class Row:
     # A quota on one model or product inside the plan (Gemini 4 Argon, Weekly
     # Opus): full, it stops only that one, so the panel warns instead of alarming.
     sublimit: bool = False
+    plan: str = ""              # the subscription's plan as its client names it ("plus", "pro")
 
     def to_public(self) -> dict:
         d = asdict(self)

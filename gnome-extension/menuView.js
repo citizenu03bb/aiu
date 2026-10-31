@@ -9,7 +9,8 @@ import Gio from 'gi://Gio';
 import Pango from 'gi://Pango';
 import GLib from 'gi://GLib';
 import {
-    INSTALL_GUIDE_URL, displayName, formatDuration, fullQuotaText, installCommand, needsSetup, resetText,
+    INSTALL_GUIDE_URL, displayName, formatDuration, fullQuotaText, headerPills, installCommand, needsSetup,
+    resetText,
 } from './aiuClient.js';
 import { dataMaxHeight } from './menuLayout.js';
 import { _, N_, fmt } from './i18n.js';
@@ -481,10 +482,9 @@ export class MenuView {
                     x_expand: true,
                     y_align: Clutter.ActorAlign.CENTER,
                 }));
-                const firstNote = items.find(i => i.note)?.note;
-                if (firstNote) {
+                for (const pill of headerPills(items)) {
                     provHeader.add_child(new St.Label({
-                        text: firstNote,
+                        text: pill,
                         style_class: 'aiu-pill',
                         y_align: Clutter.ActorAlign.CENTER,
                     }));

@@ -41,6 +41,7 @@ const OPTION_TITLES = {
     claude_cmd: N_('claude program'),
     codex_cmd: N_('codex program'),
     agy_cmd: N_('agy program'),
+    vibe_cmd: N_('vibe-app-server program'),
     read_token: N_('Read the claude sign-in token'),
     vibe_allowance_eur: N_('Vibe allowance (EUR)'),
     api_allowance_eur: N_('API allowance (EUR)'),

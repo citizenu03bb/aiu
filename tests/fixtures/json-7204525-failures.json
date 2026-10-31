@@ -13,7 +13,8 @@
       "note": "no token in ~/.claude/.credentials.json (run `claude` once)",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     },
     {
       "provider": "codex",
@@ -26,7 +27,8 @@
       "note": "not signed in: run `codex` to sign in",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     },
     {
       "provider": "openai",
@@ -39,7 +41,8 @@
       "note": "HTTP 500",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     },
     {
       "provider": "deepseek",
@@ -52,7 +55,8 @@
       "note": "malformed response: not a JSON object",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     },
     {
       "provider": "openrouter",
@@ -65,7 +69,8 @@
       "note": "network: cannot connect",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     },
     {
       "provider": "gemini",
@@ -78,7 +83,8 @@
       "note": "install the Antigravity CLI (agy) to read the Gemini quota",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     },
     {
       "provider": "mistral",
@@ -91,7 +97,8 @@
       "note": "session rejected (307) \u2014 copy a fresh Cookie header from admin.mistral.ai",
       "reset_epoch": null,
       "window_secs": null,
-      "sublimit": false
+      "sublimit": false,
+      "plan": ""
     }
   ],
   "advice": []

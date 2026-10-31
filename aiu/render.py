@@ -29,7 +29,7 @@ def render_table(rows: list[Row]) -> None:
     t.add_column(tr("Usage"), justify="right")
     t.add_column(tr("Resets / note"), style="dim")
 
-    for r in rows:
+    for r, tail in zip(rows, _tails(rows)):
         if r.kind == "error":
             usage = "[red]err[/red]"
         elif r.kind == "quota" and r.used is not None:
@@ -43,11 +43,20 @@ def render_table(rows: list[Row]) -> None:
             usage = _credit_left(r)
         else:
             usage = "—"
-        tail = r.reset or ""
-        if r.note:
-            tail = f"{tail}  {r.note}".strip()
         t.add_row(r.provider, r.metric, usage, tail)
     console.print(t)
+
+
+def _tails(rows: list[Row]) -> list[str]:
+    """Each row's "Resets / note" cell: its reset and note, and the plan on
+    the provider's first row."""
+    seen: set[str] = set()
+    tails = []
+    for r in rows:
+        plan = r.plan if r.plan and r.provider not in seen else ""
+        seen.add(r.provider)
+        tails.append("  ".join(x for x in (r.reset or "", plan, r.note) if x))
+    return tails
 
 
 def _credit_left(r: Row) -> str:
@@ -78,8 +87,7 @@ def render_html(rows: list[Row], path: Path) -> None:
     lines = ["<table border=1 cellpadding=6 style='border-collapse:collapse;font-family:sans-serif'>",
              "<tr>" + "".join(f"<th>{esc(tr(h))}</th>"
                               for h in ("Provider", "Metric", "Usage", "Resets / note")) + "</tr>"]
-    for r in rows:
-        tail = " ".join(x for x in (r.reset or "", r.note) if x)
+    for r, tail in zip(rows, _tails(rows)):
         lines.append(f"<tr><td>{esc(r.provider)}</td><td>{esc(r.metric)}</td>"
                      f"<td align=right>{esc(cell(r))}</td><td>{esc(tail)}</td></tr>")
     lines.append("</table>")

@@ -65,14 +65,17 @@ def _kill_group(proc: subprocess.Popen) -> None:
 
 
 @contextmanager
-def spawn(argv: Sequence[str], timeout: float) -> Iterator[subprocess.Popen]:
-    """argv in its own process group, with a clean environment, text pipes on
-    stdin and stdout and stderr discarded. The group is killed after `timeout`
-    seconds, and in any case on leaving the block."""
-    env = {k: os.environ[k] for k in CLEAN_ENV if k in os.environ}
+def spawn(argv: Sequence[str], timeout: float, keep_env: Sequence[str] = (),
+          cwd: str | None = None) -> Iterator[subprocess.Popen]:
+    """argv in its own process group, with a clean environment (plus the
+    variables named in keep_env, such as the session bus a client's keyring
+    needs), text pipes on stdin and stdout and stderr discarded, in `cwd` when
+    given. The group is killed after `timeout` seconds, and in any case on
+    leaving the block."""
+    env = {k: os.environ[k] for k in (*CLEAN_ENV, *keep_env) if k in os.environ}
     proc = subprocess.Popen(list(argv), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                             stderr=subprocess.DEVNULL, env=env, start_new_session=True,
-                            text=True, encoding="utf-8", errors="replace")
+                            cwd=cwd, text=True, encoding="utf-8", errors="replace")
     timer = threading.Timer(timeout, _kill_group, (proc,))
     timer.daemon = True
     timer.start()

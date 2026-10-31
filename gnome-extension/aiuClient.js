@@ -83,6 +83,18 @@ export function fullQuotaText(q, nowSecs = Date.now() / 1000) {
         : fmt(_('{window} is at {pct} %'), fields);
 }
 
+/**
+ * The pills beside a provider's name: its plan ("plus", "pro", "Free": the
+ * `plan` aiu puts on each of its rows), then the first note among its rows
+ * (an allowance, the age of an old Claude Code reading). Empty ones are left
+ * out, and the same text shows once (an older aiu put Codex's plan in the note).
+ */
+export function headerPills(items) {
+    const plan = items.find(i => i.plan)?.plan;
+    const note = items.find(i => i.note)?.note;
+    return [...new Set([plan, note].filter(Boolean))];
+}
+
 /** The `schema` of `aiu --json` and `aiu config show --json` this extension reads (docs/json-schema.md). */
 export const SCHEMA = 1;
 

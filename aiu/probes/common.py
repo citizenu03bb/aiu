@@ -1,12 +1,14 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """What the probes share: their error notes, the redaction collect() applies
-to every note, and reset times made readable."""
+to every note, reset times made readable, and the plan a client names."""
 from __future__ import annotations
 
 import re
 from datetime import datetime, timezone
 
 import httpx
+
+from aiu.rows import Row
 
 
 # Probe errors. A note never quotes an exception: httpx puts the offending
@@ -97,3 +99,24 @@ def _humanize_reset(iso: str) -> str:
         return f"in {m}m"
     except Exception:
         return iso
+
+
+# The plan a vendor's client names ("plus", "pro", "Free"): shown as is in the
+# panel's pill and the table, so only a short plain word or two gets through.
+_PLAN_RE = re.compile(r"[\w][\w .+-]{0,31}")
+
+
+def _plan_name(v) -> str:
+    """v when it is such a name, else "" (unknown)."""
+    if not isinstance(v, str):
+        return ""
+    v = " ".join(v.split())
+    return v if _PLAN_RE.fullmatch(v) else ""
+
+
+def _with_plan(rows: list[Row], plan: str) -> list[Row]:
+    """rows with `plan` on each one that is not an error."""
+    for r in rows:
+        if r.kind != "error":
+            r.plan = plan
+    return rows

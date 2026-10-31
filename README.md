@@ -125,8 +125,8 @@ own sign-in and refreshes it itself; `aiu` reads no Codex token and never opens
 `codex` once). `aiu` looks for it in `~/.local/bin`, `~/.npm-global/bin`,
 `/usr/local/bin`, `/usr/bin` and Homebrew's `bin`, never on `PATH`; elsewhere
 (an nvm install, say), set `aiu config set codex.codex_cmd ~/path/to/codex`.
-The rows are each limit's 5-hour and weekly windows (with the plan in the
-note), the `Credits` balance, and one `credit` row per free rate-limit reset
+The rows are each limit's 5-hour and weekly windows (the plan, `plus` say,
+shows beside Codex's name), the `Credits` balance, and one `credit` row per free rate-limit reset
 Codex has granted ("Full reset (Weekly + 5 hr)", with its expiry),
 so `--alert` warns before one expires unused. The row says what to do when
 Codex is missing ("install it"), signed out ("run `codex` to sign in") or
@@ -199,6 +199,16 @@ the import (or copy the header again).
 Vibe's local session logs (`~/.vibe/logs`) are not a substitute, because they
 undercount the server's token totals by roughly 3×.
 
+**The plan** (`Free`, `Pro`) comes from Mistral Vibe, when it is installed and
+signed in (`vibe --setup`): aiu starts `vibe-app-server` (Vibe's JSON-RPC
+server), opens a throwaway session that Vibe neither saves nor counts, asks
+`account/read`, keeps the plan's name and stops it, about 3.5 s, at most every
+6 hours. Vibe reads its own key from the keyring, so aiu passes it the session
+bus address and nothing else of its environment; aiu sees no Vibe key. aiu
+looks for `vibe-app-server` in `~/.local/bin` (where `uv tool install
+mistral-vibe` puts it), `/usr/local/bin`, `/usr/bin` and Homebrew's `bin`;
+`vibe_cmd` names another. Without Vibe, Mistral simply shows no plan.
+
 **Can't be polled** (verified June 2026): Cohere exposes no aggregate
 usage/spend API (dashboard only).
 The Gemini CLI's `/stats` is REPL-only and per-session, not account quota.
@@ -263,11 +273,12 @@ them can run code as you.
   config file or its directory is not yours or can be written by group or
   others. It writes the starter config `0600` in a `0700` directory.
 - Every option named `*_cmd` runs a program: `key_cmd`, and `claude_cmd`,
-  `codex_cmd` and `agy_cmd`, the vendor clients aiu asks for their own figures. The trust check above drops
+  `codex_cmd`, `agy_cmd` and `vibe_cmd`, the vendor clients aiu asks for their own figures. The trust check above drops
   them all, and `aiu config set` refuses them, in a config that fails it. A
   vendor client is never taken from `PATH`: only its `*_cmd`, or else a known
   install location, and never one that someone else can write. It runs with
-  a clean environment (`HOME`, `PATH`, `USER`, `LANG`), and it is killed,
+  a clean environment (`HOME`, `PATH`, `USER`, `LANG`, and for Vibe the
+  session bus address its keyring needs), and it is killed,
   with whatever it started, at its timeout and once aiu has its answer.
 - `~/.env` can only supply the names above, and only as keys sent to their
   own provider over TLS.
@@ -293,7 +304,7 @@ aiu config set openai.key_env ""   # an empty string turns a key source off
 
 `show` lists each provider's settings: `enabled`, the key sources it uses
 (`key_env`, `key_cmd`, `key_file`), and its own options (`read_token`,
-`claude_cmd`, `codex_cmd`, Mistral's allowances), each with its value and whether the file sets it
+`claude_cmd`, `codex_cmd`, `agy_cmd`, `vibe_cmd`, Mistral's allowances), each with its value and whether the file sets it
 (`"source": "file"`) or aiu's default applies. `--json` also gives the config
 path and whether the `*_cmd` options may run (`key_cmd_allowed`, with the
 reasons when not). It shows values only: it never runs `key_cmd`, reads a `key_file` or
@@ -337,6 +348,14 @@ not in it. A window that has reset since the reading shows 0 % with its next
 reset unknown; once every window has reset, the row says to use Claude Code to
 take a new reading. Without the file (and without `read_token`), the row is an
 error that says how to install the plugin.
+
+**The plan** (`pro`, `max`) is not in the plugin's reading, and Claude Code
+gives its plugins no way to read it. When there is a reading to show, aiu runs
+`claude auth status --json` (about 0.2 s, no request spent), keeps its
+`subscriptionType` and drops the rest unread (it also prints your email and
+organization), at most every 6 hours. The plan shows beside Claude's name in
+the panel. It needs the `claude` CLI (`claude_cmd` if it is not in a usual
+place); without it, Claude simply shows no plan.
 
 **Credits and other windows: `read_token` (off by default).** The file holds
 only the windows Claude Code reports. Dollar grants (the cloud-session credit,
@@ -458,6 +477,11 @@ Antigravity CLI (agy) to read the Gemini quota".
 another (`aiu config set gemini.agy_cmd ~/bin/agy`; like every `*_cmd` it is
 ignored in an untrusted config, see [Secrets](#secrets)).
 
+Gemini shows no plan beside its name: none of the commands `agy` answers in
+print mode (`/usage`, `/quota`, `/credits`, `/model`…) reports the tier, which
+only its interactive banner shows, and `aiu` runs no `agy` command it has not
+checked to answer without the model.
+
 Each run takes about 3 s and starts the MCP servers configured for `agy`
 (nothing turns that off for one run), so `aiu` keeps a reading for 15 minutes
 (5 after a failure): `agy` runs at most 96 times a day, however often you or
@@ -511,7 +535,7 @@ and this project is not affiliated with Anthropic, OpenAI, Google or Mistral AI:
 - `claude`, only with `read_token = true`: Claude Code's OAuth usage endpoint
   (if it 404s after a Claude update, re-check it against the `onWatch`
   source). The default reads a local file Claude Code's plugin API fills, and
-  calls nothing;
+  runs `claude auth status` for the plan; it calls nothing itself;
 - `codex`: nothing. aiu asks the Codex CLI (`codex app-server`), which calls
   its own endpoints with its own sign-in;
 - `gemini`: nothing. `aiu` runs the Antigravity CLI's `/usage` command
@@ -521,6 +545,8 @@ and this project is not affiliated with Anthropic, OpenAI, Google or Mistral AI:
   (`admin.mistral.ai/api/local-trpc/`, `usage.costBreakdown` and
   `usage.prices`), with the browser session you imported. Mistral's terms
   forbid extracting content "other than as permitted" (see `mistral` above).
+  The plan comes from Mistral Vibe (`vibe-app-server`), which makes its own
+  request with its own key.
 
 Tokens and keys are read locally at run time and only ever sent to the
 provider they belong to. `aiu` stores no secret (except in the keyring, when
@@ -567,6 +593,13 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
 - The GNOME indicator says what turned its dot red or yellow, at the top of
   the menu. A used-up limit on one model only (Gemini 4 Argon, Claude's
   `Weekly Sonnet`) turns it yellow, not red: `--json` rows carry `sublimit`.
+- Claude and Mistral show their plan beside their name in the panel, as Codex
+  does: Claude's from `claude auth status` (aiu keeps `subscriptionType` and
+  drops the email and organization it also prints), Mistral's from Mistral
+  Vibe (`vibe-app-server`, `account/read` on a session Vibe does not save),
+  each asked at most every 6 hours. Gemini has none: agy reports no tier.
+  `--json` rows have a new `plan` field; Codex's plan moved there from the
+  first row's `note`. A new `vibe_cmd` option says which `vibe-app-server` to run.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.

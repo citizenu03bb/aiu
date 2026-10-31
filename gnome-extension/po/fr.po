@@ -281,6 +281,9 @@ msgstr "Programme codex"
 msgid "agy program"
 msgstr "Programme agy"
 
+msgid "vibe-app-server program"
+msgstr "Programme vibe-app-server"
+
 #: aiuConfig.js
 msgid "Read the claude sign-in token"
 msgstr "Lire le jeton de connexion de claude"
