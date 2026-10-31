@@ -477,10 +477,18 @@ Antigravity CLI (agy) to read the Gemini quota".
 another (`aiu config set gemini.agy_cmd ~/bin/agy`; like every `*_cmd` it is
 ignored in an untrusted config, see [Secrets](#secrets)).
 
-Gemini shows no plan beside its name: none of the commands `agy` answers in
-print mode (`/usage`, `/quota`, `/credits`, `/model`…) reports the tier, which
-only its interactive banner shows, and `aiu` runs no `agy` command it has not
-checked to answer without the model.
+**The plan** (`Google AI Pro`) is in none of the answers `agy` gives in print
+mode (`/usage`, `/quota`, `/credits`, `/model`…). `agy` hands it, as
+`plan_tier`, to a custom status-line command, which only its interactive mode
+runs. So when there is a reading to show, `aiu` starts `agy` on a
+pseudo-terminal in an empty folder of its own, types nothing (no prompt, no
+model turn), and gives it for that session only (`--settings`, never saved) a
+status line of its own: a small helper, run by aiu's Python, that keeps
+`plan_tier` and drops the rest unread (your email among it). `agy` is stopped
+as soon as the tier comes, about 2 s after start, with the MCP servers it
+started, at most every 6 hours (1 after a failure). `agy` records no
+conversation for such a run. Without a tier within 20 s, Gemini simply shows
+no plan.
 
 Each run takes about 3 s and starts the MCP servers configured for `agy`
 (nothing turns that off for one run), so `aiu` keeps a reading for 15 minutes
@@ -539,8 +547,9 @@ and this project is not affiliated with Anthropic, OpenAI, Google or Mistral AI:
 - `codex`: nothing. aiu asks the Codex CLI (`codex app-server`), which calls
   its own endpoints with its own sign-in;
 - `gemini`: nothing. `aiu` runs the Antigravity CLI's `/usage` command
-  (`agy -p /usage --output-format json`), which uses no model turn; `agy`
-  makes its own request with its own sign-in;
+  (`agy -p /usage --output-format json`), which uses no model turn, and for
+  the plan its interactive mode with a status line of aiu's own; `agy` makes
+  its own requests with its own sign-in;
 - `mistral`: the admin console's tRPC endpoints
   (`admin.mistral.ai/api/local-trpc/`, `usage.costBreakdown` and
   `usage.prices`), with the browser session you imported. Mistral's terms
@@ -597,9 +606,12 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
   does: Claude's from `claude auth status` (aiu keeps `subscriptionType` and
   drops the email and organization it also prints), Mistral's from Mistral
   Vibe (`vibe-app-server`, `account/read` on a session Vibe does not save),
-  each asked at most every 6 hours. Gemini has none: agy reports no tier.
-  `--json` rows have a new `plan` field; Codex's plan moved there from the
+  each asked at most every 6 hours. `--json` rows have a new `plan` field; Codex's plan moved there from the
   first row's `note`. A new `vibe_cmd` option says which `vibe-app-server` to run.
+- Gemini shows its plan too (`Google AI Pro`): agy gives it only to a
+  status-line command, so aiu starts agy's interactive mode on a
+  pseudo-terminal for about 2 s, with a status line for that session only that
+  keeps `plan_tier` and nothing else, at most every 6 hours.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.

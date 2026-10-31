@@ -1,10 +1,13 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """The plan each subscription's own client names, shown as a pill beside the
 provider in the panel: Claude's from `claude auth status`, Mistral's from Vibe's
-app-server (`account/read`), Codex's from `codex app-server` (test_probe_codex).
+app-server (`account/read`), Gemini's from agy's status line, Codex's from
+`codex app-server` (test_probe_codex).
 Fake clients in tmp/bin only (conftest); no network."""
 import json
+import os
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -12,7 +15,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from aiu import clis, render  # noqa: E402
-from aiu.probes import claude, mistral  # noqa: E402
+from aiu.probes import claude, gemini, mistral  # noqa: E402
 from aiu.probes.common import _plan_name  # noqa: E402
 from aiu.rows import Row  # noqa: E402
 
@@ -222,6 +225,107 @@ def test_vibe_cmd_names_the_program(home, tmp_path, cookie):
     assert {r.plan for r in mistral.probe_mistral(cookie)} == {""}  # not found: nothing ran, nothing cached
     assert {r.plan for r in mistral.probe_mistral({**cookie, "vibe_cmd": str(moved / "vibe-app-server")})} \
         == {"Free"}
+
+
+# ---------------------------------------------------------------- Gemini (agy)
+USAGE = {"status": "SUCCESS", "num_turns": 0, "usage": {"total_tokens": 0},
+         "command": {"name": "usage", "data": {"groups": [{"name": "Gemini Models", "buckets": [
+             {"window": "weekly", "remaining_fraction": 0.25, "reset_time": "2026-11-04T07:01:55Z"},
+             {"window": "5h", "remaining_fraction": 1, "reset_time": "2026-10-31T12:18:05Z"}]}]}}}
+# What agy 1.4.12 handed its status line on 2026-10-31, cut short and the email
+# made up: only the tier may come out of aiu, and it comes after a few updates.
+STATUS = {"agent_state": "idle", "conversation_id": "", "cwd": "/tmp/aiu-agy-x",
+          "email": "someone@example.com", "model": {"id": "Gemini Flash"}, "product": "antigravity",
+          "session_id": "00000000-0000-0000-0000-000000000002", "version": "1.4.12"}
+WITH_TIER = {**STATUS, "plan_tier": "Google AI Pro"}
+
+
+def fake_agy(tmp_path, statuses=(STATUS, STATUS, WITH_TIER), stays=True):
+    """tmp/bin/agy: `-p /usage` prints USAGE; its interactive mode runs the
+    status-line command it is given through /bin/sh with each of `statuses`
+    on stdin, then stays open, as agy does, or quits. Each interactive run is
+    logged: its argv, whether it has a terminal, its cwd and pid."""
+    (tmp_path / "agy.json").write_text(json.dumps({"statuses": list(statuses), "stays": stays}))
+    (tmp_path / "usage.json").write_text(json.dumps(USAGE))
+    log = tmp_path / "agy-tui.jsonl"
+    path = tmp_path / "bin" / "agy"
+    path.write_text(f"""#!{sys.executable} -I
+import json, os, subprocess, sys, time
+args = sys.argv[1:]
+if args[:2] == ["-p", "/usage"]:
+    print(open({str(tmp_path / 'usage.json')!r}).read())
+    sys.exit(0)
+scenario = json.load(open({str(tmp_path / 'agy.json')!r}))
+with open({str(log)!r}, "a") as f:
+    f.write(json.dumps({{"argv": args, "tty": all(os.isatty(i) for i in (0, 1, 2)),
+                        "cwd": os.getcwd(), "pid": os.getpid()}}) + "\\n")
+command = json.loads(args[args.index("--settings") + 1])["statusLine"]["command"]
+for status in scenario["statuses"]:
+    subprocess.run(["/bin/sh", "-c", command], input=json.dumps(status), text=True)
+if scenario["stays"]:
+    time.sleep(30)
+""")
+    path.chmod(0o755)
+    return log
+
+
+def tui_runs(log):
+    return [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
+
+
+def gone(pid):
+    for _ in range(50):
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return True
+        time.sleep(0.02)
+    return False
+
+
+def test_gemini_plan_from_the_status_line(home, tmp_path):
+    log = fake_agy(tmp_path)
+    start = time.monotonic()
+    rows = gemini.probe_gemini({})
+    assert [(r.metric, r.plan) for r in rows] == [("5-Hour Limit", "Google AI Pro"),
+                                                  ("Weekly Limit", "Google AI Pro")]
+    assert time.monotonic() - start < 10  # agy is stopped once the tier comes
+    [run] = tui_runs(log)
+    # Interactive mode on a terminal, no prompt, a status line for this session only.
+    assert run["tty"] and run["argv"][:3] == ["--log-file", "/dev/null", "--settings"] and len(run["argv"]) == 4
+    status_line = json.loads(run["argv"][3])["statusLine"]
+    assert status_line["type"] == "command" and status_line["enabled"] is True
+    # In an empty directory of its own, gone after, with agy and its helpers.
+    assert "aiu-agy-" in run["cwd"] and not Path(run["cwd"]).exists()
+    assert gone(run["pid"])
+    cache = (home / ".local" / "state" / "aiu" / "readings" / "gemini-plan.json").read_text()
+    assert json.loads(cache)["value"] == "Google AI Pro" and json.loads(cache)["ttl"] == gemini.PLAN_TTL
+    assert "example.com" not in cache and "00000000" not in cache
+    assert gemini.probe_gemini({})[0].plan == "Google AI Pro" and len(tui_runs(log)) == 1  # cached
+
+
+@pytest.mark.parametrize("statuses, stays", [
+    ((STATUS,), False),                                   # agy quits before the tier comes
+    ((STATUS, {**STATUS, "plan_tier": ""}), False),
+    (({**STATUS, "plan_tier": "[red]Pro[/red]"},), False),
+    (({**STATUS, "plan_tier": 3},), False),
+    ((["not", "an", "object"],), False),
+    ((), True),                                           # no tier before the timeout
+])
+def test_gemini_without_a_plan(home, tmp_path, monkeypatch, statuses, stays):
+    monkeypatch.setattr(gemini, "PLAN_TIMEOUT", 0.5)
+    fake_agy(tmp_path, statuses, stays)
+    rows = gemini.probe_gemini({})
+    assert [r.kind for r in rows] == ["quota", "quota"] and {r.plan for r in rows} == {""}
+    cache = json.loads((home / ".local" / "state" / "aiu" / "readings" / "gemini-plan.json").read_text())
+    assert cache["value"] == "" and cache["ttl"] == gemini.PLAN_TTL_FAILED
+
+
+def test_gemini_error_runs_no_interactive_agy(home, tmp_path):
+    log = fake_agy(tmp_path)
+    (tmp_path / "usage.json").write_text("not json")
+    [row] = gemini.probe_gemini({})
+    assert row.kind == "error" and row.plan == "" and tui_runs(log) == []
 
 
 # ---------------------------------------------------------------- the table

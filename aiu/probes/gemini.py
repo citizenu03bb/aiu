@@ -12,16 +12,29 @@ Each run starts the user's MCP servers and there is no per-run switch against
 that (`--log-file /dev/null` does stop the per-run log), so a reading is
 cached: 15 minutes, 5 after an ordinary failure. A reply that is not a /usage
 answer may mean agy took `/usage` as a prompt and ran the model: aiu then does
-not run agy again for 24 hours."""
+not run agy again for 24 hours.
+
+The plan ("Google AI Pro") is in no print-mode answer. agy hands it to a
+status-line command, which only its interactive mode runs: aiu starts agy on a
+pseudo-terminal, types nothing, and gives it for that session only
+(`--settings`, never saved) a status line of its own, a helper that keeps
+`plan_tier` and drops the rest unread (the email among it). agy is stopped as
+soon as the tier comes, about 2 s after start, at most every PLAN_TTL seconds."""
 from __future__ import annotations
 
 import json
 import math
+import os
 import re
+import shlex
+import sys
+import tempfile
+from pathlib import Path
 
-from aiu.clis import cached, find_cli, run_cli
+from aiu.clis import cached, find_cli, run_cli, run_tty
 from aiu.i18n import tr
-from aiu.probes.common import Malformed, _humanize_reset, _iso_epoch, _malformed_note
+from aiu.probes.common import (Malformed, _humanize_reset, _iso_epoch, _malformed_note, _plan_name,
+                               _with_plan)
 from aiu.rows import Row
 
 
@@ -172,11 +185,54 @@ def _rows(reading) -> list[Row]:
     return _error(_malformed_note(Malformed("unreadable cached reading")))
 
 
+PLAN_CACHE = "gemini-plan"
+PLAN_TTL = 6 * 3600
+PLAN_TTL_FAILED = 3600
+PLAN_TIMEOUT = 20       # seconds; the tier comes about 2 s after start
+PLAN_MAX = 256
+# agy's status-line command: its JSON on stdin, the tier (if known yet) out to
+# the file named in argv[1], whole or not at all.
+STATUS_LINE = """\
+import json, os, sys
+try:
+    tier = json.load(sys.stdin).get("plan_tier")
+except Exception:
+    tier = None
+if isinstance(tier, str) and tier.strip():
+    with open(sys.argv[1] + ".tmp", "w", encoding="utf-8") as f:
+        f.write(tier[:256])
+    os.replace(sys.argv[1] + ".tmp", sys.argv[1])
+"""
+
+
+def _ask_agy_plan(exe: str) -> tuple[str, float]:
+    """The plan_tier agy gives its status line, or "" (signed out, no tier
+    before the timeout), with its time-to-live for the cache."""
+    plan = ""
+    try:
+        with tempfile.TemporaryDirectory(prefix="aiu-agy-") as cwd:
+            helper, out = Path(cwd, "status_line.py"), Path(cwd, "plan")
+            helper.write_text(STATUS_LINE)
+            command = shlex.join([sys.executable, "-I", str(helper), str(out)])
+            settings = {"statusLine": {"type": "command", "command": command, "enabled": True}}
+            argv = [exe, "--log-file", os.devnull, "--settings", json.dumps(settings)]
+            if run_tty(argv, timeout=PLAN_TIMEOUT, done=out.exists, cwd=cwd):
+                with out.open(encoding="utf-8", errors="replace") as f:
+                    plan = _plan_name(f.read(PLAN_MAX))
+    except OSError:
+        pass
+    return plan, PLAN_TTL if plan else PLAN_TTL_FAILED
+
+
 def probe_gemini(cfg: dict) -> list[Row]:
+    """The rows, with the plan when there is a reading to show it on."""
     exe = find_cli("agy_cmd", cfg, AGY_LOCATIONS)
     if not exe:
         return _error(tr("install the Antigravity CLI (agy) to read the Gemini quota"))
-    return _rows(cached(CACHE_NAME, lambda: _run_usage(exe)))
+    rows = _rows(cached(CACHE_NAME, lambda: _run_usage(exe)))
+    if any(r.kind != "error" for r in rows):
+        _with_plan(rows, _plan_name(cached(PLAN_CACHE, lambda: _ask_agy_plan(exe))))
+    return rows
 
 
 # The Probe protocol (aiu.probes): what collect() and `aiu config` read.
