@@ -49,9 +49,13 @@ enabled = true
 # read_token = true
 
 # Codex CLI + Pi sign in via ChatGPT OAuth (no API key) -> subscription quota,
-# like claude. Token read from ~/.codex/auth.json.
+# like claude. aiu asks the Codex CLI (`codex app-server`), which must be
+# installed and signed in; aiu reads no Codex token. codex_cmd: where `codex`
+# is, if not in ~/.local/bin, ~/.npm-global/bin, /usr/local/bin, /usr/bin or
+# Homebrew's bin (PATH is not searched).
 [codex]
 enabled = true
+# codex_cmd = "~/.nvm/versions/node/v22.11.0/bin/codex"
 
 [openai]
 # Only enable if you actually use the OpenAI *API* (not just Codex/ChatGPT).
@@ -127,9 +131,14 @@ enabled = true
 # read_token = true
 
 # Codex CLI + Pi se connectent par OAuth ChatGPT (pas de clé API) -> quota
-# d'abonnement, comme claude. Jeton lu dans ~/.codex/auth.json.
+# d'abonnement, comme claude. aiu le demande à la Codex CLI (`codex
+# app-server`), qui doit être installée et connectée ; aiu ne lit aucun jeton
+# Codex. codex_cmd : où est `codex`, s'il n'est pas dans ~/.local/bin,
+# ~/.npm-global/bin, /usr/local/bin, /usr/bin ou le bin de Homebrew (le PATH
+# n'est pas parcouru).
 [codex]
 enabled = true
+# codex_cmd = "~/.nvm/versions/node/v22.11.0/bin/codex"
 
 [openai]
 # N'active que si tu utilises vraiment l'*API* OpenAI (pas seulement Codex/ChatGPT).

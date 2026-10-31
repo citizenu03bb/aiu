@@ -100,7 +100,7 @@ def test_show_creates_the_starter_config(monkeypatch, capsys, cfg):
     assert opt(snap, "openai", "key_cmd") == {"type": "string", "value": None, "source": "default"}
     assert opt(snap, "mistral", "vibe_allowance_eur") == {
         "type": "number", "value": mistral.MISTRAL_ALLOWANCE_EUR, "source": "default"}
-    assert set(snap["providers"]["codex"]["options"]) == {"enabled"}
+    assert opt(snap, "codex", "codex_cmd") == {"type": "string", "value": None, "source": "default"}
 
 
 def test_show_never_resolves_a_key(monkeypatch, capsys, cfg, home, tmp_path):
@@ -454,7 +454,7 @@ def test_refuses_a_command_through_a_shared_symlink(monkeypatch, capsys, cfg, tm
     ("nope.enabled", "true", "unknown provider; one of: claude, codex, openai, deepseek, "
                              "openrouter, gemini, mistral"),
     ("openai", "true", "unknown option for openai; it takes: enabled, key_env, key_cmd, key_file"),
-    ("codex.key_env", "X", "unknown option for codex; it takes: enabled"),
+    ("codex.key_env", "X", "unknown option for codex; it takes: enabled, codex_cmd"),
     ("openai.api_key", "sk-SECRET", "unknown option for openai; it takes: enabled, key_env, "
                                     "key_cmd, key_file"),
     ("openai.enabled", "sk-SECRET", "enabled takes true or false"),

@@ -64,6 +64,11 @@ FR = {
         "agy /usage a quitté avec le code {code} (agy est-il connecté ?)",
     "agy could not be started": "impossible de lancer agy",
     "no session: run `aiu cookie import mistral`": "pas de session : lance `aiu cookie import mistral`",
+    "Codex CLI not found: install it, or set codex.codex_cmd":
+        "Codex CLI introuvable : installe-la, ou règle codex.codex_cmd",
+    "not signed in: run `codex` to sign in": "pas connecté : lance `codex` pour te connecter",
+    "codex app-server did not understand aiu: update aiu or Codex":
+        "codex app-server n'a pas compris aiu : mets à jour aiu ou Codex",
     # --advise
     "deep reasoning / agentic": "raisonnement profond / agentique",
     "volume / throwaway tasks (Flash)": "volume / tâches jetables (Flash)",

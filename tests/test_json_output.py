@@ -66,6 +66,24 @@ CONFIG = "".join(f"[{name}]\nenabled = true\n" + (f'key_env = "{KEY_ENV[name]}"\
 GEMINI: dict = {}
 
 
+def codex_app_server(home, result):
+    """The package asks `codex app-server` (tmp/bin/codex, the only place it
+    looks: conftest); MAIN read ~/.codex/auth.json and called wham/usage, so
+    each scenario gives both the same figures. result None: not signed in.
+    The first scenario to set it wins, like the HTTP routes."""
+    path = home.parent / "bin" / "codex"
+    if path.exists():
+        return
+    msgs = [{"id": 1, "result": {}},
+            {"method": "account/updated", "params": {"authMode": "chatgpt" if result else None}},
+            {"id": 2, "result": result} if result else
+            {"id": 2, "error": {"code": -32603, "message": "not signed in"}}]
+    lines = "".join(json.dumps(m) + "\n" for m in msgs)
+    path.write_text(f"#!{sys.executable} -I\nimport sys\n[sys.stdin.readline() for _ in range(3)]\n"
+                    f"sys.stdout.write({lines!r})\nsys.stdout.flush()\nsys.stdin.read()\n")
+    path.chmod(0o755)
+
+
 def answers(home, http, monkeypatch):
     """Every provider answers: quotas, a credit, spend, balances."""
     (home / ".claude").mkdir()
@@ -78,6 +96,11 @@ def answers(home, http, monkeypatch):
         "extra_usage": {"utilization": None, "is_enabled": False},
         "iguana_necktie": {"limit_dollars": 50, "remaining_dollars": 31.5, "resets_at": iso(10 * 86400)},
     }))
+    codex_app_server(home, {"rateLimits": {
+        "limitId": "codex", "planType": "plus", "credits": {"hasCredits": True, "unlimited": False,
+                                                            "balance": "9.99"},
+        "primary": {"usedPercent": 20, "windowDurationMins": 300, "resetsAt": int(NOW + 3600)},
+        "secondary": {"usedPercent": 70, "windowDurationMins": 10080, "resetsAt": int(NOW + 86400)}}})
     (home / ".codex").mkdir()
     (home / ".codex" / "auth.json").write_text(json.dumps(
         {"tokens": {"access_token": "codex-fake", "account_id": "acct-1"}}))
@@ -122,6 +145,7 @@ def answers(home, http, monkeypatch):
 
 def failures(home, http, monkeypatch):
     """Every provider fails, each its own way."""
+    codex_app_server(home, None)
     http.on("GET", "chatgpt.com/backend-api/wham/usage", (401, {"error": "expired"}))
     (home / ".codex").mkdir()
     (home / ".codex" / "auth.json").write_text(json.dumps({"tokens": {"access_token": "codex-fake"}}))
@@ -143,6 +167,11 @@ SCENARIOS = {"answers": answers, "failures": failures}
 def snapshot(home, http, monkeypatch):
     """The answers, but codex's week runs dry before its reset and openrouter and
     mistral fail: rows of every kind, errors, and advice of each status."""
+    codex_app_server(home, {"rateLimits": {
+        "limitId": "codex", "planType": "plus", "credits": {"hasCredits": True, "unlimited": False,
+                                                            "balance": "9.99"},
+        "primary": {"usedPercent": 20, "windowDurationMins": 300, "resetsAt": int(NOW + 3600)},
+        "secondary": {"usedPercent": 90, "windowDurationMins": 10080, "resetsAt": int(NOW + 5 * 86400)}}})
     http.on("GET", "chatgpt.com/backend-api/wham/usage", (200, {
         "plan_type": "plus",
         "rate_limit": {"primary_window": {"used_percent": 20, "limit_window_seconds": 18000,
@@ -190,15 +219,19 @@ def frozen(monkeypatch):
 GEMINI_NOTE_MAIN = ("Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback "
                     "\\u2014 open Antigravity to read the quota")
 GEMINI_NOTE = "install the Antigravity CLI (agy) to read the Gemini quota"
+# Codex's note when not signed in: MAIN's token was refused, the package's
+# `codex app-server` says no one is signed in (wave 9, task V).
+CODEX_NOTE_MAIN = "auth rejected (401) \\u2014 run `codex` to refresh"
+CODEX_NOTE = "not signed in: run `codex` to sign in"
 
 
 def since_main(out: str) -> str:
     """MAIN's output with the changes made since: `"schema": 1` as the first key
     (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q),
-    Gemini's note without agy (task W)."""
+    Gemini's note without agy (task W), Codex's when not signed in (task V)."""
     assert out.startswith("{\n") and '"schema"' not in out and '"early_pace"' not in out
     out = out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
-    out = out.replace(GEMINI_NOTE_MAIN, GEMINI_NOTE)
+    out = out.replace(GEMINI_NOTE_MAIN, GEMINI_NOTE).replace(CODEX_NOTE_MAIN, CODEX_NOTE)
     return re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
 
 

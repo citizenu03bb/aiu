@@ -22,7 +22,7 @@
       "limit": null,
       "unit": "",
       "reset": null,
-      "note": "auth rejected (401) \u2014 run `codex` to refresh",
+      "note": "not signed in: run `codex` to sign in",
       "reset_epoch": null,
       "window_secs": null
     },

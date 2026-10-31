@@ -11,7 +11,7 @@ import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from aiu.probes import claude, gemini  # noqa: E402
+from aiu.probes import claude, codex, gemini  # noqa: E402
 
 PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
                 "MISTRAL_ADMIN_COOKIE", "AIU_ENV_FILE",
@@ -20,9 +20,10 @@ PROVIDER_ENV = ("OPENAI_ADMIN_KEY", "DEEPSEEK_API_KEY", "OPENROUTER_API_KEY",
 
 @pytest.fixture(autouse=True)
 def home(tmp_path, monkeypatch):
-    """~ is an empty tmp dir; PATH holds only tmp/bin, and tmp/bin/claude and
-    tmp/bin/agy are the only places aiu looks for `claude` and `agy`, so no
-    real client is found unless a test puts a fake one there. The umask is 022 whatever the user's is,
+    """~ is an empty tmp dir; PATH holds only tmp/bin, and tmp/bin/claude,
+    tmp/bin/codex and tmp/bin/agy are the only places aiu
+    looks for `claude`, `codex` and `agy`, so no real client is found unless a test
+    puts a fake one there. The umask is 022 whatever the user's is,
     so permission tests see the same modes locally and in CI."""
     umask = os.umask(0o022)
     home = tmp_path / "home"
@@ -39,6 +40,7 @@ def home(tmp_path, monkeypatch):
     # Resolved at import time from the real home.
     monkeypatch.setattr(claude, "CLAUDE_LOCATIONS", (str(tmp_path / "bin" / "claude"),))
     monkeypatch.setattr(gemini, "AGY_LOCATIONS", (str(tmp_path / "bin" / "agy"),))
+    monkeypatch.setattr(codex, "CODEX_LOCATIONS", (str(tmp_path / "bin" / "codex"),))
     yield home
     os.umask(umask)
 
