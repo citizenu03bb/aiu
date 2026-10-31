@@ -68,7 +68,7 @@ One per metric a probe read, or one `error` row for a probe that failed.
 | `used` | number. `quota`: fraction used, 0 to 1; `spend`, `balance`: amount; `credit`: amount left | yes | extension |
 | `used_pct` | number, `used` × 100 rounded to 0.1. Only on a `quota` row whose `used` is a number; absent otherwise | absent | extension |
 | `limit` | number. `quota`: 1; `credit`: the grant; otherwise a budget when known | yes | extension (credit) |
-| `unit` | string: `%`, `USD`, `CNY`…, may be empty | no | extension |
+| `unit` | string: `%`, `USD`, `CNY`…, `reset` on a Codex rate-limit reset (a `credit` of 1, `used` 1 while it is unused), may be empty | no | extension |
 | `reset` | string, human (`in 2h 0m`, `expires in 10d 0h`, `now`) | yes | extension, when `reset_epoch` is null |
 | `note` | string, may be empty: plan name, allowance, the age of an old Claude Code reading (`Claude Code reading from 2h 5m ago`), or why an `error` row failed | no | extension |
 | `reset_epoch` | number, Unix seconds of the reset | yes | extension |
@@ -115,7 +115,7 @@ A provider:
 | `options` | object, option name → option, in aiu's order | no | extension |
 
 An option (`enabled`, `key_env`, `key_cmd`, `key_file`, `read_token`,
-`claude_cmd`, `vibe_allowance_eur`, `api_allowance_eur`):
+`claude_cmd`, `codex_cmd`, `vibe_allowance_eur`, `api_allowance_eur`):
 
 | Field | Type | Null | Read by |
 |---|---|---|---|

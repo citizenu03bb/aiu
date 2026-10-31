@@ -33,6 +33,11 @@
           "type": "bool",
           "value": false,
           "source": "default"
+        },
+        "codex_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
         }
       }
     },
