@@ -58,6 +58,31 @@ export function resetText(row, nowSecs = Date.now() / 1000) {
         : _('passed, refresh the snapshot');
 }
 
+/** Used at or above this percentage, a window counts as used up: the dot turns red (yellow for a sublimit). */
+export const FULL_PCT = 95;
+
+/**
+ * Why a used-up window colours the dot, as the menu says it: which window, how
+ * far, and when it resets. A sublimit (one model's own cap, like Gemini 4
+ * Argon) says that it stops that limit only.
+ */
+export function fullQuotaText(q, nowSecs = Date.now() / 1000) {
+    // "Gemini 4 Argon Weekly" names its provider already; "Weekly Limit" needs it.
+    const name = displayName(q.provider);
+    const fields = {
+        window: q.metric.startsWith(`${name} `) ? q.metric : `${name} ${q.metric}`,
+        pct: Math.round(q.used_pct), reset: resetText(q, nowSecs),
+    };
+    if (q.sublimit === true) {
+        return fields.reset
+            ? fmt(_('{window} is at {pct} %, for that limit only; resets {reset}'), fields)
+            : fmt(_('{window} is at {pct} %, for that limit only'), fields);
+    }
+    return fields.reset
+        ? fmt(_('{window} is at {pct} %; resets {reset}'), fields)
+        : fmt(_('{window} is at {pct} %'), fields);
+}
+
 /** The `schema` of `aiu --json` and `aiu config show --json` this extension reads (docs/json-schema.md). */
 export const SCHEMA = 1;
 
@@ -261,13 +286,18 @@ export class AiuClient {
             }
         }
 
+        // Used up, the windows that stop everything first, then the sublimits.
+        const fullQuotas = quotas.filter(q => q.used_pct !== null && q.used_pct >= FULL_PCT)
+            .sort((a, b) => (a.sublimit === true) - (b.sublimit === true));
+
         return {
             capturedAt,
             quotas,
             balances,
             errors,
             routing,
-            statusColor: this._statusColor(quotas, errors, routing),
+            fullQuotas,
+            statusColor: this._statusColor(fullQuotas, errors, routing),
             worstQuotaPct,
             advice: this._generateAdvice(routing),
         };
@@ -275,12 +305,17 @@ export class AiuClient {
 
     /**
      * Panel dot = "is there something to act on?"
-     * critical: a probe failed or a window is (nearly) exhausted right now;
-     * warning: free subscription quota will be lost at a reset within 24h.
+     * critical: a probe failed or a window is (nearly) used up right now;
+     * warning: a sublimit is used up (that one model only), or free
+     * subscription quota will be lost at a reset within 24h.
+     * fullQuotas: the windows at or above FULL_PCT.
      */
-    _statusColor(quotas, errors, routing) {
-        if (errors.length > 0 || quotas.some(q => q.used_pct !== null && q.used_pct >= 95)) {
+    _statusColor(fullQuotas, errors, routing) {
+        if (errors.length > 0 || fullQuotas.some(q => q.sublimit !== true)) {
             return 'critical';
+        }
+        if (fullQuotas.length > 0) {
+            return 'warning';
         }
         const expiringSoon = routing.some(l => l.status === 'burn' && l.leftover !== null
             && typeof l.ttr_secs === 'number' && l.ttr_secs <= 24 * 3600);

@@ -13,6 +13,7 @@
       "note": "",
       "reset_epoch": 1793007200.0,
       "window_secs": 18000,
+      "sublimit": false,
       "used_pct": 12.0
     },
     {
@@ -26,6 +27,7 @@
       "note": "",
       "reset_epoch": 1793259200.0,
       "window_secs": 604800,
+      "sublimit": false,
       "used_pct": 40.0
     },
     {
@@ -39,6 +41,7 @@
       "note": "",
       "reset_epoch": 1793259200.0,
       "window_secs": 604800,
+      "sublimit": true,
       "used_pct": 5.0
     },
     {
@@ -51,7 +54,8 @@
       "reset": "expires in 10d 0h",
       "note": "",
       "reset_epoch": 1793864000.0,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "codex",
@@ -64,6 +68,7 @@
       "note": "plus",
       "reset_epoch": 1793003600.0,
       "window_secs": 18000,
+      "sublimit": false,
       "used_pct": 20.0
     },
     {
@@ -77,6 +82,7 @@
       "note": "",
       "reset_epoch": 1793086400.0,
       "window_secs": 604800,
+      "sublimit": false,
       "used_pct": 70.0
     },
     {
@@ -89,7 +95,8 @@
       "reset": null,
       "note": "",
       "reset_epoch": null,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "openai",
@@ -101,7 +108,8 @@
       "reset": null,
       "note": "",
       "reset_epoch": null,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "deepseek",
@@ -113,7 +121,8 @@
       "reset": null,
       "note": "",
       "reset_epoch": null,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "deepseek",
@@ -125,7 +134,8 @@
       "reset": null,
       "note": "",
       "reset_epoch": null,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "openrouter",
@@ -137,7 +147,8 @@
       "reset": null,
       "note": "",
       "reset_epoch": null,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "openrouter",
@@ -149,7 +160,8 @@
       "reset": null,
       "note": "",
       "reset_epoch": null,
-      "window_secs": null
+      "window_secs": null,
+      "sublimit": false
     },
     {
       "provider": "gemini",
@@ -162,6 +174,7 @@
       "note": "",
       "reset_epoch": 1793007200.0,
       "window_secs": 18000,
+      "sublimit": false,
       "used_pct": 25.0
     },
     {
@@ -175,6 +188,7 @@
       "note": "",
       "reset_epoch": 1793590400.0,
       "window_secs": 604800,
+      "sublimit": false,
       "used_pct": 2.0
     },
     {
@@ -188,6 +202,7 @@
       "note": "\u20ac1.28 / \u20ac8.50",
       "reset_epoch": 1793491200.0,
       "window_secs": 2678400,
+      "sublimit": false,
       "used_pct": 15.0
     },
     {
@@ -201,6 +216,7 @@
       "note": "\u20ac4.00 / \u20ac8.50",
       "reset_epoch": 1793491200.0,
       "window_secs": 2678400,
+      "sublimit": false,
       "used_pct": 47.1
     }
   ],

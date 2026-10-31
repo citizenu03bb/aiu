@@ -17,6 +17,9 @@ class Row:
     note: str = ""
     reset_epoch: float | None = None  # machine reset time (for advise/alert)
     window_secs: int | None = None    # quota window length, when known
+    # A quota on one model or product inside the plan (Gemini 4 Argon, Weekly
+    # Opus): full, it stops only that one, so the panel warns instead of alarming.
+    sublimit: bool = False
 
     def to_public(self) -> dict:
         d = asdict(self)

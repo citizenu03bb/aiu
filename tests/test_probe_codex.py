@@ -175,6 +175,8 @@ def test_several_limits_get_their_name(fake):
     assert list(rows) == ["5-Hour Limit", "Weekly Limit", "GPT-5.5-Codex-Spark 5-Hour Limit",
                           "Credits", "Full reset (Weekly + 5 hr)"]
     assert rows["GPT-5.5-Codex-Spark 5-Hour Limit"].used == 0.07
+    # A limit on one model inside the plan: used up, it stops only that model.
+    assert [m for m, r in rows.items() if r.sublimit] == ["GPT-5.5-Codex-Spark 5-Hour Limit"]
     assert rows["5-Hour Limit"].note == "plus"
 
 
