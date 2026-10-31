@@ -466,8 +466,8 @@ has passed, instead of "unknown pace".
 
 ## Wave 8: done
 
-Merged on 2026-10-30: R in #45, S in #44, T in #46. Not released: v0.5.0
-was tagged before it, so it ships with wave 9 in v0.6.0.
+Merged on 2026-10-30: R in #45, S in #44, T in #46. v0.5.0 was tagged
+before it, so it was released in v0.6.0, with wave 9.
 
 A survey of each provider's official sign-in and usage APIs (2026-10-30)
 found two places where aiu leans on another program's credentials in a way
@@ -558,7 +558,11 @@ the provider's terms address, and one clean official sign-in:
 **Done when** (each task): CI is green, behaviour outside the task unchanged,
 and the README says what changed for existing users.
 
-## Wave 9: ask each vendor's own client
+## Wave 9: ask each vendor's own client (done)
+
+Merged on 2026-10-31: U in #49, Y in #48, X in #50, V in #51, W in #52; then
+the dot's colour (#53) and each subscription's plan (#54, Gemini's in #55).
+Released in v0.6.0, with wave 8.
 
 Wave 8 fixed Claude and Gemini one at a time. This wave applies one rule to
 every provider: **aiu holds only credentials issued to aiu (`aiu login
@@ -767,9 +771,9 @@ unchanged, and the task's lines are in the README's "What changed in v0.6.0".
 - Waves 8 and 9. Bump `__version__` and `version-name`, merge, tag `v0.6.0`.
   The Claude plugin stays at 0.1.0 unless a task changed it.
 - Release notes: the README's "What changed in v0.6.0".
-- Then the extensions.gnome.org upload. The listing kit
-  (`gnome-extension/EGO.md`, not in git yet) needs one line saying Gemini is
-  read through the Antigravity CLI.
+- Then the extensions.gnome.org upload, with the listing kit
+  `gnome-extension/EGO.md` (now in git; it says Gemini is read through the
+  Antigravity CLI).
 
 ## Later
 
