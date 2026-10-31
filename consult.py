@@ -3,25 +3,24 @@
 """consult — delegate ONE self-contained sub-task to another AI subscription/CLI.
 
 Usage:
-  consult <gemini|codex|deepseek|auto> "<prompt>"
+  consult <codex|deepseek|auto> "<prompt>"
   consult <provider> -            # read the prompt from stdin
   echo "..." | consult auto
 
 Prints ONLY the model's answer to stdout (chosen provider goes to stderr).
 
 For Claude Code (or you) to offload independent / parallel / second-opinion
-sub-tasks onto idle flat-fee subscriptions (Gemini via `agy`, ChatGPT via
-`codex`) instead of spending its own Claude quota or a paid API.
+sub-tasks onto an idle flat-fee subscription (ChatGPT via `codex`) instead of
+spending its own Claude quota or a paid API. Gemini is not offered: Antigravity's
+terms (section 6) call accessing it through third-party tools a breach, and
+replies attributed to Google staff apply that to running `agy` from an agent.
 
-Route by TASK FIT, not idle quota. `auto` only breaks ties toward the
-subscription whose spare quota expires first (`advice` from `aiu --json`); it
-falls back to DeepSeek (paid) when every reachable subscription is projected to
-run dry before its reset.
+Route by TASK FIT, not idle quota. `auto` reads `advice` from `aiu --json` and
+picks codex, unless codex is missing from it or projected to run dry before its
+reset: then it falls back to DeepSeek (paid).
 
 The prompt goes to `codex` and `pi` on stdin, so it is neither visible in
-/proc/<pid>/cmdline nor parsed as an option nor capped at 128 KiB. `agy` has no
-documented way to read a prompt from stdin (its print mode is known to misbehave
-with a piped stdin), so it still gets it as the value of `-p`.
+/proc/<pid>/cmdline nor parsed as an option nor capped at 128 KiB.
 The delegated CLIs run with their own sandbox and approval defaults: consult
 does not restrict them, except `pi`'s `--no-tools`.
 
@@ -33,7 +32,7 @@ import subprocess
 import sys
 
 TIMEOUT = 300
-SUBS = ("gemini", "codex")  # flat-fee subs reachable here (claude = the caller)
+SUBS = ("codex",)  # flat-fee subs reachable here (claude = the caller)
 
 # Same language choice as aiu's ui_lang(); kept here so consult needs only the stdlib.
 FR = {
@@ -43,8 +42,8 @@ FR = {
         "[consult] note : le surplus de claude lui-même expire en premier ({detail}) — "
         "le faire toi-même vaut peut-être mieux",
     "consult: empty prompt": "consult : prompt vide",
-    "consult: unknown provider {provider} (gemini|codex|deepseek|auto)":
-        "consult : fournisseur inconnu {provider} (gemini|codex|deepseek|auto)",
+    "consult: unknown provider {provider} (codex|deepseek|auto)":
+        "consult : fournisseur inconnu {provider} (codex|deepseek|auto)",
     "[consult] {provider} failed (rc={rc}): {err}": "[consult] échec de {provider} (rc={rc}) : {err}",
 }
 
@@ -72,11 +71,6 @@ def _run(cmd: list[str], stdin: str | None = None):
         return 127, "", tr("command not found: {cmd}", cmd=cmd[0])
 
 
-def call_gemini(prompt: str):
-    # agy print mode is clean + non-interactive (no trust/permission flag needed)
-    return _run(["agy", "--print-timeout", "5m", "-p", prompt])
-
-
 def call_codex(prompt: str):
     # NB: codex exec tends to echo its answer twice — dedup when reading.
     # `-` reads the prompt from stdin.
@@ -88,12 +82,12 @@ def call_deepseek(prompt: str):
                  "--no-tools", "--no-skills", "--no-context-files"], stdin=prompt)
 
 
-CALLERS = {"gemini": call_gemini, "codex": call_codex, "deepseek": call_deepseek}
+CALLERS = {"codex": call_codex, "deepseek": call_deepseek}
 
 
 def pick_auto() -> str:
-    """Pick the subscription whose surplus expires first (aiu's "advice" order);
-    fall back to deepseek (paid) when every reachable sub must be conserved."""
+    """Pick codex when aiu's "advice" puts it ahead of the first conserve window;
+    fall back to deepseek (paid) otherwise."""
     try:
         p = subprocess.run(["aiu", "--json"], capture_output=True, text=True, timeout=30)
         advice = json.loads(p.stdout).get("advice", [])
@@ -126,7 +120,7 @@ def main() -> int:
         print(f"[consult] → {provider}", file=sys.stderr)
     fn = CALLERS.get(provider)
     if not fn:
-        print(tr("consult: unknown provider {provider} (gemini|codex|deepseek|auto)",
+        print(tr("consult: unknown provider {provider} (codex|deepseek|auto)",
                  provider=repr(provider)), file=sys.stderr)
         return 2
     rc, out, err = fn(prompt)

@@ -34,7 +34,7 @@ documented residual risk.
 | L3 | Fixed, one residual | #8, #31 | `aiu cookie import mistral` (`cookie_import`, `aiu/cookies.py`) copies the `admin.mistral.ai` cookies from one browser profile into the keyring (`secret-tool store`, value on stdin) and sets `key_cmd`; nothing else touches the disk. Residual: it is still a full console session, readable by any process of the user that can query the unlocked keyring, and the manual `~/.env` copy remains as a fallback |
 | L4 | Fixed, one residual; off by default since wave 8 | #10, #12, task R, wave 9 (U) | `_refresh_claude_token` (`aiu/probes/claude.py`) runs `claude` only from known locations or `claude_cmd`, never one others can write (`find_cli` and `run_cli` in `aiu/clis.py`, which every vendor client goes through since wave 9, with a clean environment and its process group killed at the timeout), and backs off for an hour after a failure. A race with an interactive `claude` over the same refresh token is not addressed. Since wave 8 the whole token read, refresh included, runs only with `claude.read_token = true` (see below) |
 | L5 | Fixed | #10 | `AiuClient` kills `aiu` on cancel and disable, with a 120 s watchdog |
-| L6 | Fixed, one residual | #10 | `consult` feeds `codex` and `pi` on stdin; `agy` has no documented stdin mode and still gets the prompt as the value of `-p` |
+| L6 | Fixed | #10, wave 9 (Y) | `consult` feeds `codex` and `pi` on stdin. The residual (`agy` had no documented stdin mode and got the prompt as the value of `-p`) went with the `gemini` caller in wave 9, task Y: Antigravity's terms forbid reaching it from another tool |
 
 L3 was taken further in ROADMAP wave 6 (task N), after v0.4.1: see its
 status note at the end of the L3 finding.
@@ -463,6 +463,12 @@ The prompt is a command-line argument of `agy`, `codex` and `pi`:
 argument. Document that the delegated CLIs run with their own sandbox and
 approval defaults: `consult` does not restrict them, except `pi`'s
 `--no-tools`.
+
+**Status (wave 9, task Y).** `codex` and `pi` read the prompt on stdin since
+#10. `agy` was the residual: it has no documented stdin mode, so it got the
+prompt as the value of `-p`. `consult` no longer calls `agy` at all, since
+Antigravity's terms (§6) forbid accessing it through third-party tools, so no
+prompt is on a command line any more.
 
 ## Informational
 

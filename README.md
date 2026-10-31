@@ -62,6 +62,14 @@ optimal for work any subscription can do (why this rule:
 [docs/routing-algorithms.md](docs/routing-algorithms.md)). `aiu --json` carries the same
 ordering under `"advice"`, which the [GNOME indicator](gnome-extension/README.md)
 and [`consult.py`](consult.py) `auto` read instead of keeping their own logic.
+
+`consult` hands a sub-task to `codex` (ChatGPT) or, paid, to DeepSeek through
+`pi`, never to Gemini: Antigravity's terms
+([antigravity.google/terms](https://antigravity.google/terms), §6) call "using
+third party software, tools, or services to access the Service" a breach that
+may suspend the Antigravity and Gemini CLI accounts, and forum replies
+attributed to Google staff apply it to running `agy` from another agent.
+
 `aiu --alert` flags long windows projected to lose ≥5% of their cap at a reset
 within 48h, windows projected to sit empty ≥24h before their reset, promo
 credits with ≥25% unspent within 14 days of expiry, and probe errors, and
@@ -477,6 +485,9 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
 - Every option named `*_cmd` runs a program: an untrusted config drops them
   all, not just `key_cmd` (it kept `claude_cmd` before), and `aiu config set`
   and the preferences window treat them alike.
+- `consult` no longer offers `gemini` (it ran `agy -p`): Antigravity's terms
+  forbid reaching it from another tool. `consult gemini` now exits 2 with the
+  usage text, and `auto` picks `codex` or falls back to DeepSeek.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.
