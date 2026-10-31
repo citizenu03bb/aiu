@@ -7,7 +7,7 @@ import GLib from 'gi://GLib';
 import System from 'system';
 import {
     AiuRunner, clampInterval, fieldValue, intervalMinutes, looksLikeSecret, optionHelp, optionTitle, parseConfigShow,
-    providerStatus, REFRESH_DEFAULT_SECONDS, REFRESH_KEY, REFRESH_MAX_SECONDS, REFRESH_MIN_SECONDS,
+    providerStatus, REFRESH_DEFAULT_SECONDS, REFRESH_KEY, REFRESH_MAX_SECONDS, REFRESH_MIN_SECONDS, runsCode,
     SCHEMA_ID, SchemaError, setArgv, showArgv, statusText,
 } from '../aiuConfig.js';
 
@@ -92,7 +92,12 @@ function testParse() {
         'claude.claude_cmd=false', 'openai.key_env=true', 'openai.key_cmd=false', 'openai.key_file=true',
         'mistral.key_env=true', 'mistral.key_cmd=false', 'mistral.key_file=true',
         'mistral.vibe_allowance_eur=true', 'mistral.api_allowance_eur=true',
-    ], 'only key_cmd and claude_cmd turn read-only');
+    ], 'only the *_cmd fields turn read-only');
+    // Every *_cmd runs a program, as runs_code in aiu/config.py: a vendor client added later included.
+    assertEqual(['key_cmd', 'claude_cmd', 'codex_cmd', 'agy_cmd', 'key_env', 'key_file', 'cmd'].map(runsCode),
+        [true, true, true, true, false, false, false], 'runsCode follows the suffix');
+    assertEqual([optionTitle('codex_cmd'), optionTitle('agy_cmd')], ['codex program', 'agy program'],
+        'vendor program titles');
 
     // A bool is a switch under its own name; a type the window does not know is left out, not guessed.
     const odd = parseConfigShow(JSON.stringify({

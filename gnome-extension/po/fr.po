@@ -274,6 +274,14 @@ msgid "claude program"
 msgstr "Programme claude"
 
 #: aiuConfig.js
+msgid "codex program"
+msgstr "Programme codex"
+
+#: aiuConfig.js
+msgid "agy program"
+msgstr "Programme agy"
+
+#: aiuConfig.js
 msgid "Read the claude sign-in token"
 msgstr "Lire le jeton de connexion de claude"
 

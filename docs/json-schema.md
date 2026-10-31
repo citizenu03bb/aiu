@@ -103,7 +103,7 @@ An object. Keys in this order:
 |---|---|---|---|
 | `schema` | integer | no | extension |
 | `path` | string, the config file | no | extension (Open config file) |
-| `key_cmd_allowed` | boolean: false when the file fails the trust check | no | extension |
+| `key_cmd_allowed` | boolean: false when the file fails the trust check, so that no `*_cmd` option runs | no | extension |
 | `key_cmd_problems` | array of strings, why it fails | no | extension |
 | `providers` | object, provider id → provider, in aiu's order | no | extension |
 
@@ -125,8 +125,8 @@ An option (`enabled`, `key_env`, `key_cmd`, `key_file`, `read_token`,
 
 The window shows `enabled` as the provider's switch, each other `bool` option
 (`read_token`) as a switch of its own, and each `string` or `number` option as
-a field; `key_cmd` and `claude_cmd` are read-only when `key_cmd_allowed` is
-false. An option of another type is left out.
+a field; every `*_cmd` field (`key_cmd`, `claude_cmd`, any vendor client's
+program) is read-only when `key_cmd_allowed` is false. An option of another type is left out.
 
 ## `claude-usage.json`
 

@@ -229,6 +229,13 @@ them can run code as you.
   key". Like OpenSSH, `aiu` ignores every `key_cmd`, with a warning, when the
   config file or its directory is not yours or can be written by group or
   others. It writes the starter config `0600` in a `0700` directory.
+- Every option named `*_cmd` runs a program: `key_cmd`, and `claude_cmd`, the
+  vendor client aiu asks for its own figures. The trust check above drops
+  them all, and `aiu config set` refuses them, in a config that fails it. A
+  vendor client is never taken from `PATH`: only its `*_cmd`, or else a known
+  install location, and never one that someone else can write. It runs with
+  a clean environment (`HOME`, `PATH`, `USER`, `LANG`), and it is killed,
+  with whatever it started, at its timeout and once aiu has its answer.
 - `~/.env` can only supply the names above, and only as keys sent to their
   own provider over TLS.
 - `MISTRAL_ADMIN_COOKIE` is a whole admin.mistral.ai session, not a read-only
@@ -254,8 +261,8 @@ aiu config set openai.key_env ""   # an empty string turns a key source off
 (`key_env`, `key_cmd`, `key_file`), and its own options (`read_token`,
 `claude_cmd`, Mistral's allowances), each with its value and whether the file sets it
 (`"source": "file"`) or aiu's default applies. `--json` also gives the config
-path and whether `key_cmd` may run (`key_cmd_allowed`, with the reasons when
-not). It shows values only: it never runs `key_cmd`, reads a `key_file` or
+path and whether the `*_cmd` options may run (`key_cmd_allowed`, with the
+reasons when not). It shows values only: it never runs `key_cmd`, reads a `key_file` or
 `~/.env`, or prints a key.
 
 `set` changes one setting per call: a known provider and option, with
@@ -268,7 +275,7 @@ second one, and otherwise adds the setting after the section's last one (or the
 section at the end of the file). The result must parse back to the old config
 plus that one value, or nothing is written. The file is replaced atomically,
 `0600`, and a symlinked config stays a symlink. `set` refuses a config that is
-not yours, and refuses `key_cmd` and `claude_cmd` when the config fails the
+not yours, and refuses every `*_cmd` option when the config fails the
 check above (yours, not writable by group or others).
 
 ### claude
@@ -462,6 +469,14 @@ no other network call. No probe writes to another program's files.
 
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
+
+## What changed in v0.6.0
+One list for the release notes. Wave 8's changes are told in their own
+sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
+
+- Every option named `*_cmd` runs a program: an untrusted config drops them
+  all, not just `key_cmd` (it kept `claude_cmd` before), and `aiu config set`
+  and the preferences window treat them alike.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.

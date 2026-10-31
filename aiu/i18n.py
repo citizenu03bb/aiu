@@ -29,8 +29,8 @@ FR = {
     # stderr warnings
     "[aiu] {name}: key from {source} holds control characters, ignored":
         "[aiu] {name} : la clé lue par {source} contient des caractères de contrôle, ignorée",
-    "aiu: claude_cmd {path} is not an executable file":
-        "aiu : claude_cmd {path} n'est pas un fichier exécutable",
+    "aiu: {option} {path} is not an executable file":
+        "aiu : {option} {path} n'est pas un fichier exécutable",
     "aiu: not running {path}: writable by other users":
         "aiu : {path} non lancé : d'autres utilisateurs peuvent l'écrire",
     "[aiu] {path}:{line}: {name} has unmatched quotes, ignored ({file} values must fit on one line)":
@@ -42,7 +42,8 @@ FR = {
         "[aiu] config de départ écrite dans {path} — modifie-la, puis relance.",
     "{path} is not yours": "{path} ne t'appartient pas",
     "{path} is writable by group or others": "{path} est modifiable par le groupe ou les autres",
-    "[aiu] key_cmd ignored for {names}: {reasons}": "[aiu] key_cmd ignoré pour {names} : {reasons}",
+    "[aiu] ignored, since the config is not safe: {options} ({reasons})":
+        "[aiu] ignoré, la config n'étant pas sûre : {options} ({reasons})",
     "[aiu] wrote {path}": "[aiu] {path} écrit",
     # table and HTML page
     "AI usage snapshot": "Relevé d'usage IA",
@@ -150,7 +151,8 @@ FR = {
         "/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu. "
         "Pour le désactiver : aiu config set claude.read_token false",
     "Config: {path}": "Config : {path}",
-    "key_cmd is ignored: {reasons}": "key_cmd est ignoré : {reasons}",
+    "key_cmd and the other *_cmd options are ignored: {reasons}":
+        "key_cmd et les autres options *_cmd sont ignorées : {reasons}",
     "Option": "Réglage",
     "Value": "Valeur",
     "Source": "Provenance",
