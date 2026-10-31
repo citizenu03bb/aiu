@@ -464,7 +464,10 @@ has passed, instead of "unknown pace".
 **Done when:** CI is green, with tests for early-fast (conserve), early-slow
 (unknown) and history-present (history wins).
 
-## Wave 8: provider terms, in parallel
+## Wave 8: done
+
+Merged on 2026-10-30: R in #45, S in #44, T in #46. Not released: v0.5.0
+was tagged before it, so it ships with wave 9 in v0.6.0.
 
 A survey of each provider's official sign-in and usage APIs (2026-10-30)
 found two places where aiu leans on another program's credentials in a way
@@ -555,12 +558,221 @@ the provider's terms address, and one clean official sign-in:
 **Done when** (each task): CI is green, behaviour outside the task unchanged,
 and the README says what changed for existing users.
 
+## Wave 9: ask each vendor's own client
+
+Wave 8 fixed Claude and Gemini one at a time. This wave applies one rule to
+every provider: **aiu holds only credentials issued to aiu (`aiu login
+openrouter`) or API keys the user created for that API. A sign-in that another
+program holds stays in that program, and aiu asks that program for its
+figures through an interface the program offers.**
+
+| Tier | Source | Default |
+|---|---|---|
+| 1 | A documented API, with the user's own key: `openai`, `deepseek`, `openrouter` | on once configured |
+| 2 | The vendor's own client reports its quota: `claude` (the plugin), `codex` (`codex app-server`), `gemini` (`agy`) | how aiu reads a subscription |
+| 3 | Another program's token, or a web session: `claude.read_token`, the Mistral cookie | off; the user turns it on and gets a notice quoting the terms |
+
+There is no silent fallback from tier 2 to tier 3. When the client is
+missing, the row says what to install.
+
+**Checked on 2026-10-31** on the maintainer's machine:
+
+- **Codex 0.166.** `codex app-server` (JSON-RPC over stdio, marked
+  experimental) answers `initialize` and then `account/rateLimits/read` in
+  1.4 s. The answer has `rateLimits` and `rateLimitsByLimitId` (`primary` and
+  `secondary` windows with `usedPercent`, `windowDurationMins` and `resetsAt`,
+  plus `credits` and `planType`), and `rateLimitResetCredits`: a granted "Full
+  reset (Weekly + 5 hr)" with its expiry, which aiu does not show today. Codex
+  signs the request with its own token and refreshes that token itself.
+  `codex app-server generate-json-schema` prints the schema. Since Codex 0.142
+  the session logs no longer carry `rate_limits`.
+- **Antigravity CLI.** `agy -p /usage --output-format json` runs the `/usage`
+  command with no model turn (`num_turns` 0, no tokens) in 2.8 s.
+  `command.data.groups[]` holds `name`, `description` and `buckets[]` (`id`,
+  `name`, `window` `5h` or `weekly`, `remaining_fraction`, `reset_time`) for
+  "Gemini Models", "Claude and GPT models" and per-model weekly limits
+  ("Gemini 4 Argon"). A reply on the Google AI forum calls `/usage` the
+  supported way to check quota. Each run writes a log under
+  `~/.gemini/antigravity-cli/log/` and touches its MCP server cache. This was
+  tested with the desktop app open; whether it works without the app has not
+  been checked.
+- **Claude Code.** `claude -p /usage` also answers with no turn, at $0, but in
+  prose with resets in local time. The plugin stays.
+- **Mistral Vibe 3.0.3.** Its plugins carry hooks (`post_agent`, `pre_tool`,
+  `post_tool`, in the Vibe, Claude Code and Kimi protocols). Their payload is
+  the session id, the transcript path, the cwd and the agent name: no usage.
+  Each session's `meta.json` has `stats.session_cost` and token counts at list
+  price, but only for Vibe CLI sessions on this machine (not API/Studio, not
+  other machines), and local logs undercount the server's totals by about 3×
+  (README, `mistral`). Vibe's app-server `account/read` gives the plan only.
+  A Vibe plugin would feed the advice a lower bound and call a dry allowance
+  *burn*, so it is not built. The cookie stays the only reading of Mistral's
+  allowances.
+- **consult.** `consult gemini` and `consult auto` run `agy -p "<prompt>"`,
+  often from inside Claude Code. Antigravity's terms (§6) call "using third
+  party software, tools, or services to access the Service" a breach that
+  may suspend the Antigravity and Gemini CLI accounts. Forum replies
+  attributed to Google staff apply this to running `agy` from another agent.
+  `/usage` runs no model; a prompt does.
+
+**Constraints**, because the repository and the extension are published:
+
+- `pipx install git+…` installs `main`, and `/plugin install` reads the
+  marketplace from `main`. Every PR leaves `main` working, with a README that
+  matches the code.
+- No backward compatibility: options, rows and notes may change or go. Each
+  task adds its lines to one "What changed in v0.6.0" list in the README,
+  which the release notes copy.
+- `--json` keeps `"schema": 1`: new rows and options are additions. A task
+  that needs to rename or remove a field stops and says so in its PR.
+- Every option that runs a program is named `*_cmd`, and aiu and the
+  extension treat them all alike (U).
+- Two rounds: U, X and Y in parallel, then V and W in parallel once U is
+  merged. V and W both re-record `tests/fixtures/`: whichever merges second
+  rebases and records again. Tag v0.6.0 after all five.
+
+### U. Run a vendor's CLI (first round)
+
+- Move the executable lookup out of `_refresh_claude_token` into a new
+  `aiu/clis.py`. It takes `<name>_cmd` from the config, or else the known
+  install locations, never `PATH` (gnome-shell's, when the extension runs
+  aiu). It resolves the path once to its real file and refuses one that other
+  users can write, or that sits in a directory they can write.
+- A runner next to it: fixed argv, a clean environment (`HOME`, `PATH`,
+  `USER`, `LANG`), stdin from a pipe or `/dev/null`, and a timeout that kills
+  the whole process group.
+- A reading cache in aiu's state directory for slow or chatty clients: one
+  0600 file per provider, with a time-to-live the probe sets. A failed run is
+  cached for a short time too, so the extension does not retry it every
+  refresh.
+- Every option named `*_cmd` runs code. `CONFIG_RUNS_CODE`, `load_config`
+  (which then drops every `*_cmd` from an untrusted config, closing the old
+  Later item on `claude_cmd`), `config set` and `RUNS_CODE` in `aiuConfig.js`
+  match the suffix instead of a list.
+- Field titles for `codex_cmd` and `agy_cmd` in `aiuConfig.js`, with their
+  French, so V and W leave the extension alone.
+- `claude` behaves as before.
+
+**Files:** a new `aiu/clis.py`, `aiu/probes/claude.py` (the lookup only),
+`aiu/config.py`, `aiu/i18n.py`, `gnome-extension/aiuConfig.js`,
+`gnome-extension/po/`, `tests/`, the README's *Secrets* lines on `*_cmd`,
+`docs/security-review.md` (L1, L4).
+**Done when:** CI is green, `tests/test_claude_refresh.py` passes with only
+its imports changed, and a test shows an untrusted config dropping
+`claude_cmd`.
+
+### V. Codex from `codex app-server` (second round, after U)
+
+- The `codex` probe starts `codex app-server` with U's runner, sends
+  `initialize`, `initialized` and `account/rateLimits/read`, reads lines until
+  the answer with that request's id (skipping notifications), then closes
+  stdin. Timeout 20 s.
+- Rows from `rateLimitsByLimitId`: each limit's windows (`5-Hour Limit` or
+  `Weekly Limit`, from `windowDurationMins`), `credits.balance` as today, and
+  one `credit` row per available `rateLimitResetCredits` entry, with its title
+  and expiry, so `--alert` flags a reset about to expire unused. `planType`
+  goes in the note. Every field is type-checked; a reply that fails the
+  checks is "malformed", as with the Claude file.
+- Errors: no `codex` ("install the Codex CLI"), not signed in (an error
+  answer, or `authMode` null: "run `codex` to sign in"), and a changed
+  protocol (an unknown-method error: "update aiu or Codex").
+- Remove `_read_codex_token`, the `wham/usage` call and their tests: aiu no
+  longer opens `~/.codex/auth.json`, and a test guards that file the way the
+  Claude tests guard Claude's credentials.
+- A `codex_cmd` option.
+- README: the providers table, the `codex` paragraph and *Unofficial
+  endpoints* (aiu calls nothing for Codex). Security review: the Codex notes.
+
+**Files:** `aiu/probes/codex.py`, `aiu/config.py` (the `[codex]` blocks of
+the starter configs), `aiu/i18n.py`, `tests/test_probe_codex.py`,
+`tests/fixtures/`, `README.md` (Codex parts), `docs/security-review.md`,
+`docs/json-schema.md` if a row note changes.
+**Done when:** CI is green, the probe's test reply is a real reply with its
+ids blanked, and the panel shows the new rows in a nested shell.
+
+### W. Gemini from `agy /usage` (second round, after U)
+
+- Run `agy -p /usage --output-format json` with U's runner and cache the
+  reading for 15 minutes. Each run writes a log file, so aiu runs `agy` at
+  most 96 times a day, whatever the extension's interval. First look for a
+  flag that stops it from starting MCP servers or writing that log, and use
+  it if there is one.
+- Accept only a reply with `status` `SUCCESS`, `command.name` `usage` and
+  `num_turns` 0. Anything else means `agy` may have taken `/usage` as a prompt
+  and run the model: the row is an error, and aiu does not run `agy` again
+  for 24 hours.
+- Rows: every group's `5h` and `weekly` buckets, with `used = 1 -
+  remaining_fraction` and `reset_time`. "Gemini Models" keeps `5-Hour Limit`
+  and `Weekly Limit`; other groups and per-model limits are named after their
+  group. Their routing advice follows each bucket's own reset.
+- Remove `_query_local_quota_summary` (the `/proc` scan and the CSRF token
+  from the command line or `main.log`) and its tests: H1's code is gone.
+- Check with the desktop app closed, and have the README say what Gemini
+  needs.
+- An `agy_cmd` option.
+- README: the providers table, the `gemini` section (the paragraph saying
+  `agy` can't stand in is now wrong) and *Unofficial endpoints*, plus a line
+  on §6: `/usage` runs no model. Security review: H1 becomes history.
+
+**Files:** `aiu/probes/gemini.py`, `aiu/config.py` (the `[gemini]` blocks),
+`aiu/i18n.py`, `tests/test_probe_gemini.py`, `tests/fixtures/`, `README.md`
+(Gemini parts), `docs/security-review.md`.
+**Done when:** CI is green, a test feeds a reply with `num_turns` 1 and
+checks that the back-off holds, and the row reads correctly with
+Antigravity's desktop app closed.
+
+### X. Mistral: the keyring only, with a notice (first round)
+
+- No default `key_env` for `mistral`, and `MISTRAL_ADMIN_COOKIE` out of
+  `_ENV_ALWAYS`. aiu reads the cookie where `aiu cookie import` put it, or
+  from a source the user sets explicitly (`aiu config set mistral.key_env
+  MISTRAL_ADMIN_COOKIE`).
+- `aiu cookie import mistral` prints a notice before it stores anything: it
+  keeps a whole admin.mistral.ai session, which can create keys and change
+  billing; it reads the browser's cookie store; and Mistral's terms forbid
+  extracting content "other than as permitted" (§2.2(g) of the commercial
+  terms). Check the consumer terms that cover the Free plan, and quote the
+  clause that applies.
+- The empty-cookie note becomes "no session: run `aiu cookie import
+  mistral`".
+- README `mistral`: the import is the way in, and the DevTools copy is only
+  for a desktop without `secret-tool`. Drop the paragraph about a leftover
+  `MISTRAL_ADMIN_COOKIE`, and add Mistral's tRPC to *Unofficial endpoints*,
+  which leaves it out today.
+
+**Files:** `aiu/probes/mistral.py`, `aiu/keys.py`, `aiu/cookies.py`,
+`aiu/config.py` (the `[mistral]` blocks), `aiu/i18n.py`, `tests/`,
+`README.md` (Mistral, the `~/.env` list in *Secrets*, *Unofficial
+endpoints*), `docs/security-review.md` (L2, L3).
+**Done when:** CI is green and a test shows a `MISTRAL_ADMIN_COOKIE` in
+`~/.env` ignored when the config does not name it.
+
+### Y. consult without `agy` (first round)
+
+- Remove `gemini` from `consult`: `SUBS`, `CALLERS`, `call_gemini`, the usage
+  text and its French. `auto` picks `codex`, or else falls back to
+  `deepseek`.
+- README: one line in the consult paragraph saying why. Security review: L6's
+  residual (`agy -p`) goes with it.
+
+**Files:** `consult.py`, `tests/test_consult.py`, `README.md` (the consult
+lines), `docs/security-review.md` (L6).
+**Done when:** CI is green and `consult gemini` exits 2 with the usage text.
+
+**Done when** (each task): CI is green, behaviour outside the task is
+unchanged, and the task's lines are in the README's "What changed in v0.6.0".
+
+## Release v0.6.0 (after wave 9)
+
+- Waves 8 and 9. Bump `__version__` and `version-name`, merge, tag `v0.6.0`.
+  The Claude plugin stays at 0.1.0 unless a task changed it.
+- Release notes: the README's "What changed in v0.6.0".
+- Then the extensions.gnome.org upload. The listing kit
+  (`gnome-extension/EGO.md`, not in git yet) needs one line saying Gemini is
+  read through the Antigravity CLI.
+
 ## Later
 
-- **`claude_cmd` from an untrusted config.** `aiu config set` refuses it like
-  `key_cmd`, but `load_config` does not drop it from a config others can
-  write. Low risk (the refresh still runs only a binary owned by root or the
-  user that nobody else can write), but it should match `key_cmd`.
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
   starts to matter which kind of work gets the spare quota.
 - **ChatGPT sign-in without the Codex CLI (investigate first).** The codex
@@ -575,3 +787,12 @@ and the README says what changed for existing users.
   managed in ChatGPT settings, no documented way to read usage or limits.
   So it suits `consult` (prompts on the plan without `codex`), not the codex
   probe, unless a test shows the token reads `wham/usage`. Ideas only, not code.
+- **A Mistral usage API.** Ask Mistral for a read-only usage endpoint that an
+  API or Vibe key can read. With one, the cookie import goes. A Vibe plugin
+  only makes sense if Vibe ever reports the allowance to its hooks.
+- **Claude without the plugin.** `claude -p /usage` answers at $0 but in
+  prose. Use it only if Claude Code gains a structured output for it.
+- **One Codex process.** `codex app-server daemon` and `proxy` could spare a
+  process start on each run, if V's 1.4 s ever matters.
+- **An official Antigravity quota API**, as asked for on the Google AI forum,
+  would replace the `agy` run.
