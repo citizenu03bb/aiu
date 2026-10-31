@@ -163,6 +163,11 @@
           "type": "number",
           "value": 5,
           "source": "file"
+        },
+        "vibe_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
         }
       }
     }

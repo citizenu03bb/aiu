@@ -70,10 +70,11 @@ One per metric a probe read, or one `error` row for a probe that failed.
 | `limit` | number. `quota`: 1; `credit`: the grant; otherwise a budget when known | yes | extension (credit) |
 | `unit` | string: `%`, `USD`, `CNY`…, `reset` on a Codex rate-limit reset (a `credit` of 1, `used` 1 while it is unused), may be empty | no | extension |
 | `reset` | string, human (`in 2h 0m`, `expires in 10d 0h`, `now`) | yes | extension, when `reset_epoch` is null |
-| `note` | string, may be empty: plan name, allowance, the age of an old Claude Code reading (`Claude Code reading from 2h 5m ago`), or why an `error` row failed | no | extension |
+| `note` | string, may be empty: allowance, the age of an old Claude Code reading (`Claude Code reading from 2h 5m ago`), or why an `error` row failed | no | extension (beside the provider's name, the first note among its rows) |
 | `reset_epoch` | number, Unix seconds of the reset | yes | extension |
 | `window_secs` | integer, the quota window length | yes | not read |
 | `sublimit` | boolean: a quota on one model or product inside the plan (Gemini 4 Argon, Claude's `Weekly Sonnet`, a Codex limit other than `codex`). Used up, it stops only that one: the extension's dot turns yellow, not red. An aiu from before the field prints none, read as false | no | extension |
+| `plan` | string, may be empty: the subscription's plan as the vendor's own client names it (`plus` from `codex app-server`, `pro` from `claude auth status`, `Free` from Mistral Vibe), on every row of that provider that is not an `error`; empty when the client says none (Gemini: agy reports no tier). At most 32 letters, digits, spaces and `_.+-`. Before it, Codex's plan was the first row's `note` | no | extension (a pill beside the provider's name) |
 
 The extension groups rows by `kind`: `quota` rows are bars, `spend`,
 `balance` and `credit` rows are amounts, `error` rows are alerts. An
@@ -116,7 +117,7 @@ A provider:
 | `options` | object, option name → option, in aiu's order | no | extension |
 
 An option (`enabled`, `key_env`, `key_cmd`, `key_file`, `read_token`,
-`claude_cmd`, `codex_cmd`, `vibe_allowance_eur`, `api_allowance_eur`):
+`claude_cmd`, `codex_cmd`, `agy_cmd`, `vibe_cmd`, `vibe_allowance_eur`, `api_allowance_eur`):
 
 | Field | Type | Null | Read by |
 |---|---|---|---|

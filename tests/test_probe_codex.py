@@ -75,7 +75,8 @@ def test_real_transcript(fake):
     assert [r.metric for r in rows] == ["5-Hour Limit", "Weekly Limit", "Credits",
                                         "Full reset (Weekly + 5 hr)"]
     five, week, credits, reset = rows
-    assert (five.kind, five.used, five.limit, five.unit, five.note) == ("quota", 0.0, 1.0, "%", "plus")
+    assert (five.kind, five.used, five.limit, five.unit, five.note) == ("quota", 0.0, 1.0, "%", "")
+    assert [r.plan for r in rows] == ["plus"] * 4  # the plan is on every row, the notes stay free
     assert (five.reset_epoch, five.window_secs) == (1793449095.0, 300 * 60)
     assert (week.kind, week.used, week.note) == ("quota", 0.81, "")
     assert (week.reset_epoch, week.window_secs) == (1793788638.0, 10080 * 60)
@@ -177,7 +178,7 @@ def test_several_limits_get_their_name(fake):
     assert rows["GPT-5.5-Codex-Spark 5-Hour Limit"].used == 0.07
     # A limit on one model inside the plan: used up, it stops only that model.
     assert [m for m, r in rows.items() if r.sublimit] == ["GPT-5.5-Codex-Spark 5-Hour Limit"]
-    assert rows["5-Hour Limit"].note == "plus"
+    assert {r.plan for r in rows.values()} == {"plus"}
 
 
 def test_reset_credits(fake):
@@ -215,6 +216,7 @@ def test_no_windows(fake):
     fake(msgs)
     [row] = codex.probe_codex({})
     assert row.kind == "quota" and row.used is None and row.note == "plan free: no active windows"
+    assert row.plan == "free"
 
 
 def test_window_without_length_or_reset(fake):

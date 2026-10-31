@@ -12,7 +12,7 @@ import subprocess
 from aiu import __version__
 from aiu.clis import find_cli, spawn
 from aiu.i18n import tr
-from aiu.probes.common import Malformed, _humanize_reset_unix, _malformed_note
+from aiu.probes.common import Malformed, _humanize_reset_unix, _malformed_note, _plan_name, _with_plan
 from aiu.rows import Row
 
 
@@ -216,8 +216,6 @@ def _rows(result) -> list[Row]:
         prefix = f"{name} " if len(snaps) > 1 and _text(snap, "limitId") != "codex" and name else ""
         rows += _window_rows(snap, prefix, seen)
     plan = plan or _text(default, "planType")
-    if rows:
-        rows[0].note = plan or ""
     # `balance` is a string ("9.99", "0"); take a number too.
     credits = _opt(default, "credits", dict) or {}
     balance = _opt(credits, "balance", (str, int, float))
@@ -231,7 +229,7 @@ def _rows(result) -> list[Row]:
     tail += _reset_credit_rows(_opt(result, "rateLimitResetCredits", dict), seen)
     if not rows:
         rows.append(Row("codex", "—", "quota", note=f"plan {plan or 'unknown'}: no active windows"))
-    return rows + tail
+    return _with_plan(rows + tail, _plan_name(plan))
 
 
 def probe_codex(cfg: dict) -> list[Row]:

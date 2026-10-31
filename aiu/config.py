@@ -83,10 +83,14 @@ key_env = "OPENROUTER_API_KEY"
 # Sign in there, then run `aiu cookie import mistral --browser firefox` (or
 # chrome, chromium, brave): it keeps the session in the keyring and sets key_cmd.
 # Do it again when the session expires.
+# The plan (Free, Pro) is asked of Mistral Vibe, when it is installed and
+# signed in: vibe_cmd says where vibe-app-server is, if not in ~/.local/bin,
+# /usr/local/bin, /usr/bin or Homebrew's bin.
 [mistral]
 enabled = false
 # vibe_allowance_eur = 8.5   # 0 hides that row
 # api_allowance_eur = 8.5
+# vibe_cmd = "~/.local/bin/vibe-app-server"
 
 # Note: Cohere exposes NO aggregate usage/spend endpoint (dashboard only), so it
 # can't be polled as a simple number without local token accounting.
@@ -166,10 +170,14 @@ key_env = "OPENROUTER_API_KEY"
 # permitted » : l'import en dit plus. Connecte-toi, puis lance
 # `aiu cookie import mistral --browser firefox` (ou chrome, chromium, brave) :
 # la session va dans le trousseau et key_cmd est réglé. Recommence quand elle expire.
+# L'offre (Free, Pro) est demandée à Mistral Vibe, s'il est installé et
+# connecté : vibe_cmd dit où est vibe-app-server, s'il n'est pas dans
+# ~/.local/bin, /usr/local/bin, /usr/bin ou le bin de Homebrew.
 [mistral]
 enabled = false
 # vibe_allowance_eur = 8.5   # 0 masque cette ligne
 # api_allowance_eur = 8.5
+# vibe_cmd = "~/.local/bin/vibe-app-server"
 
 # Note : Cohere n'expose AUCUN point d'accès d'usage ou de dépense agrégé (tableau
 # de bord seulement), donc impossible de le relever sans compter les jetons soi-même.

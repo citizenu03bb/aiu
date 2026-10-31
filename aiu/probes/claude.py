@@ -3,7 +3,11 @@
 aiu-claude-usage plugin (claude-code-plugin/) to a file in aiu's state
 directory. Reading Claude Code's own OAuth token and calling the usage
 endpoint with it is an opt-in (claude.read_token): Anthropic's terms say
-developers may not collect, store, or intermediate Claude.ai credentials."""
+developers may not collect, store, or intermediate Claude.ai credentials.
+
+The plan ("pro", "max") is not in the plugin's reading: `claude auth status`
+says it, and aiu keeps that one field (the email and organization it also
+prints are dropped unread), at most every CLAUDE_PLAN_TTL seconds."""
 from __future__ import annotations
 
 import json
@@ -13,9 +17,9 @@ from pathlib import Path
 
 import httpx
 
-from aiu.clis import find_cli, run_cli
+from aiu.clis import cached, find_cli, run_cli
 from aiu.probes.common import (_humanize_reset, _humanize_reset_unix, _iso_epoch, _json_object,
-                               _malformed_note, _network_note)
+                               _malformed_note, _network_note, _plan_name, _with_plan)
 from aiu.rows import Row
 from aiu.util import state_dir
 
@@ -183,7 +187,40 @@ def _claude_usage_rows(reading: dict) -> list[Row] | None:
     return None if stale and not ahead else rows
 
 
+CLAUDE_PLAN_CACHE = "claude-plan"
+CLAUDE_PLAN_TTL = 6 * 3600        # a plan changes rarely; each run may refresh the sign-in
+CLAUDE_PLAN_TTL_FAILED = 3600
+CLAUDE_PLAN_TIMEOUT = 30          # seconds; it takes about 0.2
+
+
+def _ask_claude_plan(exe: str) -> tuple[str, float]:
+    """`claude auth status --json`'s subscriptionType, or "" (signed out, an
+    API key, an unreadable answer), with its time-to-live for the cache."""
+    done = run_cli([exe, "auth", "status", "--json"], timeout=CLAUDE_PLAN_TIMEOUT)
+    try:
+        status = json.loads(done[1]) if done and done[0] == 0 else None
+    except ValueError:
+        status = None
+    plan = ""
+    if isinstance(status, dict) and status.get("loggedIn") is True:
+        plan = _plan_name(status.get("subscriptionType"))
+    return plan, CLAUDE_PLAN_TTL if plan else CLAUDE_PLAN_TTL_FAILED
+
+
+def _claude_plan(cfg: dict) -> str:
+    exe = find_cli("claude_cmd", cfg, CLAUDE_LOCATIONS)
+    return _plan_name(cached(CLAUDE_PLAN_CACHE, lambda: _ask_claude_plan(exe))) if exe else ""
+
+
 def probe_claude(cfg: dict) -> list[Row]:
+    """The rows, with the plan when there is a reading to show it on."""
+    rows = _claude_rows(cfg)
+    if any(r.kind != "error" for r in rows):
+        _with_plan(rows, _claude_plan(cfg))
+    return rows
+
+
+def _claude_rows(cfg: dict) -> list[Row]:
     """The plugin's reading first; the token read only with claude.read_token,
     and then only for what the reading lacks (credits, other windows)."""
     reading = _read_claude_usage()

@@ -94,10 +94,10 @@ function testParse() {
         'mistral.vibe_allowance_eur=true', 'mistral.api_allowance_eur=true',
     ], 'only the *_cmd fields turn read-only');
     // Every *_cmd runs a program, as runs_code in aiu/config.py: a vendor client added later included.
-    assertEqual(['key_cmd', 'claude_cmd', 'codex_cmd', 'agy_cmd', 'key_env', 'key_file', 'cmd'].map(runsCode),
-        [true, true, true, true, false, false, false], 'runsCode follows the suffix');
-    assertEqual([optionTitle('codex_cmd'), optionTitle('agy_cmd')], ['codex program', 'agy program'],
-        'vendor program titles');
+    assertEqual(['key_cmd', 'claude_cmd', 'codex_cmd', 'agy_cmd', 'vibe_cmd', 'key_env', 'key_file', 'cmd']
+        .map(runsCode), [true, true, true, true, true, false, false, false], 'runsCode follows the suffix');
+    assertEqual([optionTitle('codex_cmd'), optionTitle('agy_cmd'), optionTitle('vibe_cmd')],
+        ['codex program', 'agy program', 'vibe-app-server program'], 'vendor program titles');
 
     // A bool is a switch under its own name; a type the window does not know is left out, not guessed.
     const odd = parseConfigShow(JSON.stringify({
@@ -145,7 +145,8 @@ function testContract() {
         [['claude', 'read_token', false, false]], 'contract: switches, off by default');
     const readOnly = config.providers.flatMap(p => p.fields.filter(f => !f.editable).map(f => `${p.id}.${f.option}`));
     assertEqual(readOnly, ['claude.claude_cmd', 'codex.codex_cmd', 'openai.key_cmd', 'deepseek.key_cmd',
-        'openrouter.key_cmd', 'gemini.agy_cmd', 'mistral.key_cmd'], 'contract: commands are read-only in an untrusted config');
+        'openrouter.key_cmd', 'gemini.agy_cmd', 'mistral.key_cmd', 'mistral.vibe_cmd'],
+        'contract: commands are read-only in an untrusted config');
 
     // The status lines read aiu --json too (tests/test_json_output.py records it).
     const snapshot = JSON.parse(readFixture('snapshot.json'));

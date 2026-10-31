@@ -185,6 +185,15 @@ def snapshot(home, http, monkeypatch):
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
             (307, "", {"location": "https://auth.mistral.ai/ui/login"}))
     answers(home, http, monkeypatch)  # the first route that matches answers
+    # `claude auth status`, which MAIN did not run: the package only. Its plan
+    # goes on Claude's rows; the email and organization go nowhere.
+    claude = home.parent / "bin" / "claude"
+    (home.parent / "auth-status.json").write_text(json.dumps(
+        {"loggedIn": True, "authMethod": "claude.ai", "apiProvider": "firstParty",
+         "email": "someone@example.com", "orgId": "org-1", "orgName": "Someone's Organization",
+         "subscriptionType": "pro"}))
+    claude.write_text(f"#!/bin/sh\n/bin/cat {home.parent / 'auth-status.json'}\n")
+    claude.chmod(0o755)
     # A second agy group, which MAIN did not read: the package only.
     GEMINI["groups"].append(("Claude and GPT models", [("weekly", 1.0, iso(6 * 86400 + 20 * 3600))]))
 
@@ -223,23 +232,33 @@ GEMINI_NOTE = "install the Antigravity CLI (agy) to read the Gemini quota"
 # `codex app-server` says no one is signed in (wave 9, task V).
 CODEX_NOTE_MAIN = "auth rejected (401) \\u2014 run `codex` to refresh"
 CODEX_NOTE = "not signed in: run `codex` to sign in"
+CODEX_PLAN = "plus"  # the planType of every scenario's Codex
 
 
 def since_main(out: str) -> str:
     """MAIN's output with the changes made since: `"schema": 1` as the first key
     (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q),
     Gemini's note without agy (task W), Codex's when not signed in (task V),
-    and each row's `sublimit`."""
+    each row's `sublimit`, and each row's `plan` (plan pills): Codex's, which
+    MAIN put in its first row's note, on every Codex row that is not an error;
+    no other client here says one."""
     assert out.startswith("{\n") and '"schema"' not in out and '"early_pace"' not in out
     out = out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
     out = out.replace(GEMINI_NOTE_MAIN, GEMINI_NOTE).replace(CODEX_NOTE_MAIN, CODEX_NOTE)
     out = re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
-    # `sublimit` after each row's window_secs: true for Claude's per-model windows.
     snap = json.loads(out)
-    snap["rows"] = [{k2: v2 for k, v in row.items() for k2, v2 in
-                     ([(k, v), ("sublimit", row["provider"] == "claude" and row["metric"] in SUBLIMITS_MAIN)]
-                      if k == "window_secs" else [(k, v)])} for row in snap["rows"]]
-    return json.dumps(snap, indent=2) + "\n"
+    rows = []
+    for row in snap["rows"]:
+        plan = CODEX_PLAN if row["provider"] == "codex" and row["kind"] != "error" else ""
+        if plan and row["note"] == plan:
+            row["note"] = ""
+        rows.append({})
+        for key, v in row.items():  # `sublimit` and `plan` go after `window_secs`, as in Row
+            rows[-1][key] = v
+            if key == "window_secs":
+                rows[-1]["sublimit"] = row["provider"] == "claude" and row["metric"] in SUBLIMITS_MAIN
+                rows[-1]["plan"] = plan
+    return json.dumps({**snap, "rows": rows}, indent=2) + "\n"
 
 
 # Claude's windows on one model, as MAIN labelled them: the package marks them `sublimit`.
@@ -361,3 +380,6 @@ def test_snapshot_fixture_is_current(monkeypatch, capsys, home, http, tmp_path, 
     assert {r["kind"] for r in snap["rows"]} == {"quota", "credit", "balance", "spend", "error"}
     assert {r["provider"] for r in snap["rows"] if r["kind"] == "error"} == {"openrouter", "mistral"}
     assert {lot["status"] for lot in snap["advice"]} == {"burn", "?", "conserve"}
+    assert {(r["provider"], r["plan"]) for r in snap["rows"] if r["kind"] != "error"} >= \
+        {("claude", "pro"), ("codex", "plus"), ("gemini", "")}
+    assert "example.com" not in out and "org-1" not in out and "Organization" not in out
