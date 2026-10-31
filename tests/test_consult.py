@@ -46,11 +46,29 @@ def test_pi_reads_prompt_from_stdin(fake_cli, prompt):
     assert argv[:1] == ["--print"] and "--no-tools" in argv
 
 
-def test_agy_gets_prompt_as_option_value_and_no_stdin(fake_cli):
-    got = fake_cli("agy")
-    assert consult.call_gemini("hello")[0] == 0
-    argv, stdin = got()
-    assert argv[-2:] == ["-p", "hello"] and stdin == ""
+def test_gemini_is_no_provider(fake_cli, monkeypatch, capsys):
+    """Antigravity's terms forbid reaching it through another tool, so no agy (task Y)."""
+    fake_cli("agy")
+    monkeypatch.setattr(sys, "argv", ["consult", "gemini", "hi"])
+    assert consult.main() == 2
+    out = capsys.readouterr()
+    assert out.out == "" and "unknown provider 'gemini' (codex|deepseek|auto)" in out.err
+    assert "gemini" not in consult.__doc__.split("\n\n")[1]  # the usage lines
+
+
+def fake_aiu(tmp_path, advice):
+    """A fake `aiu` on PATH whose --json carries this advice."""
+    cli = tmp_path / "bin" / "aiu"
+    cli.write_text(f"#!{sys.executable}\nprint({json.dumps({'advice': advice})!r})\n")
+    cli.chmod(0o755)
+
+
+@pytest.mark.parametrize("status, picked", [("burn", "codex"), ("conserve", "deepseek")])
+def test_auto_picks_codex_or_deepseek(tmp_path, status, picked):
+    # gemini ahead of codex in aiu's advice is skipped: consult no longer calls it
+    fake_aiu(tmp_path, [{"provider": "gemini", "status": "burn", "detail": ""},
+                        {"provider": "codex", "status": status, "detail": ""}])
+    assert consult.pick_auto() == picked
 
 
 def test_option_like_prompt_from_command_line(fake_cli, monkeypatch, capsys):
