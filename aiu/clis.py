@@ -10,13 +10,18 @@ it or its directory. It runs with a fixed argv and a clean environment, in its
 own process group, which is killed at the timeout and when aiu is done."""
 from __future__ import annotations
 
+import fcntl
 import json
 import os
+import pty
+import select
 import signal
 import stat
+import struct
 import subprocess
 import sys
 import tempfile
+import termios
 import threading
 import time
 from collections.abc import Callable, Iterator, Sequence
@@ -101,6 +106,54 @@ def run_cli(argv: Sequence[str], timeout: float, input: str = "") -> tuple[int, 
             return proc.returncode, out
     except OSError:
         return None
+
+
+TTY_SIZE = (24, 80)   # rows, columns
+TTY_POLL = 0.1        # seconds between done() checks
+TTY_READ = 1 << 16
+
+
+def run_tty(argv: Sequence[str], timeout: float, done: Callable[[], bool],
+            cwd: str | None = None) -> bool | None:
+    """argv on a pseudo-terminal, for a client that says something only in its
+    interactive mode: the clean environment and own process group of spawn(),
+    a TTY_SIZE screen whose output is read and dropped, nothing typed. It runs
+    until done() is true, it exits or `timeout` passes, and then its group is
+    killed. Whether done() came true; None when it could not start."""
+    env = {k: os.environ[k] for k in CLEAN_ENV if k in os.environ}
+    try:
+        master, slave = pty.openpty()
+    except OSError:
+        return None
+    try:
+        fcntl.ioctl(slave, termios.TIOCSWINSZ, struct.pack("HHHH", *TTY_SIZE, 0, 0))
+        proc = subprocess.Popen(list(argv), stdin=slave, stdout=slave, stderr=slave, env=env,
+                                start_new_session=True, cwd=cwd)
+    except OSError:
+        os.close(master)
+        return None
+    finally:
+        os.close(slave)
+    deadline = time.monotonic() + timeout
+    try:
+        while not done():
+            left = deadline - time.monotonic()
+            if left <= 0 or proc.poll() is not None:
+                return done()
+            if select.select([master], [], [], min(TTY_POLL, left))[0]:
+                try:
+                    os.read(master, TTY_READ)  # a screen nobody reads, but it must not fill up
+                except OSError:  # EIO: the client has closed the terminal, let it end
+                    try:
+                        proc.wait(max(0.0, deadline - time.monotonic()))
+                    except subprocess.TimeoutExpired:
+                        pass
+                    return done()
+        return True
+    finally:
+        _kill_group(proc)
+        proc.wait()
+        os.close(master)
 
 
 # The reading cache: one file per client in aiu's state directory.

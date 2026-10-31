@@ -100,6 +100,8 @@ enabled = false
 # /usage command, no model turn) at most every 15 minutes. Install agy and sign
 # in with it; no key needed, and aiu never reads agy's sign-in. agy_cmd says
 # which agy to run (else ~/.local/bin/agy and the usual places, never PATH).
+# The plan is asked at most every 6 hours of agy's interactive mode, which gives
+# it to a status line aiu sets for that session only (about 2 s, no prompt).
 [gemini]
 enabled = false
 # agy_cmd = "~/.local/bin/agy"
@@ -187,7 +189,9 @@ enabled = false
 # /usage d'agy, sans tour de modèle) au plus toutes les 15 minutes. Installe agy
 # et connecte-toi avec ; pas de clé, et aiu ne lit jamais la connexion d'agy.
 # agy_cmd dit quel agy lancer (sinon ~/.local/bin/agy et les endroits
-# habituels, jamais le PATH).
+# habituels, jamais le PATH). Le forfait est demandé au plus toutes les 6 heures
+# au mode interactif d'agy, qui le donne à une ligne d'état qu'aiu fixe pour
+# cette session seulement (environ 2 s, sans invite).
 [gemini]
 enabled = false
 # agy_cmd = "~/.local/bin/agy"
