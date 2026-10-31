@@ -69,7 +69,7 @@ def fake_trpc(groups, has_more=False):
 def test_probe_rows(monkeypatch):
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "session=x")
     monkeypatch.setattr(mistral, "_mistral_trpc", fake_trpc(GROUPS))
-    vibe, api = mistral.probe_mistral({})
+    vibe, api = mistral.probe_mistral({"key_env": "MISTRAL_ADMIN_COOKIE"})
     assert (vibe.metric, vibe.kind) == ("Vibe Monthly", "quota")
     assert vibe.used == pytest.approx(0.3185 / 8.5, abs=1e-4)
     assert vibe.note == "€0.32 / €8.50"
@@ -81,19 +81,21 @@ def test_probe_rows(monkeypatch):
 def test_allowance_override_and_partial(monkeypatch):
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "session=x")
     monkeypatch.setattr(mistral, "_mistral_trpc", fake_trpc(GROUPS, has_more=True))
-    rows = mistral.probe_mistral({"vibe_allowance_eur": 20, "api_allowance_eur": 0})
+    rows = mistral.probe_mistral({"key_env": "MISTRAL_ADMIN_COOKIE",
+                                  "vibe_allowance_eur": 20, "api_allowance_eur": 0})
     assert [r.metric for r in rows] == ["Vibe Monthly"]
     assert rows[0].note == "€0.32 / €20.00 ; partial (more pages)"
 
 
 def test_missing_and_rejected_cookie(monkeypatch):
-    monkeypatch.delenv("MISTRAL_ADMIN_COOKIE", raising=False)
+    # No default key_env: a MISTRAL_ADMIN_COOKIE the config does not name is not read.
+    monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "session=x")
     [row] = mistral.probe_mistral({})
-    assert row.kind == "error" and "MISTRAL_ADMIN_COOKIE" in row.note
+    assert row.kind == "error" and row.note == "no session: run `aiu cookie import mistral`"
 
     def rejected(proc, payload, cookie):
         raise PermissionError(302)
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "session=expired")
     monkeypatch.setattr(mistral, "_mistral_trpc", rejected)
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral({"key_env": "MISTRAL_ADMIN_COOKIE"})
     assert row.kind == "error" and "session rejected (302)" in row.note

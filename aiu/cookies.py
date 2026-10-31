@@ -333,10 +333,23 @@ def _cookie_header(cookies: list[tuple], browser: str, profile: str) -> str:
 
 
 def cookie_import(path: Path, browser: str, profile: str | None) -> int:
+    # Before the cookie store is read. The consumer terms (legal.mistral.ai,
+    # Oct 2026: EEA and rest of the world, §3 Restrictions (f)) cover Vibe and
+    # the Free plan; Studio and the API, whose console this session opens, are
+    # under the commercial terms (§2.2(g), in nearly the same words).
+    shown = "Firefox" if browser == "firefox" else CHROMIUM_BROWSERS[browser][0]
+    print(tr("Before anything is stored: aiu keeps a whole admin.mistral.ai session, not a "
+             "read-only key. Until it expires it can create API keys and change billing. To get "
+             "it, aiu reads {browser}'s cookie store. Mistral's terms forbid using \"any method to "
+             "extract any content from the Mistral AI Products other than as permitted through "
+             "the Mistral AI Products\" (consumer terms §3, Restrictions (f), which cover the Free "
+             "plan; commercial terms §2.2(g); legal.mistral.ai/terms). Mistral offers no other "
+             "way to read the allowances, and aiu sends this session only to the console's own "
+             "Usage endpoints.", browser=shown))
     if browser == "firefox":
-        shown, (prof, cookies) = "Firefox", _firefox_cookies(profile)
+        prof, cookies = _firefox_cookies(profile)
     else:
-        shown, (prof, cookies) = CHROMIUM_BROWSERS[browser][0], _chromium_cookies(browser, profile)
+        prof, cookies = _chromium_cookies(browser, profile)
     header = _cookie_header(cookies, shown, prof)
     _keyring_store(header)
     print(tr("Stored the {host} session from {browser} ({profile}) in the keyring, "
@@ -358,7 +371,7 @@ def cookie_import(path: Path, browser: str, profile: str | None) -> int:
     except (OSError, tomllib.TOMLDecodeError):
         return code
     section = config.get("mistral") if isinstance(config.get("mistral"), dict) else {}
-    var = section.get("key_env", "MISTRAL_ADMIN_COOKIE")
+    var = section.get("key_env")
     if where := plain_copy_where(config, var):
         print(tr("{name} is set in {where}, and aiu reads it before key_cmd: delete it there "
                  "(it is the session in plain text) so the keyring copy is used.",

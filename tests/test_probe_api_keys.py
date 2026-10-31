@@ -11,7 +11,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from aiu import cli, keys, util  # noqa: E402
 from aiu.config import load_config  # noqa: E402
-from aiu.probes import deepseek, openai, openrouter  # noqa: E402
+from aiu.probes import deepseek, mistral, openai, openrouter  # noqa: E402
 
 OPENAI_URL = "https://api.openai.com/v1/organizations/costs"
 DEEPSEEK_URL = "https://api.deepseek.com/user/balance"
@@ -447,15 +447,38 @@ def test_env_file_feeds_probes(monkeypatch, env_file, http):
         "SSL_CERT_FILE=/tmp/ca.pem\n", config)
     assert found == {"DEEPSEEK_API_KEY": "sk-from-env-file",
                      "OPENROUTER_API_KEY": "sk-or-v1-from-env-file",
-                     "MISTRAL_ADMIN_COOKIE": 'ory_session=abc; csrf="x=y"',
                      "OPENAI_ADMIN_KEY": "sk-admin-from-file"}
     assert dict(os.environ) == before
     keys.ENV_FILE.update(found)
     assert keys.resolve_key(config["openai"], "openai") == "sk-admin-already-set"  # env wins
-    assert keys.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE"}, "mistral") == 'ory_session=abc; csrf="x=y"'
     http.on("GET", DEEPSEEK_URL, (200, {"is_available": True, "balance_infos": [balance()]}))
     deepseek.probe_deepseek({"key_env": "DEEPSEEK_API_KEY"})
     assert http.calls[0].headers["Authorization"] == "Bearer sk-from-env-file"
+
+
+def test_env_file_mistral_cookie_only_when_named(monkeypatch, env_file, http):
+    """Wave 9, task X: mistral has no default key_env, so a MISTRAL_ADMIN_COOKIE
+    left in ~/.env is not read, and the probe asks for the import, until the
+    config names it (aiu config set mistral.key_env MISTRAL_ADMIN_COOKIE)."""
+    forget(monkeypatch, "MISTRAL_ADMIN_COOKIE")
+    line = "MISTRAL_ADMIN_COOKIE='ory_session=abc; csrf=x'\n"
+    unnamed = {"mistral": {"enabled": True}}
+    assert env_file(line, unnamed) == {}
+    [row] = mistral.probe_mistral(unnamed["mistral"])
+    assert row.kind == "error" and row.note == "no session: run `aiu cookie import mistral`"
+    assert http.calls == []
+
+    named = {"mistral": {"enabled": True, "key_env": "MISTRAL_ADMIN_COOKIE"}}
+    found = env_file(line, named)
+    assert found == {"MISTRAL_ADMIN_COOKIE": "ory_session=abc; csrf=x"}
+    keys.ENV_FILE.update(found)
+    http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
+            (200, {"result": {"data": {"json": {"groups": [], "metadata": {"hasMore": False}}}}}))
+    http.on("GET", mistral.MISTRAL_TRPC + "usage.prices",
+            (200, {"result": {"data": {"json": {"prices": []}}}}))
+    vibe, api = mistral.probe_mistral(named["mistral"])
+    assert vibe.kind == api.kind == "quota"
+    assert {c.headers["Cookie"] for c in http.calls} == {"ory_session=abc; csrf=x"}
 
 
 @pytest.mark.parametrize("line, value", [
@@ -487,7 +510,8 @@ def test_env_file_unmatched_quote_warns_without_value(env_file, capsys):
 
 def test_env_file_multiline_value_says_one_line(env_file, capsys):
     """A quoted value continued on the next line is refused with the reason."""
-    assert env_file("MISTRAL_ADMIN_COOKIE='a=1;\nb=2'\n", {}) == {}
+    assert env_file("MISTRAL_ADMIN_COOKIE='a=1;\nb=2'\n",
+                    {"mistral": {"key_env": "MISTRAL_ADMIN_COOKIE"}}) == {}
     assert "values must fit on one line" in capsys.readouterr().err
 
 

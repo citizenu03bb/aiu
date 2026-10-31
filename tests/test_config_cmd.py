@@ -123,8 +123,7 @@ def test_show_never_resolves_a_key(monkeypatch, capsys, cfg, home, tmp_path):
     assert not marker.exists()
     snap = show(monkeypatch, capsys, cfg)
     assert opt(snap, "openai", "key_file")["value"] == str(secret_file)  # the path, not the key
-    assert opt(snap, "mistral", "key_env") == {"type": "string", "value": "MISTRAL_ADMIN_COOKIE",
-                                               "source": "default"}
+    assert opt(snap, "mistral", "key_env") == {"type": "string", "value": None, "source": "default"}
 
 
 def test_show_reports_an_untrusted_config(monkeypatch, capsys, cfg):

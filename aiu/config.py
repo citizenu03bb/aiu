@@ -74,14 +74,13 @@ key_env = "OPENROUTER_API_KEY"
 
 # Mistral's monthly allowances (Vibe Code + API, €8.5 each on Free) are only
 # readable with the admin.mistral.ai browser session (API keys are rejected).
+# That session can also create keys and change billing, and Mistral's terms
+# forbid extracting content "other than as permitted": the import says more.
 # Sign in there, then run `aiu cookie import mistral --browser firefox` (or
 # chrome, chromium, brave): it keeps the session in the keyring and sets key_cmd.
-# Else put the whole Cookie request header (DevTools > Network > any
-# /api/local-trpc/ call) in MISTRAL_ADMIN_COOKIE, in single quotes in ~/.env
-# (it contains ';'). Do it again when the session expires.
+# Do it again when the session expires.
 [mistral]
 enabled = false
-key_env = "MISTRAL_ADMIN_COOKIE"
 # vibe_allowance_eur = 8.5   # 0 hides that row
 # api_allowance_eur = 8.5
 
@@ -151,14 +150,13 @@ key_env = "OPENROUTER_API_KEY"
 
 # Les forfaits mensuels de Mistral (Vibe Code + API, 8,5 € chacun en Free) ne se
 # lisent qu'avec la session navigateur d'admin.mistral.ai (les clés API sont
-# refusées). Connecte-toi, puis lance `aiu cookie import mistral --browser firefox`
-# (ou chrome, chromium, brave) : la session va dans le trousseau et key_cmd est
-# réglé. Sinon, mets tout l'en-tête Cookie de la requête (DevTools > Réseau >
-# n'importe quel appel /api/local-trpc/) dans MISTRAL_ADMIN_COOKIE, entre
-# apostrophes dans ~/.env (il contient des ';'). Recommence quand elle expire.
+# refusées). Cette session peut aussi créer des clés et modifier la facturation,
+# et les conditions de Mistral interdisent d'extraire du contenu « other than as
+# permitted » : l'import en dit plus. Connecte-toi, puis lance
+# `aiu cookie import mistral --browser firefox` (ou chrome, chromium, brave) :
+# la session va dans le trousseau et key_cmd est réglé. Recommence quand elle expire.
 [mistral]
 enabled = false
-key_env = "MISTRAL_ADMIN_COOKIE"
 # vibe_allowance_eur = 8.5   # 0 masque cette ligne
 # api_allowance_eur = 8.5
 

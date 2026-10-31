@@ -30,14 +30,15 @@ documented residual risk.
 | M2 | Gone | #6, wave 8 (S) | Fixed in #6 (`_gemini_persist`: `flock`, temp file 0600, `fsync`, `os.replace`). Since wave 8, task S, aiu no longer reads or writes `oauth_creds.json` at all: the Gemini CLI fallback was removed |
 | M3 | Fixed | #7 | `render_html` (`aiu/render.py`) escapes every value and sets `default-src 'none'` |
 | L1 | Fixed | #8, #12, wave 9 (U) | `load_config` (`aiu/config.py`) drops every option that runs a program (`runs_code`: every `*_cmd`, `claude_cmd` included since wave 9) when the config or its directory is someone else's or writable by others (group write is accepted for the user's private group: `_writable_by_others`, `aiu/util.py`) |
-| L2 | Fixed | #8, #11 | `load_env_file` (`aiu/keys.py`) reads only the names the config uses, parses like a shell, warns on a readable file, and exports nothing. A launcher that sources `~/.env` (as older installs did) undoes this: run `aiu.py` directly |
-| L3 | Fixed, one residual | #8, #31 | `aiu cookie import mistral` (`cookie_import`, `aiu/cookies.py`) copies the `admin.mistral.ai` cookies from one browser profile into the keyring (`secret-tool store`, value on stdin) and sets `key_cmd`; nothing else touches the disk. Residual: it is still a full console session, readable by any process of the user that can query the unlocked keyring, and the manual `~/.env` copy remains as a fallback |
+| L2 | Fixed | #8, #11, wave 9 (X) | `load_env_file` (`aiu/keys.py`) reads only the names the config uses, parses like a shell, warns on a readable file, and exports nothing. Since wave 9 that is each `key_env` and nothing else: `MISTRAL_ADMIN_COOKIE` is no longer read unless named. A launcher that sources `~/.env` (as older installs did) undoes this: run `aiu.py` directly |
+| L3 | Fixed, one residual | #8, #31 | `aiu cookie import mistral` (`cookie_import`, `aiu/cookies.py`) copies the `admin.mistral.ai` cookies from one browser profile into the keyring (`secret-tool store`, value on stdin) and sets `key_cmd`; nothing else touches the disk. Residual: it is still a full console session, readable by any process of the user that can query the unlocked keyring. Since wave 9 the keyring is the only default source; a plain-text copy is read only when the user names it with `mistral.key_env`, and the import first prints a notice quoting Mistral's terms |
 | L4 | Fixed, one residual; off by default since wave 8 | #10, #12, task R, wave 9 (U) | `_refresh_claude_token` (`aiu/probes/claude.py`) runs `claude` only from known locations or `claude_cmd`, never one others can write (`find_cli` and `run_cli` in `aiu/clis.py`, which every vendor client goes through since wave 9, with a clean environment and its process group killed at the timeout), and backs off for an hour after a failure. A race with an interactive `claude` over the same refresh token is not addressed. Since wave 8 the whole token read, refresh included, runs only with `claude.read_token = true` (see below) |
 | L5 | Fixed | #10 | `AiuClient` kills `aiu` on cancel and disable, with a 120 s watchdog |
 | L6 | Fixed | #10, wave 9 (Y) | `consult` feeds `codex` and `pi` on stdin. The residual (`agy` had no documented stdin mode and got the prompt as the value of `-p`) went with the `gemini` caller in wave 9, task Y: Antigravity's terms forbid reaching it from another tool |
 
-L3 was taken further in ROADMAP wave 6 (task N), after v0.4.1: see its
-status note at the end of the L3 finding.
+L3 was taken further in ROADMAP wave 6 (task N), after v0.4.1, and wave 9
+(task X), after v0.5.0: see the status notes at the end of the L3 finding.
+L2 has one for wave 9 too.
 
 **Claude and Anthropic's terms (ROADMAP wave 8, task R).** Anthropic's
 legal and compliance page says "developers may not collect, store, or
@@ -350,6 +351,12 @@ GNOME extension, with every `~/.env` secret in its environment (L2).
   unquoted value stops at ` #`.
 - Fix or drop the README's mention of a wrapper that sources the file.
 
+**Status (wave 9, task X).** `_ENV_ALWAYS` is gone: `load_env_file` reads
+from `~/.env` only the names a `key_env` in the config refers to. The Gemini
+client names went in wave 8 (task S), and `MISTRAL_ADMIN_COOKIE` now has no
+default either, so a copy left in `~/.env` from an older setup is ignored
+unless the user sets `mistral.key_env` (a test checks both cases).
+
 ### L3. The Mistral admin-console cookie is stored in plain text
 
 **Where.** `aiu.py:98-105`, `aiu.py:860`, `README.md:106-107`, `README.md:130`.
@@ -397,6 +404,29 @@ chrome|chromium|brave|firefox [--profile NAME]` replaces the DevTools copy:
 - Errors name the missing piece (no profile, no cookies, expired, no Safe
   Storage entry, locked keyring, no `secret-tool`, no `cryptography`) and
   never print a cookie, a key or `secret-tool`'s stderr.
+
+**Status (wave 9, task X).** The session counts as tier 3 (ROADMAP wave 9:
+a web session, off until the user turns it on):
+
+- No default source. The `mistral` probe has no default `key_env`, so it
+  reads the session where `aiu cookie import mistral` put it (`key_cmd`,
+  the keyring) or from a source the user names
+  (`aiu config set mistral.key_env MISTRAL_ADMIN_COOKIE`). The starter
+  configs no longer set `key_env`, the warning about a plain-text copy that
+  would win over `key_cmd` fires only when `key_env` is set, and with no
+  session the row says "no session: run `aiu cookie import mistral`".
+- A notice before anything is read or stored: the session can create API
+  keys and change billing until it expires; the import reads the browser's
+  cookie store; and Mistral's terms forbid using "any method to extract any
+  content from the Mistral AI Products other than as permitted through the
+  Mistral AI Products". That is §3 *Restrictions* (f) of the consumer terms
+  (EEA, effective 8 October 2026, and rest of the world, 12 October 2026),
+  which cover Vibe and the Free plan, and §2.2(g) of the commercial terms
+  (25 September 2026), which cover Studio and the API, whose console the
+  session opens. Checked on legal.mistral.ai on 2026-10-31.
+- Residual: unchanged otherwise. It is a full console session in the
+  keyring, and Mistral offers no read-only alternative: no API key reads the
+  allowances, and Vibe's plugins and hooks carry no usage.
 
 ### L4. The stale-token refresh runs whichever `claude` is on `PATH`
 

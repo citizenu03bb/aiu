@@ -138,7 +138,6 @@ function testContract() {
     assertEqual(config.providers.flatMap(p => p.fields.filter(f => f.text || f.fromFile)
         .map(f => [p.id, f.option, f.type, f.text, f.fromFile, f.editable])), [
         ['openai', 'key_env', 'string', 'OPENAI_ADMIN_KEY', true, true],
-        ['mistral', 'key_env', 'string', 'MISTRAL_ADMIN_COOKIE', false, true],
         ['mistral', 'vibe_allowance_eur', 'number', '8.5', false, true],
         ['mistral', 'api_allowance_eur', 'number', '5', true, true],
     ], 'contract: values and where they come from');
