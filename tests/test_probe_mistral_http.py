@@ -26,6 +26,10 @@ PRICES = {"prices": [{"billingMetric": "mistral-medium-3-5", "billingGroup": "in
                       "apiZone": "global", "serviceTier": "standard", "price": 0.000001275}]}
 
 
+# mistral has no default key_env: these tests name the variable they set.
+CFG = {"key_env": "MISTRAL_ADMIN_COOKIE"}
+
+
 @pytest.fixture
 def cookie(monkeypatch):
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "ory_session_x=fake; csrf_token=fake")
@@ -34,7 +38,7 @@ def cookie(monkeypatch):
 def test_normal_response(cookie, http):
     http.on("GET", USAGE_URL, (200, trpc(GROUPS)))
     http.on("GET", PRICES_URL, (200, trpc(PRICES)))
-    vibe, api = mistral.probe_mistral({})
+    vibe, api = mistral.probe_mistral(CFG)
     assert vibe.used == pytest.approx(1.275 / 8.5) and vibe.note == "€1.28 / €8.50"
     assert api.used == 0
     usage_call = http.to(USAGE_URL)[0]
@@ -45,33 +49,33 @@ def test_normal_response(cookie, http):
 
 def test_login_redirect(cookie, http):
     http.on("GET", USAGE_URL, (307, "", {"location": "https://auth.mistral.ai/ui/login"}))
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral(CFG)
     assert row.kind == "error" and row.note.startswith("session rejected (307)")
 
 
 @pytest.mark.parametrize("status", [401, 403])
 def test_auth_rejected(cookie, http, status):
     http.on("GET", USAGE_URL, (status, {"error": {"json": {"message": "UNAUTHORIZED"}}}))
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral(CFG)
     assert row.kind == "error" and row.note.startswith(f"session rejected ({status})")
 
 
 def test_network_error(cookie, http):
     http.on("GET", USAGE_URL, httpx.ConnectError("offline"))
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral(CFG)
     assert row.kind == "error" and row.note == "network: cannot connect"
 
 
 def test_bad_cookie_header_never_quoted(cookie, http):
     http.on("GET", USAGE_URL, httpx.LocalProtocolError("Illegal header value b'ory_session_x=fake\\n'"))
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral(CFG)
     assert row.kind == "error" and "ory_session" not in row.note
 
 
 def test_empty_month(cookie, http):
     http.on("GET", USAGE_URL, (200, trpc({"groups": None, "metadata": None})))
     http.on("GET", PRICES_URL, (200, trpc({"prices": None})))
-    vibe, api = mistral.probe_mistral({})
+    vibe, api = mistral.probe_mistral(CFG)
     assert vibe.used == 0 and api.used == 0 and vibe.note == "€0.00 / €8.50"
 
 
@@ -84,12 +88,12 @@ def test_empty_month(cookie, http):
 def test_server_error_or_malformed_body(cookie, http, reply, note):
     http.on("GET", USAGE_URL, reply)
     http.on("GET", PRICES_URL, (200, trpc(PRICES)))
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral(CFG)
     assert row.kind == "error" and row.note == note
 
 
 def test_malformed_price_list(cookie, http):
     http.on("GET", USAGE_URL, (200, trpc(GROUPS)))
     http.on("GET", PRICES_URL, (200, trpc({"prices": [{"billingMetric": "mistral-medium-3-5"}]})))
-    [row] = mistral.probe_mistral({})
+    [row] = mistral.probe_mistral(CFG)
     assert row.kind == "error" and row.note == "malformed response (KeyError)"

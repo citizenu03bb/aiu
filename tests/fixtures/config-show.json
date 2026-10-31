@@ -131,7 +131,7 @@
         },
         "key_env": {
           "type": "string",
-          "value": "MISTRAL_ADMIN_COOKIE",
+          "value": null,
           "source": "default"
         },
         "key_cmd": {

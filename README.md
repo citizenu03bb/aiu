@@ -131,7 +131,9 @@ console's Usage page (`usage.costBreakdown` for tokens per billing metric,
 "Total Estimated Cost" to the cent.
 
 Setup: sign in to admin.mistral.ai in your browser, then import that session
-into the GNOME keyring:
+into the GNOME keyring. This is the way in: aiu has no default source for the
+cookie, so a `MISTRAL_ADMIN_COOKIE` in your environment or `~/.env` is not
+read unless you name it (below).
 
 ```sh
 aiu cookie import mistral --browser firefox   # or chrome, chromium, brave
@@ -148,6 +150,18 @@ stores them with `secret-tool` (label *aiu mistral cookie*), and sets
 through `aiu config set`. Running it again replaces the stored session. You
 run it yourself: `aiu`, `--json`, `--alert` and the GNOME extension never do.
 
+Before it reads anything it prints a notice. The session is a whole
+admin.mistral.ai session, not a read-only key: until it expires it can create
+API keys and change billing. The import reads the browser's cookie store. And
+Mistral's terms forbid using "any method to extract any content from the
+Mistral AI Products other than as permitted through the Mistral AI Products"
+(the consumer terms that cover the Free plan, §3 *Restrictions* (f), EEA and
+rest of the world; the commercial terms for Studio and the API, §2.2(g);
+[legal.mistral.ai/terms](https://legal.mistral.ai/terms), checked October
+2026). No API key reads the allowances, and Vibe's plugins and hooks carry no
+usage, so this session is the only way aiu can show them. Whether that is a
+use you accept is your call: `mistral` stays off until you turn it on.
+
 - It needs `secret-tool` (Debian/Ubuntu: `libsecret-tools`). Chrome, Chromium
   and Brave encrypt their cookies, so for them it also needs the
   `cryptography` package: `pipx inject aiu cryptography` (or install
@@ -160,17 +174,16 @@ run it yourself: `aiu`, `--json`, `--alert` and the GNOME extension never do.
   writing to it, it is copied into a private temporary directory (`0700`),
   read there and deleted. The session and the browser's key are written
   nowhere but the keyring, and no message prints them.
-- If `MISTRAL_ADMIN_COOKIE` is still set in your environment or in `~/.env`,
-  aiu reads it first (`key_env` comes before `key_cmd`); the command says so.
-  Delete that plain-text copy.
+Only on a desktop without `secret-tool` (so without a keyring aiu can use):
+in admin.mistral.ai, DevTools → Network → any `/api/local-trpc/` request →
+copy the whole `Cookie` request header into `MISTRAL_ADMIN_COOKIE`, in single
+quotes (the cookie contains `;` and spaces, and `~/.env` is read like a shell
+reads it), and name it: `aiu config set mistral.key_env MISTRAL_ADMIN_COOKIE`.
+The same notice applies, and the session then sits in plain text.
 
-Fallback, by hand: in admin.mistral.ai, DevTools → Network → any
-`/api/local-trpc/` request → copy the whole `Cookie` request header into
-`MISTRAL_ADMIN_COOKIE`, in single quotes (the cookie contains `;` and spaces,
-and `~/.env` is read like a shell reads it), then set `enabled = true`.
-
-When the session expires the row says "session rejected": sign in again and
-re-run the import (or copy the header again).
+With no session the row says "no session: run `aiu cookie import mistral`".
+When the session expires it says "session rejected": sign in again and re-run
+the import (or copy the header again).
 Vibe's local session logs (`~/.vibe/logs`) are not a substitute, because they
 undercount the server's token totals by roughly 3×.
 
@@ -194,9 +207,9 @@ after the password). A value that still holds control characters is refused,
 and the warning does not quote it.
 
 **`~/.env`** (override with `AIU_ENV_FILE=/path`) is read by `aiu` itself. It
-takes only the names the config refers to (each `key_env`, plus
-`MISTRAL_ADMIN_COOKIE`) and ignores every other line, so a `HTTPS_PROXY` or `LD_PRELOAD` meant for another
-tool changes nothing. Variables already in your environment win. The keys are
+takes only the names the config refers to (each `key_env`) and ignores every
+other line, so a `HTTPS_PROXY` or `LD_PRELOAD` meant for another tool changes
+nothing. Variables already in your environment win. The keys are
 kept inside `aiu`, not exported, so `key_cmd` and the other commands `aiu` runs
 don't see them.
 Values are read like a shell reads them, without `$` expansion: `export KEY=v`
@@ -210,7 +223,7 @@ can read the file: `chmod 600 ~/.env`.
 DEEPSEEK_API_KEY=sk-...
 OPENROUTER_API_KEY=sk-or-...    # only if you don't use `aiu login openrouter`
 OPENAI_ADMIN_KEY=sk-admin-...   # Costs API needs an ADMIN key, not a normal sk-
-MISTRAL_ADMIN_COOKIE='...'      # only if you don't use `aiu cookie import mistral`; quotes required
+MISTRAL_ADMIN_COOKIE='...'      # only without secret-tool, and with mistral.key_env set; quotes required
 ```
 
 **Prefer a keyring to `~/.env`.** The file is plain text, often shared with
@@ -246,10 +259,11 @@ them can run code as you.
   with whatever it started, at its timeout and once aiu has its answer.
 - `~/.env` can only supply the names above, and only as keys sent to their
   own provider over TLS.
-- `MISTRAL_ADMIN_COOKIE` is a whole admin.mistral.ai session, not a read-only
-  key: until it expires it can create API keys and change billing. Keep it in
-  a keyring rather than in `~/.env`: `aiu cookie import mistral` puts it there
-  and sets `key_cmd` (see `mistral` above).
+- The Mistral cookie is a whole admin.mistral.ai session, not a read-only
+  key: until it expires it can create API keys and change billing. `aiu
+  cookie import mistral` keeps it in the keyring and sets `key_cmd` (see
+  `mistral` above); aiu reads it from `~/.env` only if you name it with
+  `mistral.key_env`.
 
 ### `aiu config`
 Reads and changes the config for scripts and the GNOME indicator, so nothing
@@ -459,8 +473,8 @@ for a key) and `probe(cfg) -> list[Row]`. Add it to `REGISTRY` there, and a
 
 ## Unofficial endpoints & privacy
 The subscription probes call **undocumented** endpoints, the same ones the
-vendors' own CLIs use. They can change or break without notice, and this
-project is not affiliated with Anthropic, OpenAI or Google:
+vendors' own CLIs or consoles use. They can change or break without notice,
+and this project is not affiliated with Anthropic, OpenAI, Google or Mistral AI:
 
 - `claude`, only with `read_token = true`: Claude Code's OAuth usage endpoint
   (if it 404s after a Claude update, re-check it against the `onWatch`
@@ -468,7 +482,11 @@ project is not affiliated with Anthropic, OpenAI or Google:
   calls nothing;
 - `codex`: `chatgpt.com/backend-api/wham/usage`;
 - `gemini`: the Antigravity desktop language server's `RetrieveUserQuotaSummary`
-  on 127.0.0.1, and nothing else.
+  on 127.0.0.1, and nothing else;
+- `mistral`: the admin console's tRPC endpoints
+  (`admin.mistral.ai/api/local-trpc/`, `usage.costBreakdown` and
+  `usage.prices`), with the browser session you imported. Mistral's terms
+  forbid extracting content "other than as permitted" (see `mistral` above).
 
 Tokens and keys are read locally at run time and only ever sent to the
 provider they belong to. `aiu` stores no secret (except in the keyring, when
@@ -488,6 +506,14 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
 - `consult` no longer offers `gemini` (it ran `agy -p`): Antigravity's terms
   forbid reaching it from another tool. `consult gemini` now exits 2 with the
   usage text, and `auto` picks `codex` or falls back to DeepSeek.
+- `mistral` has no default `key_env`: a `MISTRAL_ADMIN_COOKIE` in your
+  environment or `~/.env` is no longer read unless you name it (`aiu config
+  set mistral.key_env MISTRAL_ADMIN_COOKIE`). `aiu cookie import mistral`, which
+  keeps the session in the keyring, is the way in; with no session the row
+  says "no session: run `aiu cookie import mistral`".
+- `aiu cookie import mistral` first prints a notice: what the session can do,
+  that it reads the browser's cookie store, and the clause of Mistral's terms
+  that forbids extracting content "other than as permitted".
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.

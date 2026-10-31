@@ -234,8 +234,7 @@ def test_imported_session_is_what_the_probe_resolves(monkeypatch, capsys, home, 
                 mistral_rows(cookies.CHROMIUM_V10_PASSWORD, b"v10", True))
     assert run(monkeypatch, capsys, cfg, "--browser", "chrome")[0] == 0
     mistral = config.load_config(cfg)["mistral"]
-    assert keys.resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE", **mistral}, "mistral") \
-        == f"{SESSION}; {CSRF}"
+    assert keys.resolve_key(mistral, "mistral") == f"{SESSION}; {CSRF}"
 
 
 def test_falls_back_to_the_v1_schema(monkeypatch, capsys, home, cfg, keyring):
@@ -536,13 +535,33 @@ def test_untrusted_config_keeps_the_keyring_and_prints_the_command(monkeypatch, 
     assert "key_cmd" not in config.load_config(cfg)["mistral"]
 
 
+def test_notice_comes_before_anything_is_stored(monkeypatch, capsys, home, cfg, keyring, firefox):
+    """Wave 9, task X: what the session can do, that the cookie store is read,
+    and the terms' clause, on the first line, before the keyring is touched."""
+    code, out, err = run(monkeypatch, capsys, cfg, "--browser", "firefox")
+    assert code == 0, err
+    notice, rest = out.split("\n", 1)
+    assert notice.startswith("Before anything is stored: aiu keeps a whole admin.mistral.ai session")
+    assert "it can create API keys and change billing" in notice
+    assert "aiu reads Firefox's cookie store" in notice
+    assert ('"any method to extract any content from the Mistral AI Products other than as '
+            'permitted through the Mistral AI Products"') in notice
+    assert "consumer terms §3, Restrictions (f)" in notice and "commercial terms §2.2(g)" in notice
+    assert rest.startswith("Stored the admin.mistral.ai session from Firefox")
+
+
 def test_warns_when_the_environment_still_wins(monkeypatch, capsys, home, cfg, keyring, firefox):
     code, out, err = run(monkeypatch, capsys, cfg, "--browser", "firefox")
     assert code == 0 and "aiu reads it before key_cmd" not in err
     assert "mistral is off: aiu config set mistral.enabled true" in out
     assert "Check it with: aiu --only mistral" in out
 
+    # No default key_env: a copy the config does not name is never read.
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "old")
+    _, _, err = run(monkeypatch, capsys, cfg, "--browser", "firefox")
+    assert "before key_cmd" not in err
+
+    assert config.config_set(cfg, "mistral.key_env", "MISTRAL_ADMIN_COOKIE") is None
     _, _, err = run(monkeypatch, capsys, cfg, "--browser", "firefox")
     assert "MISTRAL_ADMIN_COOKIE is set in your environment, and aiu reads it before key_cmd" in err
 

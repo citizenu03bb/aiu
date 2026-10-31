@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 
 import httpx
 
+from aiu.i18n import tr
 from aiu.keys import KEY_SOURCES, resolve_key
 from aiu.probes.common import Malformed, _humanize_reset, _json_object, _malformed_note, _network_note
 from aiu.rows import Row
@@ -66,9 +67,11 @@ def _mistral_spend(groups: list[dict], prices: list[dict]) -> tuple[dict[str, fl
 
 
 def probe_mistral(cfg: dict) -> list[Row]:
-    cookie = resolve_key({"key_env": "MISTRAL_ADMIN_COOKIE", **cfg}, "mistral")
+    # No default key_env: the session comes from the keyring (key_cmd, set by
+    # `aiu cookie import mistral`) or from a source the user names.
+    cookie = resolve_key(cfg, "mistral")
     if not cookie:
-        return [Row("mistral", "—", "error", note="no session cookie (set MISTRAL_ADMIN_COOKIE)")]
+        return [Row("mistral", "—", "error", note=tr("no session: run `aiu cookie import mistral`"))]
     now = datetime.now()
     # Naive local -> aware: the console counts months in local time, DST included.
     start = datetime(now.year, now.month, 1).astimezone()
@@ -111,7 +114,6 @@ def probe_mistral(cfg: dict) -> list[Row]:
 # The Probe protocol (aiu.probes): what collect() and `aiu config` read.
 NAME = "mistral"
 OPTIONS = {"enabled": ("bool", False), **KEY_SOURCES,
-           "key_env": ("string", "MISTRAL_ADMIN_COOKIE"),
            "vibe_allowance_eur": ("number", MISTRAL_ALLOWANCE_EUR),
            "api_allowance_eur": ("number", MISTRAL_ALLOWANCE_EUR)}
 probe = probe_mistral

@@ -55,6 +55,7 @@ FR = {
     # probe notes that only tell the user what to do
     "Antigravity desktop app not running — open it to read the Gemini quota":
         "application de bureau Antigravity fermée — ouvre-la pour lire le quota Gemini",
+    "no session: run `aiu cookie import mistral`": "pas de session : lance `aiu cookie import mistral`",
     # --advise
     "deep reasoning / agentic": "raisonnement profond / agentique",
     "volume / throwaway tasks (Flash)": "volume / tâches jetables (Flash)",
@@ -163,6 +164,21 @@ FR = {
         "✓ rien ne sera perdu au reset ni à sec longtemps",
     # aiu cookie import
     "aiu cookie: {error}": "aiu cookie : {error}",
+    "Before anything is stored: aiu keeps a whole admin.mistral.ai session, not a read-only key. "
+    "Until it expires it can create API keys and change billing. To get it, aiu reads "
+    "{browser}'s cookie store. Mistral's terms forbid using \"any method to extract any content "
+    "from the Mistral AI Products other than as permitted through the Mistral AI Products\" "
+    "(consumer terms §3, Restrictions (f), which cover the Free plan; commercial terms §2.2(g); "
+    "legal.mistral.ai/terms). Mistral offers no other way to read the allowances, and aiu sends "
+    "this session only to the console's own Usage endpoints.":
+        "Avant tout enregistrement : aiu garde une session admin.mistral.ai entière, pas une clé "
+        "en lecture seule. Jusqu'à son expiration, elle peut créer des clés API et modifier la "
+        "facturation. Pour l'obtenir, aiu lit le magasin de cookies de {browser}. Les conditions "
+        "de Mistral interdisent de « use any method to extract any content from the Mistral AI "
+        "Products other than as permitted through the Mistral AI Products » (conditions grand "
+        "public §3, Restrictions (f), qui couvrent l'offre Free ; conditions commerciales "
+        "§2.2(g) ; legal.mistral.ai/terms). Mistral n'offre pas d'autre moyen de lire les "
+        "forfaits, et aiu n'envoie cette session qu'aux points d'accès Usage de la console.",
     "secret-tool not found: install it (Debian/Ubuntu: sudo apt install libsecret-tools)":
         "secret-tool introuvable : installe-le (Debian/Ubuntu : sudo apt install libsecret-tools)",
     "the keyring did not store the cookie (is it locked?); nothing was changed":
