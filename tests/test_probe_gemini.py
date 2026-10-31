@@ -58,7 +58,9 @@ class FakeAgy:
     def reply(self, out, code=0):
         body = self.dir / "agy-out"
         body.write_text(out if isinstance(out, str) else json.dumps(out))
-        self.path.write_text(f'#!/bin/sh\necho "$*" >> {self.log}\n/bin/cat {body}\nexit {code}\n')
+        # Only `-p /usage` answers; the plan lookup (test_plans) finds no tier.
+        self.path.write_text(f'#!/bin/sh\n[ "$1" = -p ] || exit 1\n'
+                             f'echo "$*" >> {self.log}\n/bin/cat {body}\nexit {code}\n')
         self.path.chmod(0o755)
         return self
 

@@ -74,7 +74,7 @@ One per metric a probe read, or one `error` row for a probe that failed.
 | `reset_epoch` | number, Unix seconds of the reset | yes | extension |
 | `window_secs` | integer, the quota window length | yes | not read |
 | `sublimit` | boolean: a quota on one model or product inside the plan (Gemini 4 Argon, Claude's `Weekly Sonnet`, a Codex limit other than `codex`). Used up, it stops only that one: the extension's dot turns yellow, not red. An aiu from before the field prints none, read as false | no | extension |
-| `plan` | string, may be empty: the subscription's plan as the vendor's own client names it (`plus` from `codex app-server`, `pro` from `claude auth status`, `Free` from Mistral Vibe), on every row of that provider that is not an `error`; empty when the client says none (Gemini: agy reports no tier). At most 32 letters, digits, spaces and `_.+-`. Before it, Codex's plan was the first row's `note` | no | extension (a pill beside the provider's name) |
+| `plan` | string, may be empty: the subscription's plan as the vendor's own client names it (`plus` from `codex app-server`, `pro` from `claude auth status`, `Free` from Mistral Vibe, `Google AI Pro` from agy's status line), on every row of that provider that is not an `error`; empty when the client says none or did not answer in time. At most 32 letters, digits, spaces and `_.+-`. Before it, Codex's plan was the first row's `note` | no | extension (a pill beside the provider's name) |
 
 The extension groups rows by `kind`: `quota` rows are bars, `spend`,
 `balance` and `credit` rows are amounts, `error` rows are alerts. An

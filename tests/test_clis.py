@@ -92,6 +92,57 @@ def test_spawn_talks_line_by_line(tmp_path):
         assert proc.stdout.readline() == "got one\n"
 
 
+# run_tty: an interactive client on a pseudo-terminal ------------------------
+
+def test_run_tty_gives_a_terminal_and_stops_once_done(tmp_path):
+    seen, marker, pids = tmp_path / "seen", tmp_path / "done", tmp_path / "pids"
+    cli = script(tmp_path / "tui", f'[ -t 0 ] && [ -t 1 ] && [ -t 2 ] && echo tty > {seen}\n'
+                                   f'/bin/stty size >> {seen}\n/bin/pwd >> {seen}\n'
+                                   f'/bin/sleep 30 & echo $! > {pids}\necho $$ >> {pids}\n'
+                                   f': > {marker}\nwait\n')
+    start = time.monotonic()
+    assert clis.run_tty([cli], timeout=10, done=marker.exists, cwd=str(tmp_path)) is True
+    assert time.monotonic() - start < 5
+    assert seen.read_text() == f"tty\n24 80\n{tmp_path}\n"
+    assert all(wait_dead(int(p)) for p in pids.read_text().split())
+
+
+def test_run_tty_reads_away_a_busy_screen(tmp_path):
+    """A client that draws a lot is not blocked on a full terminal."""
+    marker = tmp_path / "done"
+    cli = script(tmp_path / "chatty", f'/usr/bin/head -c 2000000 /dev/zero\n: > {marker}\n/bin/sleep 30\n')
+    assert clis.run_tty([cli], timeout=10, done=marker.exists) is True
+
+
+def test_run_tty_timeout_kills_the_client(tmp_path):
+    pids = tmp_path / "pids"
+    cli = script(tmp_path / "hang", f'/bin/sleep 30 & echo $! > {pids}\necho $$ >> {pids}\nwait\n')
+    start = time.monotonic()
+    assert clis.run_tty([cli], timeout=0.5, done=lambda: False) is False
+    assert time.monotonic() - start < 5
+    assert all(wait_dead(int(p)) for p in pids.read_text().split())
+
+
+def test_run_tty_client_that_exits_first(tmp_path):
+    start = time.monotonic()
+    assert clis.run_tty([script(tmp_path / "quits", "echo bye\nexit 1\n")], timeout=10,
+                        done=lambda: False) is False
+    assert time.monotonic() - start < 5
+
+
+def test_run_tty_none_when_it_cannot_start(tmp_path):
+    assert clis.run_tty([str(tmp_path / "missing")], timeout=5, done=lambda: True) is None
+
+
+def test_run_tty_clean_environment(tmp_path, monkeypatch):
+    monkeypatch.setenv("LD_PRELOAD", "/tmp/evil.so")
+    out = tmp_path / "env"
+    cli = script(tmp_path / "env-tui", f"/usr/bin/env > {out}.tmp\n/bin/mv {out}.tmp {out}\n")
+    clis.run_tty([cli], timeout=5, done=out.exists)
+    names = {line.split("=", 1)[0] for line in out.read_text().splitlines()}
+    assert "HOME" in names and names <= {"HOME", "PATH", "USER", "LANG", "PWD", "SHLVL", "_"}
+
+
 # The reading cache ----------------------------------------------------------
 
 def fetcher(*results):
