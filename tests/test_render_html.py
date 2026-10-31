@@ -49,10 +49,10 @@ def test_every_field_is_escaped(tmp_path):
     assert "a &amp; b &quot;quoted&quot; &#x27;single&#x27;" in page
 
 
-def test_forged_local_summary_stays_text(tmp_path):
-    # A reply that passes as Antigravity's names its own bucket: that name is the metric.
-    rows = gemini._parse_summary_response({"response": {"groups": [{"displayName": "Gemini Models", "buckets": [
-        {"bucketId": "x", "displayName": SCRIPT, "remainingFraction": 0.5, "resetTime": IMG}]}]}})
+def test_forged_agy_reply_stays_text(tmp_path):
+    # A reply that passes as agy's /usage names its own group: the metric is made from it.
+    rows = gemini._parse_groups([{"name": SCRIPT, "buckets": [
+        {"window": "5h", "remaining_fraction": 0.5, "reset_time": IMG}]}])
     page = render(tmp_path, *rows)
-    assert rows[0].metric == SCRIPT
+    assert rows[0].metric == "scriptalert1script 5-Hour" and rows[0].reset is None
     assert "<script" not in page and "<img" not in page and CSP in page

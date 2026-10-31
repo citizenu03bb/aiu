@@ -43,7 +43,7 @@ function runContract(client) {
         ['codex', 'Weekly Limit', 90, '', 'in 4d23h'],
         ['gemini', '5-Hour Limit', 25, '', 'in 1h50m'],
         ['gemini', 'Weekly Limit', 2, '', 'in 6d19h'],
-        ['gemini', 'Image generation', 0, '', null],
+        ['gemini', 'Claude and GPT Weekly', 0, '', 'in 6d19h'],
     ], 'contract: quotas');
     // The bars show used_pct; `used` is only the fallback for a row without it.
     const pctOnly = client._processData({ ...raw, rows: raw.rows.map(r => ({ ...r, used: null })) });

@@ -70,7 +70,7 @@
       "limit": null,
       "unit": "",
       "reset": null,
-      "note": "Antigravity desktop app not running \u2014 open it to read the Gemini quota",
+      "note": "install the Antigravity CLI (agy) to read the Gemini quota",
       "reset_epoch": null,
       "window_secs": null
     },

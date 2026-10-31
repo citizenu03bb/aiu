@@ -87,12 +87,14 @@ enabled = false
 # Note: Cohere exposes NO aggregate usage/spend endpoint (dashboard only), so it
 # can't be polled as a simple number without local token accounting.
 
-# Gemini (Antigravity / Google One AI Pro) -> subscription quota, read from the
-# Antigravity desktop app while it is open (closed: the row says to open it).
-# No key needed. aiu does not use the Gemini CLI's sign-in: Google's terms
-# forbid other programs from piggybacking on it.
+# Gemini (Antigravity / Google One AI Pro) -> subscription quota, asked of the
+# Antigravity CLI: aiu runs `agy -p /usage --output-format json` (agy's own
+# /usage command, no model turn) at most every 15 minutes. Install agy and sign
+# in with it; no key needed, and aiu never reads agy's sign-in. agy_cmd says
+# which agy to run (else ~/.local/bin/agy and the usual places, never PATH).
 [gemini]
 enabled = false
+# agy_cmd = "~/.local/bin/agy"
 """
 
 # Same settings as CONFIG_TEMPLATE, French comments (tests check they parse alike).
@@ -163,12 +165,15 @@ enabled = false
 # Note : Cohere n'expose AUCUN point d'accès d'usage ou de dépense agrégé (tableau
 # de bord seulement), donc impossible de le relever sans compter les jetons soi-même.
 
-# Gemini (Antigravity / Google One AI Pro) -> quota d'abonnement, lu dans
-# l'application de bureau Antigravity tant qu'elle est ouverte (fermée : la
-# ligne dit de l'ouvrir). Pas de clé. aiu n'utilise pas la connexion du Gemini
-# CLI : les conditions de Google interdisent aux autres programmes de s'en servir.
+# Gemini (Antigravity / Google One AI Pro) -> quota d'abonnement, demandé à la
+# CLI Antigravity : aiu lance `agy -p /usage --output-format json` (la commande
+# /usage d'agy, sans tour de modèle) au plus toutes les 15 minutes. Installe agy
+# et connecte-toi avec ; pas de clé, et aiu ne lit jamais la connexion d'agy.
+# agy_cmd dit quel agy lancer (sinon ~/.local/bin/agy et les endroits
+# habituels, jamais le PATH).
 [gemini]
 enabled = false
+# agy_cmd = "~/.local/bin/agy"
 """
 
 

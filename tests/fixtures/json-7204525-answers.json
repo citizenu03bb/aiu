@@ -178,19 +178,6 @@
       "used_pct": 2.0
     },
     {
-      "provider": "gemini",
-      "metric": "Image generation",
-      "kind": "quota",
-      "used": 0.0,
-      "limit": 1.0,
-      "unit": "%",
-      "reset": null,
-      "note": "",
-      "reset_epoch": null,
-      "window_secs": null,
-      "used_pct": 0.0
-    },
-    {
       "provider": "mistral",
       "metric": "Vibe Monthly",
       "kind": "quota",

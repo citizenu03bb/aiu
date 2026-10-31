@@ -167,15 +167,15 @@
     },
     {
       "provider": "gemini",
-      "metric": "Image generation",
+      "metric": "Claude and GPT Weekly",
       "kind": "quota",
       "used": 0.0,
       "limit": 1.0,
       "unit": "%",
-      "reset": null,
+      "reset": "in 6d 20h",
       "note": "",
-      "reset_epoch": null,
-      "window_secs": null,
+      "reset_epoch": 1793590400.0,
+      "window_secs": 604800,
       "used_pct": 0.0
     },
     {
