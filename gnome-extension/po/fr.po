@@ -448,3 +448,23 @@ msgstr "Non enregistré"
 #: prefsWindow.js
 msgid "Could not open {path}: {error}"
 msgstr "Impossible d'ouvrir {path} : {error}"
+
+#: aiuClient.js
+msgid "{window} is at {pct} %, for that limit only; resets {reset}"
+msgstr "{window} est à {pct} %, pour cette limite seulement ; remise à zéro {reset}"
+
+#: aiuClient.js
+msgid "{window} is at {pct} %, for that limit only"
+msgstr "{window} est à {pct} %, pour cette limite seulement"
+
+#: aiuClient.js
+msgid "{window} is at {pct} %; resets {reset}"
+msgstr "{window} est à {pct} % ; remise à zéro {reset}"
+
+#: aiuClient.js
+msgid "{window} is at {pct} %"
+msgstr "{window} est à {pct} %"
+
+#: menuView.js
+msgid "Used up, or nearly:"
+msgstr "Épuisé, ou presque :"

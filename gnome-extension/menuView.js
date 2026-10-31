@@ -9,7 +9,7 @@ import Gio from 'gi://Gio';
 import Pango from 'gi://Pango';
 import GLib from 'gi://GLib';
 import {
-    INSTALL_GUIDE_URL, displayName, formatDuration, installCommand, needsSetup, resetText,
+    INSTALL_GUIDE_URL, displayName, formatDuration, fullQuotaText, installCommand, needsSetup, resetText,
 } from './aiuClient.js';
 import { dataMaxHeight } from './menuLayout.js';
 import { _, N_, fmt } from './i18n.js';
@@ -374,7 +374,30 @@ export class MenuView {
             this._addSignInHint();
         }
 
-        // 1. Errors & Token warnings (if any)
+        // 1. What turned the dot red or yellow: windows used up (errors follow)
+        if (data.fullQuotas && data.fullQuotas.length > 0) {
+            const critical = data.fullQuotas.some(q => q.sublimit !== true);
+            const fullBox = new St.BoxLayout({
+                vertical: true,
+                style_class: critical ? 'aiu-alert-box' : 'aiu-advice-box',
+                x_expand: true,
+            });
+            fullBox.add_child(new St.Label({
+                text: _('Used up, or nearly:'),
+                style_class: 'aiu-provider-name',
+            }));
+            for (const q of data.fullQuotas) {
+                const label = new St.Label({
+                    text: fullQuotaText(q),
+                    style_class: q.sublimit === true ? 'aiu-advice-text' : 'aiu-alert-text',
+                });
+                setLineWrap(label, true);
+                fullBox.add_child(label);
+            }
+            this._dataBox.add_child(fullBox);
+        }
+
+        // 2. Errors & Token warnings (if any)
         if (data.errors && data.errors.length > 0) {
             const alertBox = new St.BoxLayout({
                 vertical: true,
@@ -397,7 +420,7 @@ export class MenuView {
             this._dataBox.add_child(alertBox);
         }
 
-        // 2. Advice box: headline + detail lines (wrapped, never cut)
+        // 3. Advice box: headline + detail lines (wrapped, never cut)
         if (data.advice) {
             const adviceBox = new St.BoxLayout({
                 vertical: true,
@@ -425,7 +448,7 @@ export class MenuView {
             return i < 0 ? routing.length : i;
         };
 
-        // 3. Subscriptions, in routing order (the one to use first on top)
+        // 4. Subscriptions, in routing order (the one to use first on top)
         if (data.quotas && data.quotas.length > 0) {
             this._dataBox.add_child(new St.Label({
                 text: _('Subscriptions'),
@@ -543,7 +566,7 @@ export class MenuView {
             }
         }
 
-        // 4. Credits, prepaid balances, lifetime spend
+        // 5. Credits, prepaid balances, lifetime spend
         if (data.balances && data.balances.length > 0) {
             this._dataBox.add_child(new St.Label({
                 text: _('Credits & paid APIs'),

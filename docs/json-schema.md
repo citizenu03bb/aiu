@@ -73,6 +73,7 @@ One per metric a probe read, or one `error` row for a probe that failed.
 | `note` | string, may be empty: plan name, allowance, the age of an old Claude Code reading (`Claude Code reading from 2h 5m ago`), or why an `error` row failed | no | extension |
 | `reset_epoch` | number, Unix seconds of the reset | yes | extension |
 | `window_secs` | integer, the quota window length | yes | not read |
+| `sublimit` | boolean: a quota on one model or product inside the plan (Gemini 4 Argon, Claude's `Weekly Sonnet`, a Codex limit other than `codex`). Used up, it stops only that one: the extension's dot turns yellow, not red. An aiu from before the field prints none, read as false | no | extension |
 
 The extension groups rows by `kind`: `quota` rows are bars, `spend`,
 `balance` and `credit` rows are amounts, `error` rows are alerts. An

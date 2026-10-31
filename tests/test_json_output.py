@@ -228,11 +228,22 @@ CODEX_NOTE = "not signed in: run `codex` to sign in"
 def since_main(out: str) -> str:
     """MAIN's output with the changes made since: `"schema": 1` as the first key
     (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q),
-    Gemini's note without agy (task W), Codex's when not signed in (task V)."""
+    Gemini's note without agy (task W), Codex's when not signed in (task V),
+    and each row's `sublimit`."""
     assert out.startswith("{\n") and '"schema"' not in out and '"early_pace"' not in out
     out = out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
     out = out.replace(GEMINI_NOTE_MAIN, GEMINI_NOTE).replace(CODEX_NOTE_MAIN, CODEX_NOTE)
-    return re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
+    out = re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
+    # `sublimit` after each row's window_secs: true for Claude's per-model windows.
+    snap = json.loads(out)
+    snap["rows"] = [{k2: v2 for k, v in row.items() for k2, v2 in
+                     ([(k, v), ("sublimit", row["provider"] == "claude" and row["metric"] in SUBLIMITS_MAIN)]
+                      if k == "window_secs" else [(k, v)])} for row in snap["rows"]]
+    return json.dumps(snap, indent=2) + "\n"
+
+
+# Claude's windows on one model, as MAIN labelled them: the package marks them `sublimit`.
+SUBLIMITS_MAIN = {"Weekly Sonnet", "Weekly Opus", "Weekly OAuth Apps", "Weekly Cowork"}
 
 
 def antigravity_summary(groups) -> dict:

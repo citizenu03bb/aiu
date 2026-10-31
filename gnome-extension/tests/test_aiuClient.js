@@ -3,7 +3,7 @@
 // the subprocess tests here run sh and sleep in its place.
 import GLib from 'gi://GLib';
 import System from 'system';
-import { AiuClient, installCommand, needsSetup, resetText, SCHEMA, schemaProblem } from '../aiuClient.js';
+import { AiuClient, fullQuotaText, installCommand, needsSetup, resetText, SCHEMA, schemaProblem } from '../aiuClient.js';
 
 function assertEqual(got, want, what) {
     const g = JSON.stringify(got);
@@ -139,6 +139,31 @@ function run() {
     const soon = client._processData({ rows: [], advice: [mock.advice[0]] });
     if (soon.statusColor !== 'warning') {
         throw new Error(`Quota lost within 24h should warn, got ${soon.statusColor}`);
+    }
+    // A used-up sublimit (one model's own cap) only warns; a used-up window of the plan alarms.
+    const now = 1793440000;
+    const argon = { provider: 'gemini', metric: 'Gemini 4 Argon Weekly', kind: 'quota', used: 1.0, used_pct: 100.0,
+        reset_epoch: now + 2 * 86400 + 20 * 3600, sublimit: true };
+    const weekly = { provider: 'gemini', metric: 'Weekly Limit', kind: 'quota', used: 0.96, used_pct: 96.0,
+        reset_epoch: null, sublimit: false };
+    const sub = client._processData({ rows: [argon, { ...weekly, used: 0.7, used_pct: 70.0 }], advice: [] });
+    if (sub.statusColor !== 'warning' || sub.fullQuotas.length !== 1) {
+        throw new Error(`A used-up sublimit should only warn, got ${sub.statusColor} / ${sub.fullQuotas.length}`);
+    }
+    const both = client._processData({ rows: [argon, weekly], advice: [] });
+    if (both.statusColor !== 'critical' || both.fullQuotas.map(q => q.metric).join() !== 'Weekly Limit,Gemini 4 Argon Weekly') {
+        throw new Error(`A used-up plan window should alarm, listed first, got ${both.statusColor} / ${both.fullQuotas.map(q => q.metric)}`);
+    }
+    // An aiu from before the field prints no `sublimit`: a used-up window alarms, as before.
+    const old = client._processData({ rows: [{ ...weekly, sublimit: undefined }], advice: [] });
+    if (old.statusColor !== 'critical') {
+        throw new Error(`A window without sublimit should alarm, got ${old.statusColor}`);
+    }
+    const texts = [fullQuotaText(argon, now), fullQuotaText(weekly, now)];
+    const wantTexts = ['Gemini 4 Argon Weekly is at 100 %, for that limit only; resets in 2d20h',
+        'Gemini Weekly Limit is at 96 %'];
+    if (texts.join('|') !== wantTexts.join('|')) {
+        throw new Error(`Used-up texts: ${texts.join(' | ')}`);
     }
     for (const [lots, want] of cases) {
         const got = client._generateAdvice(lots);

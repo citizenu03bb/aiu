@@ -41,6 +41,12 @@ GROUP_LABELS = {"5h": "5-Hour", "weekly": "Weekly"}
 GROUP_NAME_MAX = 32
 
 
+def _shared_group(name: str) -> bool:
+    """Whether a group is a quota models share ("Gemini Models", "Claude and
+    GPT models"), not one model's own cap inside it ("Gemini 4 Argon")."""
+    return re.search(r"(?i)\bmodels?$", name.strip()) is not None
+
+
 def _group_label(name: str, i: int) -> str:
     """A short label from agy's group name: letters, digits and a few signs
     only (a row's metric goes into rich markup and the panel), a trailing
@@ -63,6 +69,7 @@ def _parse_groups(groups) -> list[Row]:
         if not isinstance(name, str) or not isinstance(buckets, list):
             continue
         ours = name == GEMINI_GROUP
+        sublimit = not _shared_group(name)
         for b in buckets:
             if not isinstance(b, dict) or b.get("window") not in WINDOWS:
                 continue
@@ -82,7 +89,7 @@ def _parse_groups(groups) -> list[Row]:
             row = Row("gemini", label, "quota",
                       used=1.0 - max(0.0, min(1.0, float(frac))), limit=1.0, unit="%",
                       reset=_humanize_reset(reset) if reset else None, reset_epoch=epoch,
-                      window_secs=WINDOWS[window])
+                      window_secs=WINDOWS[window], sublimit=sublimit)
             # "Gemini Models" first, then the groups in agy's order; 5h before weekly.
             rows.append(((0 if ours else 1, i, list(WINDOWS).index(window)), row))
     rows.sort(key=lambda kr: kr[0])

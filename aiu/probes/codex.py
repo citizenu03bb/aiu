@@ -156,6 +156,8 @@ def _unique(label: str, seen: set[str]) -> str:
 
 
 def _window_rows(snap: dict, prefix: str, seen: set[str]) -> list[Row]:
+    """A limit's windows. Any limit but Codex's own (it has a prefix) is on
+    one model inside the plan: a sublimit."""
     rows = []
     for key in ("primary", "secondary"):
         win = _opt(snap, key, dict)
@@ -171,7 +173,7 @@ def _window_rows(snap: dict, prefix: str, seen: set[str]) -> list[Row]:
                         used=float(pct) / 100.0, limit=1.0, unit="%",
                         reset=_humanize_reset_unix(reset),
                         reset_epoch=float(reset) if reset else None,
-                        window_secs=mins * 60 if mins else None))
+                        window_secs=mins * 60 if mins else None, sublimit=bool(prefix)))
     return rows
 
 

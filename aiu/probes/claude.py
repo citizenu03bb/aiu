@@ -31,6 +31,9 @@ CLAUDE_QUOTA_LABELS = {
     "monthly_limit": "Monthly Limit",
     "extra_usage": "Extra Usage",
 }
+# Windows on one model or product inside the plan's own: full, they stop only that one.
+CLAUDE_SUBLIMITS = {"seven_day_sonnet", "seven_day_opus", "seven_day_oauth_apps",
+                    "seven_day_cowork"}
 CLAUDE_WINDOW = {  # window length in seconds, for advise/alert
     "five_hour": 5 * 3600,
     "seven_day": 7 * 86400,
@@ -175,7 +178,8 @@ def _claude_usage_rows(reading: dict) -> list[Row] | None:
         rows.append(Row("claude", CLAUDE_QUOTA_LABELS[kind], "quota",
                         used=0.0 if passed else pct / 100.0, limit=1.0, unit="%",
                         reset=None if passed else _humanize_reset_unix(reset),
-                        note=note, reset_epoch=None if passed else reset, window_secs=window))
+                        note=note, reset_epoch=None if passed else reset, window_secs=window,
+                        sublimit=kind in CLAUDE_SUBLIMITS))
     return None if stale and not ahead else rows
 
 
@@ -246,7 +250,7 @@ def _probe_claude_token(cfg: dict) -> list[Row]:
                             used=float(entry["utilization"]) / 100.0, limit=1.0, unit="%",
                             reset=reset_h, note=warn.strip(),
                             reset_epoch=_iso_epoch(reset) if reset else None,
-                            window_secs=CLAUDE_WINDOW.get(key)))
+                            window_secs=CLAUDE_WINDOW.get(key), sublimit=key in CLAUDE_SUBLIMITS))
         rows.extend(_claude_credits(data, warn))
     except Exception as e:
         return [Row("claude", "—", "error", note=warn + _malformed_note(e))]

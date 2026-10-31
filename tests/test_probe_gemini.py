@@ -92,6 +92,8 @@ def test_real_reply(agy, clock):
     }
     assert rows[0].reset == "in 1h 38m" and rows[1].reset == "in 3d 20h"
     assert agy.runs() == ["-p /usage --output-format json --log-file /dev/null"]
+    # Groups the models share are the plan's windows; Gemini 4 Argon's cap is a sublimit.
+    assert [r.metric for r in rows if r.sublimit] == ["Gemini 4 Argon Weekly"]
 
 
 def test_runs_with_a_clean_environment_and_no_network(agy, http, monkeypatch, tmp_path):

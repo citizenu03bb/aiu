@@ -23,10 +23,11 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
 - **Fully asynchronous**: `aiu` runs in the background through `Gio.Subprocess`, so GNOME Shell never freezes.
 - **Status at a glance**:
   - Green dot: nothing to do.
-  - Yellow dot: free quota will be lost at a reset within 24 h (use it).
-  - Red dot: a window is full (≥ 95 %) or a probe failed (e.g. an expired Claude token).
+  - Yellow dot: free quota will be lost at a reset within 24 h (use it), or one model's own cap is full (≥ 95 %, e.g. Gemini 4 Argon) while the plan's windows still have room.
+  - Red dot: a window of the plan is full (≥ 95 %) or a probe failed (e.g. an expired Claude token).
   - Grey dot: setup is not finished (`aiu` is not installed, or no provider can be read yet).
 - **Menu**:
+  - **Used up, or nearly**: at the top, the windows that turned the dot red or yellow, with when each resets.
   - **Subscriptions**: in routing order, each with a badge (burn first / unknown pace / on track / conserve), bars to scale coloured by what to do with them, and the time to the reset (e.g. `Reset in 4h27m · runs dry in ~11h33m at your pace`).
   - **Credits & paid APIs**: free credits with their expiry, prepaid balances, and lifetime spend (greyed out).
   - **Advice**: from the `advice` field of `aiu --json`: burn first the subscription (or credit) whose surplus expires first, and keep for later the ones that would run dry before their reset.

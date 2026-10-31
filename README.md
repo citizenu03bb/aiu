@@ -564,6 +564,9 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
   (`Claude and GPT 5-Hour` and `Weekly`, per-model weekly limits such as
   `Gemini 4 Argon Weekly`). A new `agy_cmd` option says which `agy` to run. A reply that looks
   like a model turn stops `agy` runs for 24 hours.
+- The GNOME indicator says what turned its dot red or yellow, at the top of
+  the menu. A used-up limit on one model only (Gemini 4 Argon, Claude's
+  `Weekly Sonnet`) turns it yellow, not red: `--json` rows carry `sublimit`.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.

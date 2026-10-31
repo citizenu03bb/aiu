@@ -63,6 +63,7 @@ def test_normal_response(creds, http):
     http.on("GET", URL, (200, usage()))
     rows = by_metric(claude.probe_claude(TOKEN))
     assert list(rows) == ["5-Hour Limit", "Weekly (all models)", "Weekly Sonnet", "Cloud Credit"]
+    assert [m for m, r in rows.items() if r.sublimit] == ["Weekly Sonnet"]
     five = rows["5-Hour Limit"]
     assert (five.kind, five.used, five.limit, five.unit) == ("quota", 0.37, 1.0, "%")
     assert five.window_secs == 5 * 3600 and five.note == ""
