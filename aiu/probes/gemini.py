@@ -1,201 +1,178 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Probe: Gemini (Antigravity / Google One AI Pro subscription quota).
 
-Usage is a subscription quota, not pay-per-token API spend. The only source is
-the Antigravity desktop app's local language server (+ CSRF token from its
-command line), while the app is open. aiu no longer uses the Gemini CLI's OAuth
-token and client against Code Assist: the Gemini CLI FAQ calls third-party
-software that piggybacks on that sign-in a violation that may get the account
-suspended. The `agy` CLI keeps its login in the system keyring and its own
-local server's CSRF token never leaves memory, so aiu can't read quota through
-agy."""
+Usage is a subscription quota, not pay-per-token API spend. aiu asks the
+Antigravity CLI for it: `agy -p /usage --output-format json` runs agy's own
+`/usage` command, with no model turn, and answers with every quota group's
+5-hour and weekly buckets. agy keeps its sign-in and makes the request; aiu
+holds no Google credential and makes no network call for Gemini.
+
+agy is found and run by aiu.clis (`agy_cmd`, else AGY_LOCATIONS, never PATH).
+Each run starts the user's MCP servers and there is no per-run switch against
+that (`--log-file /dev/null` does stop the per-run log), so a reading is
+cached: 15 minutes, 5 after an ordinary failure. A reply that is not a /usage
+answer may mean agy took `/usage` as a prompt and ran the model: aiu then does
+not run agy again for 24 hours."""
 from __future__ import annotations
 
-import glob
-import os
+import json
+import math
 import re
 
-import httpx
-
+from aiu.clis import cached, find_cli, run_cli
 from aiu.i18n import tr
-from aiu.probes.common import _humanize_reset, _iso_epoch
+from aiu.probes.common import Malformed, _humanize_reset, _iso_epoch, _malformed_note
 from aiu.rows import Row
 
 
-def _parse_summary_response(data: dict) -> list[Row] | None:
-    # A local reply is checked like any server's: a wrong shape is no summary.
-    resp = data.get("response") if isinstance(data, dict) else None
-    groups = resp.get("groups") if isinstance(resp, dict) else None
-    rows: list[Row] = []
-    for g in groups if isinstance(groups, list) else []:
-        if isinstance(g, dict) and g.get("displayName") == "Gemini Models":
-            buckets = g.get("buckets")
-            for b in buckets if isinstance(buckets, list) else []:
-                frac = b.get("remainingFraction") if isinstance(b, dict) else None
-                if isinstance(frac, bool) or not isinstance(frac, (int, float)) or frac != frac:
-                    continue
-                win = b.get("window", "")
-                bid = b.get("bucketId", "")
-                if win == "5h" or bid == "gemini-5h":
-                    label = "5-Hour Limit"
-                    secs = 18000
-                elif win == "weekly" or bid == "gemini-weekly":
-                    label = "Weekly Limit"
-                    secs = 604800
-                else:
-                    label = str(b.get("displayName") or "")
-                    secs = None
-                reset = b.get("resetTime")
-                if not isinstance(reset, str):
-                    reset = None
-                reset_h = _humanize_reset(reset) if reset else None
-                rows.append(Row("gemini", label, "quota",
-                                used=max(0.0, min(1.0, 1.0 - float(frac))),
-                                limit=1.0, unit="%",
-                                reset=reset_h,
-                                reset_epoch=_iso_epoch(reset) if reset else None,
-                                window_secs=secs))
-    if not rows:
-        return None
-    order = {"5-Hour Limit": 0, "Weekly Limit": 1}
-    rows.sort(key=lambda r: order.get(r.metric, 99))
-    return rows
+# Where `agy` is installed, in order; `agy_cmd` overrides the list.
+AGY_LOCATIONS = ("~/.local/bin/agy", "/usr/local/bin/agy", "/usr/bin/agy", "/opt/homebrew/bin/agy")
+AGY_ARGS = ("-p", "/usage", "--output-format", "json", "--log-file", "/dev/null")
+AGY_TIMEOUT = 30          # seconds; /usage takes about 3
+CACHE_NAME = "gemini"
+TTL_READING = 15 * 60     # at most 96 runs a day, whatever the extension's interval
+TTL_FAILED = 5 * 60
+TTL_RAN_A_TURN = 24 * 3600
+
+WINDOWS = {"5h": 18000, "weekly": 604800}
+GEMINI_GROUP = "Gemini Models"
+GEMINI_LABELS = {"5h": "5-Hour Limit", "weekly": "Weekly Limit"}
+GROUP_LABELS = {"5h": "5-Hour", "weekly": "Weekly"}
+GROUP_NAME_MAX = 32
 
 
-def _query_local_quota_summary() -> list[Row] | None:
-    """Query Antigravity's local language server for quota summary.
-    Antigravity IDE runs a local language server on localhost and requires the
-    x-codeium-csrf-token header matching its --csrf_token command-line argument.
-    Any local user can listen on loopback, so the token only goes to listening
-    sockets that are ours and held by an Antigravity language_server of ours."""
-    endpoint = "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
-    uid = os.getuid()
-    # /proc/net/tcp{,6} local address -> the host a request must use to reach it.
-    # Anything else (another interface, a v6-only wildcard) may be shadowed on
-    # loopback by someone else's socket, so it is never queried.
-    loopback = {
-        "0100007F": "127.0.0.1", "00000000": "127.0.0.1",
-        "00000000000000000000000001000000": "[::1]", "00000000000000000000000000000000": "[::1]",
-        "0000000000000000FFFF00000100007F": "127.0.0.1",
-    }
+def _group_label(name: str, i: int) -> str:
+    """A short label from agy's group name: letters, digits and a few signs
+    only (a row's metric goes into rich markup and the panel), a trailing
+    "models" dropped: "Claude and GPT models" -> "Claude and GPT"."""
+    name = re.sub(r"[^\w .+&-]", "", name)
+    name = re.sub(r"(?i)\s+models?$", "", " ".join(name.split()))
+    return name[:GROUP_NAME_MAX].strip() or f"Group {i + 1}"
 
-    def owned(pid: str) -> bool:
-        # every uid of the process (real, effective, saved, fs) is ours
-        try:
-            with open(f"/proc/{pid}/status", "r") as f:
-                for line in f:
-                    if line.startswith("Uid:"):
-                        return all(int(u) == uid for u in line.split()[1:])
-        except Exception:
-            pass
-        return False
 
-    def antigravity_server(pid: str) -> bool:
-        # the executable, which unlike argv the process can't rewrite, is a
-        # language_server binary inside an Antigravity install
-        try:
-            exe = os.readlink(f"/proc/{pid}/exe").removesuffix(" (deleted)")
-        except Exception:
-            return False
-        dirs, _, name = exe.lower().rpartition("/")
-        return name.startswith("language_server") and "antigravity" in dirs
-
-    def main_log_csrf() -> str | None:
-        log_path = os.path.expanduser("~/.config/Antigravity/logs/main.log")
-        try:
-            with open(log_path, "r", errors="ignore") as f:
-                m = re.findall(r"--csrf_token\s+([0-9a-fA-F-]+)", f.read())
-            return m[-1] if m else None
-        except Exception:
-            return None
-
-    # 1. Discover our Antigravity language servers, their CSRF tokens and listening ports
-    candidates: list[tuple[str | None, str, int]] = []
-    seen: set[tuple[str, int]] = set()
-    log_read, log_csrf = False, None
-
-    for p in glob.glob("/proc/[0-9]*/cmdline"):
-        try:
-            pid = p.split("/")[2]
-            if not owned(pid) or not antigravity_server(pid):
-                continue
-            with open(p, "rb") as f:
-                parts = f.read().split(b"\0")
-            csrf = None
-            for i, part in enumerate(parts):
-                if part == b"--csrf_token" and i + 1 < len(parts):
-                    csrf = parts[i + 1].decode("utf-8", errors="ignore")
-            if not csrf:
-                # No token on the cmdline: fall back to the one Antigravity logged
-                # when it spawned its server, for this server's ports only.
-                if not log_read:
-                    log_read, log_csrf = True, main_log_csrf()
-                csrf = log_csrf
-
-            inodes = set()
-            fd_dir = f"/proc/{pid}/fd"
-            try:
-                for fd in os.listdir(fd_dir):
-                    try:
-                        target = os.readlink(os.path.join(fd_dir, fd))
-                        if target.startswith("socket:["):
-                            inodes.add(target[8:-1])
-                    except Exception:
-                        pass
-            except Exception:
-                pass
-
-            for netpath in ("/proc/net/tcp", "/proc/net/tcp6"):
-                try:
-                    with open(netpath, "r") as f:
-                        for line in f.readlines()[1:]:
-                            cols = line.strip().split()
-                            if (len(cols) < 10 or cols[3] != "0A" or cols[7] != str(uid)
-                                    or cols[9] not in inodes):
-                                continue
-                            ip_hex, port_hex = cols[1].split(":")
-                            host, port = loopback.get(ip_hex.upper()), int(port_hex, 16)
-                            if host and (host, port) not in seen:
-                                seen.add((host, port))
-                                candidates.append((csrf, host, port))
-                except Exception:
-                    pass
-        except Exception:
+def _parse_groups(groups) -> list[Row]:
+    """Quota rows from `command.data.groups`: every bucket with a 5h or weekly
+    window and a numeric remaining_fraction. Everything else is skipped."""
+    rows: list[tuple[tuple[int, int, int], Row]] = []
+    seen: set[str] = set()
+    for i, g in enumerate(groups if isinstance(groups, list) else []):
+        if not isinstance(g, dict):
             continue
+        name = g.get("name")
+        buckets = g.get("buckets")
+        if not isinstance(name, str) or not isinstance(buckets, list):
+            continue
+        ours = name == GEMINI_GROUP
+        for b in buckets:
+            if not isinstance(b, dict) or b.get("window") not in WINDOWS:
+                continue
+            window = b["window"]
+            frac = b.get("remaining_fraction")
+            if isinstance(frac, bool) or not isinstance(frac, (int, float)) or not math.isfinite(frac):
+                continue
+            label = GEMINI_LABELS[window] if ours else f"{_group_label(name, i)} {GROUP_LABELS[window]}"
+            base, n = label, 1
+            while label in seen:
+                n += 1
+                label = f"{base} {n}"
+            seen.add(label)
+            reset = b.get("reset_time")
+            epoch = _iso_epoch(reset) if isinstance(reset, str) and len(reset) <= 64 else None
+            reset = reset if epoch is not None else None
+            row = Row("gemini", label, "quota",
+                      used=1.0 - max(0.0, min(1.0, float(frac))), limit=1.0, unit="%",
+                      reset=_humanize_reset(reset) if reset else None, reset_epoch=epoch,
+                      window_secs=WINDOWS[window])
+            # "Gemini Models" first, then the groups in agy's order; 5h before weekly.
+            rows.append(((0 if ours else 1, i, list(WINDOWS).index(window)), row))
+    rows.sort(key=lambda kr: kr[0])
+    return [r for _, r in rows]
 
-    # 2. Query candidates. https is verified like any other host: an Antigravity
-    # server with a self-signed certificate is skipped, never trusted blindly.
-    for csrf, host, port in candidates:
-        headers = {
-            "Content-Type": "application/json",
-            "Connect-Protocol-Version": "1",
-        }
-        if csrf:
-            headers["x-codeium-csrf-token"] = csrf
 
-        for scheme in ("http", "https"):
-            url = f"{scheme}://{host}:{port}{endpoint}"
-            try:
-                r = httpx.post(url, json={}, headers=headers, timeout=0.5)
-                if r.status_code == 200:
-                    rows = _parse_summary_response(r.json())
-                    if rows:
-                        return rows
-            except Exception:
-                pass
+def _ran_a_turn(d: dict) -> bool:
+    """Whether a reply shows a model turn, or tokens spent."""
+    usage = d.get("usage")
+    tokens = usage.get("total_tokens") if isinstance(usage, dict) else None
+    return d.get("num_turns") not in (0, None) or tokens not in (0, None)
 
-    return None
+
+def _is_usage_answer(d: dict) -> bool:
+    """The reply of agy's /usage command, which runs no model: anything else
+    may be agy having taken `/usage` as a prompt."""
+    command = d.get("command")
+    usage = d.get("usage")
+    return (d.get("status") == "SUCCESS" and isinstance(command, dict)
+            and command.get("name") == "usage"
+            and type(d.get("num_turns")) is int and d["num_turns"] == 0
+            and (usage is None or isinstance(usage, dict) and usage.get("total_tokens", 0) == 0
+                 and type(usage.get("total_tokens", 0)) is int))
+
+
+def _run_usage(exe: str) -> tuple[dict, float]:
+    """One `agy /usage`: (what the cache keeps, its time-to-live). The kept
+    value is the reply's groups, or the failure's kind; rows are made from
+    it on each probe, so reset times stay relative to now."""
+    done = run_cli([exe, *AGY_ARGS], timeout=AGY_TIMEOUT)
+    if done is None:
+        return {"error": "start"}, TTL_FAILED
+    code, out = done
+    try:
+        reply = json.loads(out)
+    except ValueError:
+        reply = None
+    if isinstance(reply, dict) and _ran_a_turn(reply):
+        return {"error": "turn"}, TTL_RAN_A_TURN
+    if code < 0:
+        return {"error": "timeout"}, TTL_FAILED
+    if code != 0:
+        return {"error": "exit", "code": code}, TTL_FAILED
+    if not isinstance(reply, dict):
+        return {"error": "json"}, TTL_FAILED
+    if not _is_usage_answer(reply):
+        return {"error": "turn"}, TTL_RAN_A_TURN
+    data = reply["command"].get("data")
+    groups = data.get("groups") if isinstance(data, dict) else None
+    if not _parse_groups(groups):
+        return {"error": "nodata"}, TTL_FAILED
+    return {"groups": groups}, TTL_READING
+
+
+def _error(note: str) -> list[Row]:
+    return [Row("gemini", "—", "error", note=note)]
+
+
+def _rows(reading) -> list[Row]:
+    """The rows for a reading _run_usage made (or the cache kept)."""
+    if not isinstance(reading, dict):
+        return _error(_malformed_note(Malformed("unreadable cached reading")))
+    if "groups" in reading:
+        return _parse_groups(reading["groups"]) or \
+            _error(_malformed_note(Malformed("no 5h or weekly quota")))
+    match reading.get("error"):
+        case "turn":
+            return _error(tr("agy did not answer /usage and may have run the model: "
+                             "aiu will not run agy again for 24 hours"))
+        case "timeout":
+            return _error(tr("agy /usage timed out"))
+        case "exit" if type(code := reading.get("code")) is int:
+            return _error(tr("agy /usage exited with code {code} (is agy signed in?)", code=code))
+        case "start":
+            return _error(tr("agy could not be started"))
+        case "json":
+            return _error(_malformed_note(Malformed("not JSON")))
+        case "nodata":
+            return _error(_malformed_note(Malformed("no 5h or weekly quota")))
+    return _error(_malformed_note(Malformed("unreadable cached reading")))
 
 
 def probe_gemini(cfg: dict) -> list[Row]:
-    rows = _query_local_quota_summary()
-    if rows is not None:
-        return rows
-    return [Row("gemini", "—", "error",
-                note=tr("Antigravity desktop app not running — open it to read the Gemini quota"))]
+    exe = find_cli("agy_cmd", cfg, AGY_LOCATIONS)
+    if not exe:
+        return _error(tr("install the Antigravity CLI (agy) to read the Gemini quota"))
+    return _rows(cached(CACHE_NAME, lambda: _run_usage(exe)))
 
 
 # The Probe protocol (aiu.probes): what collect() and `aiu config` read.
 NAME = "gemini"
-OPTIONS = {"enabled": ("bool", False)}
+OPTIONS = {"enabled": ("bool", False), "agy_cmd": ("string", None)}
 probe = probe_gemini

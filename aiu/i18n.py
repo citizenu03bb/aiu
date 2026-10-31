@@ -3,7 +3,8 @@
 so. Messages are written in English and looked up in FR by their exact text.
 Probe notes, metric names and --json keys stay English: they are data, and
 some (a credit's "locked: ..." note) are matched on. The exception is a note
-that only tells the user what to do, like Gemini's "open Antigravity"."""
+that tells the user what to do or what their client did, like Gemini's
+"install the Antigravity CLI"."""
 from __future__ import annotations
 
 import os
@@ -53,8 +54,15 @@ FR = {
     "Resets / note": "Reset / note",
     "{used}/{limit} {unit} left": "{used}/{limit} {unit} restants",
     # probe notes that only tell the user what to do
-    "Antigravity desktop app not running — open it to read the Gemini quota":
-        "application de bureau Antigravity fermée — ouvre-la pour lire le quota Gemini",
+    "install the Antigravity CLI (agy) to read the Gemini quota":
+        "installe la CLI Antigravity (agy) pour lire le quota Gemini",
+    "agy did not answer /usage and may have run the model: aiu will not run agy again for 24 hours":
+        "agy n'a pas répondu à /usage et a peut-être lancé le modèle : aiu ne relancera pas agy "
+        "avant 24 heures",
+    "agy /usage timed out": "agy /usage n'a pas répondu à temps",
+    "agy /usage exited with code {code} (is agy signed in?)":
+        "agy /usage a quitté avec le code {code} (agy est-il connecté ?)",
+    "agy could not be started": "impossible de lancer agy",
     "no session: run `aiu cookie import mistral`": "pas de session : lance `aiu cookie import mistral`",
     "Codex CLI not found: install it, or set codex.codex_cmd":
         "Codex CLI introuvable : installe-la, ou règle codex.codex_cmd",

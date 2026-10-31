@@ -112,7 +112,7 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 | `openai`     | month-to-date USD spend      | an **Admin** API key (off unless you use the API) |
 | `deepseek`   | remaining balance            | a normal API key |
 | `openrouter` | total spend + remaining credits | `aiu login openrouter` (or a normal API key) |
-| `gemini`     | Gemini 5h + weekly quota     | none — the Antigravity desktop app must be open |
+| `gemini`     | Antigravity 5h + weekly quotas (Gemini, Claude and GPT, per model) | the Antigravity CLI `agy`, installed and signed in (see [gemini](#gemini)) |
 | `mistral`    | monthly Vibe Code + API allowance (€ spent / € included) | the admin.mistral.ai **session cookie** (no API key works) |
 
 **`codex`** covers OpenAI usage that runs on a ChatGPT subscription (the Codex
@@ -262,8 +262,8 @@ them can run code as you.
   key". Like OpenSSH, `aiu` ignores every `key_cmd`, with a warning, when the
   config file or its directory is not yours or can be written by group or
   others. It writes the starter config `0600` in a `0700` directory.
-- Every option named `*_cmd` runs a program: `key_cmd`, and `claude_cmd` and
-  `codex_cmd`, the vendor clients aiu asks for their own figures. The trust check above drops
+- Every option named `*_cmd` runs a program: `key_cmd`, and `claude_cmd`,
+  `codex_cmd` and `agy_cmd`, the vendor clients aiu asks for their own figures. The trust check above drops
   them all, and `aiu config set` refuses them, in a config that fails it. A
   vendor client is never taken from `PATH`: only its `*_cmd`, or else a known
   install location, and never one that someone else can write. It runs with
@@ -442,17 +442,38 @@ and no BigQuery needed.
 enabled = true
 ```
 
-**The only source: the Antigravity desktop app, while it is open.** It runs
-a local language server on 127.0.0.1; `aiu` finds it in `/proc` (only your own
-Antigravity process and its loopback ports), takes the CSRF token from its
-command line (or `~/.config/Antigravity/logs/main.log`) and asks it for the
-quota summary: 5-hour and weekly windows. When the app is closed, the row says
-to open it, and `aiu` makes no network call for Gemini.
+**The source: the Antigravity CLI's own `/usage` command.** `aiu` runs
+`agy -p /usage --output-format json --log-file /dev/null` and reads the quota
+groups it prints: "Gemini Models" as `5-Hour Limit` and `Weekly Limit`, and
+each other group after its name (`Claude and GPT 5-Hour`, `Claude and GPT
+Weekly`, `Gemini 4 Argon Weekly`), each with its own reset, which the routing
+advice treats as its own window. `/usage` runs no model and spends no tokens;
+`agy` keeps its sign-in and makes the request, and `aiu` neither reads that
+sign-in nor makes any network call for Gemini. What it needs is the CLI
+installed and signed in (run `agy` once). Without it the row says "install the
+Antigravity CLI (agy) to read the Gemini quota".
 
-**The `agy` CLI can't stand in for it** (checked Oct 2026). It keeps its login
-in the system keyring, not in `~/.gemini/oauth_creds.json`. It also runs its
-own local server, but that server's CSRF token never leaves the process's
-memory.
+`aiu` looks for `agy` in `~/.local/bin/agy`, `/usr/local/bin/agy`,
+`/usr/bin/agy` and `/opt/homebrew/bin/agy`, never on `PATH`; `agy_cmd` names
+another (`aiu config set gemini.agy_cmd ~/bin/agy`; like every `*_cmd` it is
+ignored in an untrusted config, see [Secrets](#secrets)).
+
+Each run takes about 3 s and starts the MCP servers configured for `agy`
+(nothing turns that off for one run), so `aiu` keeps a reading for 15 minutes
+(5 after a failure): `agy` runs at most 96 times a day, however often you or
+the panel refresh. A reply that is not a `/usage` answer (no `SUCCESS`, another
+command, or a model turn or tokens counted) may mean `agy` took `/usage` as a
+prompt and ran the model: the row says so, and `aiu` does not run `agy` again
+for 24 hours.
+
+**Antigravity's terms.** Antigravity's terms
+([antigravity.google/terms](https://antigravity.google/terms), §6) call "using
+third party software, tools, or services to access the Service" a breach that
+may suspend the account. `aiu` reaches no Antigravity service itself: it runs
+the CLI's `/usage`, which runs no model, and a reply on the Google AI forum
+calls the CLI's `/usage` the supported way to check the quota. Up to v0.5.0
+`aiu` instead found the Antigravity desktop app's language server in `/proc`,
+took its CSRF token and called its local RPC; that is gone.
 
 **No more Gemini CLI fallback (wave 8, task S).** Up to v0.5.0, with
 Antigravity closed, `aiu` read `~/.gemini/oauth_creds.json`, refreshed that
@@ -464,9 +485,8 @@ violation" of Google's terms that "may be grounds for immediate suspension",
 so that path is gone. `aiu` no longer reads or rewrites
 `~/.gemini/oauth_creds.json`, no longer looks for the Gemini CLI's OAuth
 client, and ignores `GEMINI_CLIENT_ID` / `GEMINI_CLIENT_SECRET` (you can delete
-them from `~/.env`). **If you relied on that fallback**, your Gemini row now
-says "Antigravity desktop app not running — open it to read the Gemini quota"
-until you open Antigravity. Signing in with OAuth on a Google Cloud project of
+them from `~/.env`). **If you relied on that fallback**, read the quota through
+`agy` instead (above). Signing in with OAuth on a Google Cloud project of
 your own would not help: it reaches the Gemini API's per-project quotas, not
 the Google AI plan used through Antigravity.
 
@@ -494,8 +514,9 @@ and this project is not affiliated with Anthropic, OpenAI, Google or Mistral AI:
   calls nothing;
 - `codex`: nothing. aiu asks the Codex CLI (`codex app-server`), which calls
   its own endpoints with its own sign-in;
-- `gemini`: the Antigravity desktop language server's `RetrieveUserQuotaSummary`
-  on 127.0.0.1, and nothing else;
+- `gemini`: nothing. `aiu` runs the Antigravity CLI's `/usage` command
+  (`agy -p /usage --output-format json`), which uses no model turn; `agy`
+  makes its own request with its own sign-in;
 - `mistral`: the admin console's tRPC endpoints
   (`admin.mistral.ai/api/local-trpc/`, `usage.costBreakdown` and
   `usage.prices`), with the browser session you imported. Mistral's terms
@@ -535,6 +556,14 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
   reset Codex granted, with its expiry, which `--alert` flags before it is
   lost. When not signed in, the row says "not signed in: run `codex` to sign
   in" (it said "no token in ~/.codex/auth.json" or "auth rejected").
+- `gemini` reads the quota from the Antigravity CLI: `agy -p /usage
+  --output-format json`, which runs no model, cached for 15 minutes. It needs
+  `agy` installed and signed in, not the desktop app; `aiu` no longer scans
+  `/proc` for Antigravity's language server or reads its CSRF token, and makes
+  no network call for Gemini. New rows show the other groups `/usage` reports
+  (`Claude and GPT 5-Hour` and `Weekly`, per-model weekly limits such as
+  `Gemini 4 Argon Weekly`). A new `agy_cmd` option says which `agy` to run. A reply that looks
+  like a model turn stops `agy` runs for 24 hours.
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.

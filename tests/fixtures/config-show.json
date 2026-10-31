@@ -123,6 +123,11 @@
           "type": "bool",
           "value": false,
           "source": "default"
+        },
+        "agy_cmd": {
+          "type": "string",
+          "value": null,
+          "source": "default"
         }
       }
     },

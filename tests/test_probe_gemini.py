@@ -1,283 +1,320 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Gemini probe — no network: the Antigravity desktop app's language server,
-found through a faked /proc, is its only source."""
-import builtins
-import glob
-import io
+"""Gemini probe — no network: a fake `agy` in tmp/bin replays the real reply
+of `agy -p /usage --output-format json`, captured on 2026-10-31 (its free-text
+`response` cut short: aiu does not read it)."""
+import copy
 import json
 import os
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import datetime
 from pathlib import Path
 
-import httpx
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from aiu.probes import gemini  # noqa: E402
+from aiu import clis, config  # noqa: E402
+from aiu.probes import common, gemini  # noqa: E402
 
-SUMMARY = "/exa.language_server_pb.LanguageServerService/RetrieveUserQuotaSummary"
-OPEN_ANTIGRAVITY = "Antigravity desktop app not running — open it to read the Gemini quota"
+REPLY = json.loads(r"""
+{"conversation_id":"","status":"SUCCESS","response":"Gemini Models\tWeekly Limit Remaining\t27%\t2026-11-04T07:01:55Z\nGemini Models\tFive…","duration_seconds":0,"num_turns":0,"usage":{"input_tokens":0,"output_tokens":0,"thinking_tokens":0,"cache_read_tokens":0,"total_tokens":0},"command":{"name":"usage","data":{"description":"Within each group, models share a weekly limit and a 5-hour limit. Quota is consumed proportionally to the cost of the tokens. Thus, limits will last longer with shorter tasks or using more cost-effective models. The 5-hour limit smooths out aggregate demand to fairly distribute global capacity across all users, while your weekly limit is tied directly to your individual tier.","groups":[{"name":"Gemini Models","description":"Models within this group: Gemini Flash, Gemini Pro","buckets":[{"id":"gemini-weekly","name":"Weekly Limit Remaining","description":"You have used some of your weekly limit, it will fully refresh in 3 days, 23 hours.","window":"weekly","remaining_fraction":0.26864364743232727,"reset_time":"2026-11-04T07:01:55Z"},{"id":"gemini-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":1,"reset_time":"2026-10-31T12:18:05Z"}]},{"name":"Claude and GPT models","description":"Models within this group: Claude Opus, Claude Sonnet, GPT-OSS","buckets":[{"id":"3p-weekly","name":"Weekly Limit Remaining","window":"weekly","remaining_fraction":1,"reset_time":"2026-11-07T07:18:05Z"},{"id":"3p-5h","name":"Five Hour Limit Remaining","window":"5h","remaining_fraction":1,"reset_time":"2026-10-31T12:18:05Z"}]},{"name":"Gemini 4 Argon","description":"For paid Pro plans, Argon quota is separate. Higher Argon quota (included as part of the larger Gemini quota bucket) is available on Ultra plans.","buckets":[{"id":"gemini-argon-wtu-weekly","name":"Gemini 4 Argon Weekly Limit","description":"You have hit your weekly limit, it refreshes in 2 days, 21 hours. If on a supported paid plan, you can use AI credits in the interim or upgrade to a higher tier.","window":"weekly","remaining_fraction":0,"reset_time":"2026-11-03T04:42:11Z"}]}]}}}
+""")
+NOW = 1793443200.0  # 2026-10-31 10:40:00 UTC, when the reply was captured
 
-
-def iso(secs_from_now):
-    return datetime.fromtimestamp(time.time() + secs_from_now, timezone.utc).isoformat()
-
-
-# ---------------------------------------------------------------------------
-# Local path: the Antigravity desktop app's language server
-# ---------------------------------------------------------------------------
-TCP_HEADER = ("  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt"
-              "   uid  timeout inode")
-
-
-UID = os.getuid()
-OTHER_UID = UID + 1
-
-
-class FakeProc:
-    """Just enough of /proc for the language-server discovery: cmdlines, owners,
-    executables, socket fds, /proc/net/tcp{,6}. Every other path goes to the real
-    filesystem. Processes and sockets belong to the current user unless told
-    otherwise, and a process's executable is its argv[0] unless told otherwise."""
-
-    def __init__(self):
-        self.files = {"/proc/net/tcp": [TCP_HEADER], "/proc/net/tcp6": [TCP_HEADER]}
-        self.fds, self.links = {}, {}
-
-    def process(self, pid, *argv, sockets=(), uid=UID, exe=None):
-        self.files[f"/proc/{pid}/cmdline"] = b"\0".join(argv) + b"\0"
-        self.files[f"/proc/{pid}/status"] = [f"Name:\tproc{pid}", f"Uid:\t{uid}\t{uid}\t{uid}\t{uid}"]
-        self.links[f"/proc/{pid}/exe"] = exe if exe is not None else argv[0].decode()
-        self.fds[f"/proc/{pid}/fd"] = {"0": "/dev/null",
-                                       **{str(3 + i): f"socket:[{ino}]" for i, ino in enumerate(sockets)}}
-
-    def listen(self, port, inode, ip="0100007F", state="0A", uid=UID):
-        table = self.files["/proc/net/tcp6" if len(ip) == 32 else "/proc/net/tcp"]
-        table.append(
-            f"  {len(table) - 1}: {ip}:{port:04X} {'0' * len(ip)}:0000 {state} 00000000:00000000 "
-            f"00:00000000 00000000  {uid}        0 {inode} 1 0000000000000000 100 0 0 10 0")
-
-    def install(self, monkeypatch):
-        real_open, real_listdir, real_readlink = builtins.open, os.listdir, os.readlink
-
-        def fake_open(path, mode="r", *a, **kw):
-            path = str(path)
-            if path in self.files:
-                v = self.files[path]
-                return io.BytesIO(v) if isinstance(v, bytes) else io.StringIO("\n".join(v) + "\n")
-            if path.startswith("/proc/"):
-                raise FileNotFoundError(path)
-            return real_open(path, mode, *a, **kw)
-
-        def fake_listdir(path="."):
-            if str(path).startswith("/proc/"):
-                return list(self.fds[str(path)])
-            return real_listdir(path)
-
-        def fake_readlink(path, *a, **kw):
-            if str(path) in self.links:
-                return self.links[str(path)]
-            d, _, fd = str(path).rpartition("/")
-            if d in self.fds:
-                return self.fds[d][fd]
-            return real_readlink(path, *a, **kw)
-
-        monkeypatch.setattr(glob, "glob", lambda pattern: [p for p in self.files if p.endswith("/cmdline")]
-                            if pattern == "/proc/[0-9]*/cmdline" else [])
-        monkeypatch.setattr(gemini, "open", fake_open, raising=False)
-        monkeypatch.setattr(os, "listdir", fake_listdir)
-        monkeypatch.setattr(os, "readlink", fake_readlink)
-        return self
+INSTALL = "install the Antigravity CLI (agy) to read the Gemini quota"
+BACKOFF = "agy did not answer /usage and may have run the model: aiu will not run agy again for 24 hours"
 
 
 @pytest.fixture
-def proc(monkeypatch):
-    return FakeProc().install(monkeypatch)
+def clock(monkeypatch):
+    """time.time() is NOW until a test moves it; datetime.now() too, through it."""
+    now = [NOW]
+    monkeypatch.setattr(time, "time", lambda: now[0])
+
+    class Frozen(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls.fromtimestamp(now[0], tz)
+
+    monkeypatch.setattr(common, "datetime", Frozen)
+    return now
 
 
-LS = b"/usr/share/antigravity/resources/app/extensions/antigravity/bin/language_server_linux_x64"
+@pytest.fixture
+def agy(tmp_path):
+    """A fake agy at tmp/bin/agy (the only place the probe looks, see conftest):
+    agy.reply(...) sets what it prints and its exit code; agy.runs() is the
+    argv of each run so far."""
+    return FakeAgy(tmp_path)
 
 
-def summary(*buckets, group="Gemini Models"):
-    return {"response": {"groups": [
-        {"displayName": "Claude Models", "buckets": [{"window": "5h", "remainingFraction": 0.1}]},
-        {"displayName": group, "buckets": list(buckets)}]}}
+class FakeAgy:
+    def __init__(self, tmp_path):
+        self.dir = tmp_path
+        self.path = tmp_path / "bin" / "agy"
+        self.log = tmp_path / "agy-runs"
+        self.reply(REPLY)
+
+    def reply(self, out, code=0):
+        body = self.dir / "agy-out"
+        body.write_text(out if isinstance(out, str) else json.dumps(out))
+        self.path.write_text(f'#!/bin/sh\necho "$*" >> {self.log}\n/bin/cat {body}\nexit {code}\n')
+        self.path.chmod(0o755)
+        return self
+
+    def runs(self):
+        return self.log.read_text().splitlines() if self.log.exists() else []
 
 
-def summary_body():
-    """Built when a test runs, not at import: the reset times are from now."""
-    return summary(
-        {"bucketId": "gemini-weekly", "window": "weekly", "displayName": "Weekly",
-         "remainingFraction": 0.75, "resetTime": iso(3 * 86400)},
-        {"bucketId": "gemini-5h", "window": "5h", "displayName": "5 hours",
-         "remainingFraction": 0.4, "resetTime": iso(2 * 3600)},
-        {"bucketId": "gemini-images", "displayName": "Image generation", "remainingFraction": 1.0},
-        {"bucketId": "gemini-5h-burst", "window": "5h"},  # no fraction: skipped
-    )
+def quota(rows):
+    return {r.metric: (round(r.used, 4), r.reset_epoch, r.window_secs) for r in rows}
 
 
-def record_post_kwargs(monkeypatch, http):
-    """The keyword arguments of every httpx.post call, on top of the fake."""
-    seen = []
-
-    def post(url, **kw):
-        seen.append(kw)
-        return http.post(url, **kw)
-    monkeypatch.setattr(httpx, "post", post)
-    return seen
+def epoch(iso):
+    return datetime.fromisoformat(iso.replace("Z", "+00:00")).timestamp()
 
 
-def write_main_log(home, *tokens):
-    log = home / ".config" / "Antigravity" / "logs" / "main.log"
-    log.parent.mkdir(parents=True)
-    log.write_text("".join(f"[info] spawn language_server --csrf_token {t} --random_port\n" for t in tokens))
-
-
-def test_local_language_server(proc, http, monkeypatch):
-    proc.process(4242, LS, b"--csrf_token", b"0f1e2d3c-aaaa-bbbb", b"--extension_server_port", b"40001",
-                 sockets=(5555, 7777))
-    proc.process(4300, b"/usr/bin/bash")                # unrelated process
-    proc.listen(41394, 5555)                            # the server's listening socket
-    proc.listen(40001, 9999)                            # someone else's
-    proc.listen(41395, 7777, state="01")                # established, not listening
-    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", httpx.RemoteProtocolError("TLS expected"))
-    http.on("POST", f"https://127.0.0.1:41394{SUMMARY}", (200, summary_body()))
-    posts = record_post_kwargs(monkeypatch, http)
+# ---------------------------------------------------------------------------
+# The reading
+# ---------------------------------------------------------------------------
+def test_real_reply(agy, clock):
     rows = gemini.probe_gemini({})
-    assert [(r.metric, round(r.used, 2), r.window_secs) for r in rows] == [
-        ("5-Hour Limit", 0.6, 5 * 3600), ("Weekly Limit", 0.25, 7 * 86400), ("Image generation", 0.0, None)]
-    assert rows[0].reset_epoch == pytest.approx(time.time() + 7200, abs=5)
-    assert [c.url.split(":")[0] for c in http.calls] == ["http", "https"]
-    assert all(c.headers["x-codeium-csrf-token"] == "0f1e2d3c-aaaa-bbbb" for c in http.calls)
-    assert all(kw.get("verify", True) is True for kw in posts)  # H1: TLS checks stay on
+    assert [r.metric for r in rows] == ["5-Hour Limit", "Weekly Limit", "Claude and GPT 5-Hour",
+                                        "Claude and GPT Weekly", "Gemini 4 Argon Weekly"]
+    assert all(r.provider == "gemini" and r.kind == "quota" and r.limit == 1.0 and r.unit == "%"
+               and r.note == "" for r in rows)
+    assert quota(rows) == {
+        "5-Hour Limit": (0.0, epoch("2026-10-31T12:18:05Z"), 18000),
+        "Weekly Limit": (0.7314, epoch("2026-11-04T07:01:55Z"), 604800),
+        "Claude and GPT 5-Hour": (0.0, epoch("2026-10-31T12:18:05Z"), 18000),
+        "Claude and GPT Weekly": (0.0, epoch("2026-11-07T07:18:05Z"), 604800),
+        "Gemini 4 Argon Weekly": (1.0, epoch("2026-11-03T04:42:11Z"), 604800),
+    }
+    assert rows[0].reset == "in 1h 38m" and rows[1].reset == "in 3d 20h"
+    assert agy.runs() == ["-p /usage --output-format json --log-file /dev/null"]
 
 
-def test_local_main_log_without_server_sends_nothing(proc, http, home):
-    # H1: with no Antigravity server in /proc, the logged token used to be tried
-    # against every port listening on localhost, whoever owned it.
-    write_main_log(home, "11111111-aaaa", "22222222-bbbb")
-    proc.listen(631, 100)                       # another local service
-    proc.listen(41394, 101, ip="00000000")      # maybe the server, maybe not
-    proc.listen(41500, 102, uid=OTHER_UID)      # another user's
-    assert gemini._query_local_quota_summary() is None and http.calls == []
-
-
-def test_local_csrf_fallback_for_found_server(proc, http, home):
-    # A6: the server is found but its cmdline has no token: the logged one is
-    # used, for that server's ports only.
-    write_main_log(home, "11111111-aaaa", "22222222-bbbb")
-    proc.process(4242, LS, b"--random_port", sockets=(5555,))
-    proc.listen(41394, 5555)
-    proc.listen(631, 100)                       # not the server's
-    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, summary_body()))
-    assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
-    assert [(c.url, c.headers.get("x-codeium-csrf-token")) for c in http.calls] == [
-        (f"http://127.0.0.1:41394{SUMMARY}", "22222222-bbbb")]
-
-
-def test_local_token_goes_only_to_its_own_server(proc, http, home):
-    # H1: a token is paired only with the ports of the process it was read from.
-    write_main_log(home, "logged-token")
-    proc.process(4242, LS, b"--csrf_token", b"token-a", sockets=(5555,))
-    proc.process(4343, LS, b"--csrf_token", b"token-b", sockets=(6666,))
-    proc.listen(41394, 5555)
-    proc.listen(41500, 6666)
-    http.on("POST", f"127.0.0.1:41394{SUMMARY}", (500, "busy"))
-    http.on("POST", f"127.0.0.1:41500{SUMMARY}", (500, "busy"))
-    assert gemini._query_local_quota_summary() is None
-    assert {(c.url.split("/")[2], c.headers["x-codeium-csrf-token"]) for c in http.calls} == {
-        ("127.0.0.1:41394", "token-a"), ("127.0.0.1:41500", "token-b")}
-
-
-@pytest.mark.parametrize("argv, owner", [
-    ((LS,), dict(uid=OTHER_UID)),                                   # another user's Antigravity
-    ((LS,), dict(exe="/usr/bin/python3")),                          # argv[0] says LS, the binary doesn't
-    ((b"/usr/bin/vim", b"/usr/share/antigravity/language_server.py"), {}),  # old substring match
-    ((b"/opt/windsurf/bin/language_server_linux_x64",), {}),        # not Antigravity's
-    ((b"/usr/share/antigravity/bin/node",), {}),                    # Antigravity's, not its server
-], ids=["other-user", "spoofed-argv", "editor", "other-ide", "other-binary"])
-def test_local_only_our_antigravity_server(proc, http, home, argv, owner):
-    # H1: the token and the request go only to a language_server binary of an
-    # Antigravity install, run by us.
-    write_main_log(home, "22222222-bbbb")
-    proc.process(4242, *argv, b"--csrf_token", b"tok", sockets=(5555,), **owner)
-    proc.listen(41394, 5555)
-    assert gemini._query_local_quota_summary() is None and http.calls == []
-
-
-@pytest.mark.parametrize("sock", [
-    dict(uid=OTHER_UID),                                    # socket owned by someone else
-    dict(ip="0F02000A"),                                    # 10.0.2.15: 127.0.0.1 may be another's
-    dict(ip="000080FE000000000000000001000000"),            # fe80::1
-], ids=["other-user", "other-interface", "ipv6-link-local"])
-def test_local_only_our_loopback_sockets(proc, http, sock):
-    proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
-    proc.listen(41394, 5555, **sock)
-    assert gemini._query_local_quota_summary() is None and http.calls == []
-
-
-def test_local_ipv6_loopback(proc, http):
-    proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
-    proc.listen(41394, 5555, ip="00000000000000000000000001000000")  # [::1]
-    http.on("POST", f"http://[::1]:41394{SUMMARY}", (200, summary_body()))
-    assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
-
-
-def test_local_server_updated_while_running(proc, http):
-    # An update replaces the binary on disk: the link then ends in " (deleted)".
-    proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,), exe=LS.decode() + " (deleted)")
-    proc.listen(41394, 5555)
-    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (200, summary_body()))
-    assert gemini._query_local_quota_summary()[0].metric == "5-Hour Limit"
-
-
-def test_local_without_gemini_group_says_open_antigravity(proc, http):
-    proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
-    proc.listen(41394, 5555)
-    http.on("POST", f"127.0.0.1:41394{SUMMARY}", (200, summary(group="Other Models")))
-    [row] = gemini.probe_gemini({})
-    assert row.kind == "error" and row.note == OPEN_ANTIGRAVITY
-
-
-def test_local_server_errors_fall_back(proc, http):
-    proc.process(4242, LS, b"--csrf_token", b"tok", sockets=(5555,))
-    proc.listen(41394, 5555)
-    http.on("POST", f"http://127.0.0.1:41394{SUMMARY}", (401, {"code": "unauthenticated"}))
-    http.on("POST", f"https://127.0.0.1:41394{SUMMARY}", (200, "not json"))
-    assert gemini._query_local_quota_summary() is None
-
-
-@pytest.mark.parametrize("body", [
-    [], {"response": None}, {"response": {"groups": {"displayName": "Gemini Models"}}},
-    summary("gemini-5h"), summary({"window": "5h", "remainingFraction": "0.4"}),
-    summary({"window": "5h", "remainingFraction": True}),
-    summary({"window": "5h", "remainingFraction": float("nan")}),
-])
-def test_local_malformed_summary_is_no_summary(body):
-    assert gemini._parse_summary_response(body) is None
-
-
-def test_local_nothing_running(proc, http):
-    assert gemini._query_local_quota_summary() is None and http.calls == []
-
-
-def test_no_local_server_makes_no_network_call(proc, http, home):
-    # Task S: without Antigravity there is no other source. Even with a Gemini
-    # CLI sign-in on disk, nothing is read from it or sent anywhere: the fake
-    # HTTP layer fails the test on any call, and none is scripted.
-    (home / ".gemini").mkdir()
-    (home / ".gemini" / "oauth_creds.json").write_text(json.dumps(
-        {"access_token": "ya29.fake", "expiry_date": 0, "refresh_token": "1//fake"}))
-    [row] = gemini.probe_gemini({})
-    assert (row.provider, row.metric, row.kind) == ("gemini", "—", "error")
-    assert row.note == OPEN_ANTIGRAVITY
+def test_runs_with_a_clean_environment_and_no_network(agy, http, monkeypatch, tmp_path):
+    monkeypatch.setenv("GOOGLE_API_KEY", "should-not-pass")
+    env = tmp_path / "env"
+    agy.path.write_text(f"#!/bin/sh\n/usr/bin/env > {env}\n/bin/cat {agy.dir / 'agy-out'}\n")
+    assert len(gemini.probe_gemini({})) == 5
+    assert "GOOGLE_API_KEY" not in env.read_text()
     assert http.calls == []
 
 
-def test_open_antigravity_row_in_french(proc, http, monkeypatch):
+def test_second_probe_within_15_minutes_does_not_run_agy(agy, clock):
+    first = gemini.probe_gemini({})
+    clock[0] += 14 * 60
+    agy.reply("never read", code=1)
+    second = gemini.probe_gemini({})
+    assert len(agy.runs()) == 1
+    assert quota(second) == quota(first)
+    assert second[0].reset == "in 1h 24m"  # resets stay relative to now
+    clock[0] += 2 * 60
+    [row] = gemini.probe_gemini({})
+    assert len(agy.runs()) == 2 and row.kind == "error"
+
+
+def test_the_cache_file_is_private(agy, home):
+    gemini.probe_gemini({})
+    path = home / ".local" / "state" / "aiu" / "readings" / "gemini.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+    assert json.loads(path.read_text())["ttl"] == 15 * 60
+
+
+@pytest.mark.parametrize("change", [
+    lambda d: d.update(num_turns=1),
+    lambda d: d["usage"].update(total_tokens=812),
+    lambda d: d.update(status="ERROR"),
+    lambda d: d["command"].update(name="chat"),
+    lambda d: d.pop("command"),
+    lambda d: d.pop("num_turns"),
+    lambda d: d.update(num_turns="0"),
+], ids=["num_turns 1", "tokens", "status", "command name", "no command", "no num_turns", "num_turns str"])
+def test_a_reply_that_may_have_run_a_turn_backs_off_24_hours(agy, clock, change):
+    reply = copy.deepcopy(REPLY)
+    change(reply)
+    agy.reply(reply)
+    [row] = gemini.probe_gemini({})
+    assert row.kind == "error" and row.note == BACKOFF
+    agy.reply(REPLY)
+    for later in (60, 15 * 60, 6 * 3600, 24 * 3600 - 60):
+        clock[0] = NOW + later
+        [row] = gemini.probe_gemini({})
+        assert row.note == BACKOFF
+    assert len(agy.runs()) == 1
+    clock[0] = NOW + 24 * 3600 + 1
+    assert len(gemini.probe_gemini({})) == 5 and len(agy.runs()) == 2
+
+
+def test_a_turn_counts_even_with_a_failing_exit(agy, clock):
+    agy.reply({**REPLY, "status": "ERROR", "num_turns": 1}, code=1)
+    [row] = gemini.probe_gemini({})
+    assert row.note == BACKOFF
+
+
+def test_reply_in_french(agy, monkeypatch):
+    monkeypatch.setenv("AIU_LANG", "fr")
+    agy.reply({**REPLY, "num_turns": 1})
+    [row] = gemini.probe_gemini({})
+    assert row.note.startswith("agy n'a pas répondu à /usage")
+
+
+# ---------------------------------------------------------------------------
+# agy missing, untrusted or failing
+# ---------------------------------------------------------------------------
+def test_no_agy(http):
+    [row] = gemini.probe_gemini({})
+    assert (row.kind, row.metric, row.note) == ("error", "—", INSTALL)
+    assert http.calls == []
+
+
+def test_no_agy_in_french(monkeypatch):
     monkeypatch.setenv("AIU_LANG", "fr")
     [row] = gemini.probe_gemini({})
-    assert row.note == "application de bureau Antigravity fermée — ouvre-la pour lire le quota Gemini"
-    assert http.calls == []
+    assert row.note == "installe la CLI Antigravity (agy) pour lire le quota Gemini"
+
+
+def test_agy_on_path_is_not_used(tmp_path, monkeypatch):
+    """PATH holds tmp/bin; with the known locations elsewhere, an agy there is ignored."""
+    FakeAgy(tmp_path)
+    monkeypatch.setattr(gemini, "AGY_LOCATIONS", (str(tmp_path / "nowhere" / "agy"),))
+    [row] = gemini.probe_gemini({})
+    assert row.note == INSTALL
+
+
+def test_agy_cmd(agy, tmp_path, monkeypatch):
+    monkeypatch.setattr(gemini, "AGY_LOCATIONS", ())
+    other = tmp_path / "opt" / "agy"
+    other.parent.mkdir()
+    agy.path.rename(other)
+    assert len(gemini.probe_gemini({"agy_cmd": str(other)})) == 5
+
+
+def test_untrusted_agy_cmd_is_not_run(agy, tmp_path, capsys):
+    shared = tmp_path / "shared"
+    shared.mkdir()
+    shared.chmod(0o777)
+    exe = shared / "agy"
+    exe.write_text(agy.path.read_text())
+    exe.chmod(0o755)
+    [row] = gemini.probe_gemini({"agy_cmd": str(exe)})
+    assert row.note == INSTALL and agy.runs() == []
+    assert "writable by other users" in capsys.readouterr().err
+
+
+def test_untrusted_agy_cmd_in_config_is_dropped(tmp_path, capsys):
+    path = tmp_path / "config.toml"
+    path.write_text('[gemini]\nenabled = true\nagy_cmd = "/tmp/evil"\n')
+    path.chmod(0o666)
+    cfg = config.load_config(path)
+    assert "agy_cmd" not in cfg["gemini"]
+
+
+@pytest.mark.parametrize("code, out, note", [
+    (1, "", "agy /usage exited with code 1 (is agy signed in?)"),
+    (2, json.dumps({"status": "ERROR", "num_turns": 0}), "agy /usage exited with code 2 (is agy signed in?)"),
+    (0, "Usage: agy [options]\n", "malformed response: not JSON"),
+    (0, "[1, 2]", "malformed response: not JSON"),
+], ids=["exit", "exit with JSON", "text", "not an object"])
+def test_ordinary_failures_are_retried_after_5_minutes(agy, clock, code, out, note):
+    agy.reply(out, code=code)
+    [row] = gemini.probe_gemini({})
+    assert (row.kind, row.note) == ("error", note)
+    clock[0] += 4 * 60
+    gemini.probe_gemini({})
+    assert len(agy.runs()) == 1
+    agy.reply(REPLY)
+    clock[0] += 2 * 60
+    assert len(gemini.probe_gemini({})) == 5 and len(agy.runs()) == 2
+
+
+def test_timeout(agy, monkeypatch):
+    monkeypatch.setattr(gemini, "AGY_TIMEOUT", 0.3)
+    agy.path.write_text(f'#!/bin/sh\necho run >> {agy.log}\n/bin/sleep 10\n')
+    start = time.monotonic()
+    [row] = gemini.probe_gemini({})
+    assert row.note == "agy /usage timed out" and time.monotonic() - start < 5
+
+
+def test_agy_that_cannot_start(agy, monkeypatch):
+    monkeypatch.setattr(gemini, "run_cli", lambda argv, timeout: None)
+    [row] = gemini.probe_gemini({})
+    assert row.note == "agy could not be started"
+
+
+# ---------------------------------------------------------------------------
+# Malformed groups and buckets
+# ---------------------------------------------------------------------------
+def with_groups(groups):
+    reply = copy.deepcopy(REPLY)
+    reply["command"]["data"]["groups"] = groups
+    return reply
+
+
+def bucket(**kw):
+    return {"id": "b", "window": "5h", "remaining_fraction": 0.5, "reset_time": "2026-10-31T12:18:05Z", **kw}
+
+
+@pytest.mark.parametrize("groups", [
+    None, "groups", [], [None, 3, "x"], [{"name": "Gemini Models"}],
+    [{"name": "Gemini Models", "buckets": "b"}],
+    [{"name": 7, "buckets": [bucket()]}],
+    [{"name": "Gemini Models", "buckets": [
+        bucket(remaining_fraction=True), bucket(remaining_fraction="0.5"), bucket(remaining_fraction=None),
+        bucket(remaining_fraction=float("nan")), bucket(remaining_fraction=float("inf")),
+        bucket(window="daily"), bucket(window=None), {"window": "5h"}, "bucket", None]}],
+])
+def test_no_usable_bucket(agy, groups):
+    agy.reply(with_groups(groups))
+    [row] = gemini.probe_gemini({})
+    assert (row.kind, row.note) == ("error", "malformed response: no 5h or weekly quota")
+
+
+def test_no_data(agy):
+    reply = copy.deepcopy(REPLY)
+    del reply["command"]["data"]
+    agy.reply(reply)
+    [row] = gemini.probe_gemini({})
+    assert row.note == "malformed response: no 5h or weekly quota"
+
+
+def test_bad_buckets_are_skipped_and_values_clamped(agy):
+    agy.reply(with_groups([{"name": "Gemini Models", "buckets": [
+        bucket(remaining_fraction=1.7), bucket(window="weekly", remaining_fraction=-0.2, reset_time="soon"),
+        bucket(remaining_fraction="x")]}]))
+    rows = gemini.probe_gemini({})
+    assert [(r.metric, r.used) for r in rows] == [("5-Hour Limit", 0.0), ("Weekly Limit", 1.0)]
+    assert rows[1].reset is None and rows[1].reset_epoch is None
+
+
+def test_labels_are_short_unique_and_plain(agy):
+    agy.reply(with_groups([
+        {"name": "[bold red]Claude[/] and GPT models", "buckets": [bucket(), bucket()]},
+        {"name": "A very long group name that goes on and on Models", "buckets": [bucket(window="weekly")]},
+        {"name": "***", "buckets": [bucket()]},
+        {"name": "Gemini Models", "buckets": [bucket(window="weekly"), bucket()]},
+    ]))
+    assert [r.metric for r in gemini.probe_gemini({})] == [
+        "5-Hour Limit", "Weekly Limit",
+        "bold redClaude and GPT 5-Hour", "bold redClaude and GPT 5-Hour 2",
+        "A very long group name that goes Weekly", "Group 3 5-Hour"]
+
+
+def test_unreadable_cache_is_an_error_not_a_crash(agy, home):
+    path = home / ".local" / "state" / "aiu" / "readings"
+    path.mkdir(parents=True, mode=0o700)
+    for value in ({"groups": "x"}, {"error": "exit", "code": "1"}, ["x"], {"error": "other"}):
+        (path / "gemini.json").write_text(json.dumps({"written_at": time.time(), "ttl": 900, "value": value}))
+        [row] = gemini.probe_gemini({})
+        assert row.kind == "error" and row.note.startswith("malformed response"), value
+    assert agy.runs() == []
+
+
+def test_no_local_quota_scan_left():
+    """aiu reads nothing of Antigravity's desktop app: no /proc scan, no CSRF token."""
+    src = Path(gemini.__file__).read_text()
+    assert "/proc" not in src and "csrf" not in src.lower() and "httpx" not in src
+    assert not hasattr(gemini, "_query_local_quota_summary")
+    assert clis.CLEAN_ENV == ("HOME", "PATH", "USER", "LANG")

@@ -22,6 +22,7 @@ import importlib.util
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -34,7 +35,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from aiu import cli, keys, render  # noqa: E402
-from aiu.probes import gemini, mistral  # noqa: E402
+from aiu.probes import mistral  # noqa: E402
 
 MAIN = "7204525"  # main just before the split: aiu.py was the whole program
 FIXTURES = ROOT / "tests" / "fixtures"
@@ -59,8 +60,10 @@ CONFIG = "".join(f"[{name}]\nenabled = true\n" + (f'key_env = "{KEY_ENV[name]}"\
                  + ("read_token = true\n" if name == "claude" else "") + "\n" for name in PROVIDERS)
 
 
-# What Antigravity's local server answers, when a scenario says (run).
-ANTIGRAVITY: dict = {}
+# Gemini's quota groups when a scenario has them, [(group name, [(window,
+# remaining fraction, reset)])]: run() gives them to the package as the reply of
+# a fake `agy /usage`, and to MAIN as Antigravity's local summary.
+GEMINI: dict = {}
 
 
 def codex_app_server(home, result):
@@ -123,11 +126,9 @@ def answers(home, http, monkeypatch):
         "label": "aiu", "limit": None, "limit_remaining": None, "limit_reset": None, "usage": 0.0,
         "usage_daily": 0.0, "usage_weekly": 0.0, "usage_monthly": 0.0, "is_free_tier": False}}))
     http.on("GET", "openrouter.ai/api/v1/credits", (200, {"data": {"total_credits": 20, "total_usage": 7.5}}))
-    monkeypatch.setitem(ANTIGRAVITY, "summary", {"response": {"groups": [{"displayName": "Gemini Models", "buckets": [
-        {"bucketId": "gemini-5h", "window": "5h", "remainingFraction": 0.75, "resetTime": iso(2 * 3600)},
-        {"bucketId": "gemini-weekly", "window": "weekly", "remainingFraction": 0.98,
-         "resetTime": iso(6 * 86400 + 20 * 3600)},  # a young week: its pace is unknown
-        {"bucketId": "gemini-images", "displayName": "Image generation", "remainingFraction": 1.0}]}]}})
+    monkeypatch.setitem(GEMINI, "groups", [("Gemini Models", [
+        ("5h", 0.75, iso(2 * 3600)),
+        ("weekly", 0.98, iso(6 * 86400 + 20 * 3600))])])  # a young week: its pace is unknown
     monkeypatch.setenv("MISTRAL_ADMIN_COOKIE", "ory_session_x=fake; csrf_token=fake")
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown", (200, trpc({
         "groups": [{"billingMetric": "mistral-medium-3-5", "billingGroup": "input", "usageType": "vibe",
@@ -184,6 +185,8 @@ def snapshot(home, http, monkeypatch):
     http.on("GET", mistral.MISTRAL_TRPC + "usage.costBreakdown",
             (307, "", {"location": "https://auth.mistral.ai/ui/login"}))
     answers(home, http, monkeypatch)  # the first route that matches answers
+    # A second agy group, which MAIN did not read: the package only.
+    GEMINI["groups"].append(("Claude and GPT models", [("weekly", 1.0, iso(6 * 86400 + 20 * 3600))]))
 
 
 class FrozenDatetime(datetime):
@@ -211,11 +214,11 @@ def frozen(monkeypatch):
     time.tzset()
 
 
-# Gemini's note without Antigravity, at MAIN and since the Gemini CLI fallback
-# went away (wave 8, task S).
+# Gemini's note without Antigravity at MAIN, and without agy since Gemini is
+# read through it (wave 9, task W).
 GEMINI_NOTE_MAIN = ("Antigravity desktop not running, no ~/.gemini/oauth_creds.json fallback "
                     "\\u2014 open Antigravity to read the quota")
-GEMINI_NOTE = "Antigravity desktop app not running \\u2014 open it to read the Gemini quota"
+GEMINI_NOTE = "install the Antigravity CLI (agy) to read the Gemini quota"
 # Codex's note when not signed in: MAIN's token was refused, the package's
 # `codex app-server` says no one is signed in (wave 9, task V).
 CODEX_NOTE_MAIN = "auth rejected (401) \\u2014 run `codex` to refresh"
@@ -225,22 +228,46 @@ CODEX_NOTE = "not signed in: run `codex` to sign in"
 def since_main(out: str) -> str:
     """MAIN's output with the changes made since: `"schema": 1` as the first key
     (task P), `"early_pace": false` after each lot's `pace_from_history` (task Q),
-    Gemini's note without Antigravity (task S), Codex's when not signed in (task V)."""
+    Gemini's note without agy (task W), Codex's when not signed in (task V)."""
     assert out.startswith("{\n") and '"schema"' not in out and '"early_pace"' not in out
     out = out.replace("{\n", f'{{\n  "schema": {render.JSON_SCHEMA},\n', 1)
     out = out.replace(GEMINI_NOTE_MAIN, GEMINI_NOTE).replace(CODEX_NOTE_MAIN, CODEX_NOTE)
     return re.sub(r'^( +)("pace_from_history": \w+,\n)', r'\1\2\1"early_pace": false,\n', out, flags=re.M)
 
 
-def run(monkeypatch, capsys, home, tmp_path, main, local_quota):
+def antigravity_summary(groups) -> dict:
+    """The groups as Antigravity's local server answered MAIN."""
+    return {"response": {"groups": [{"displayName": name, "buckets": [
+        {"bucketId": f"b{i}", "window": w, "remainingFraction": f, "resetTime": r}
+        for i, (w, f, r) in enumerate(buckets)]} for name, buckets in groups]}}
+
+
+def agy_reply(groups) -> dict:
+    """The groups as `agy -p /usage --output-format json` prints them."""
+    return {"conversation_id": "", "status": "SUCCESS", "response": "", "duration_seconds": 0,
+            "num_turns": 0, "usage": {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+            "command": {"name": "usage", "data": {"groups": [{"name": name, "buckets": [
+                {"id": f"b{i}", "window": w, "remaining_fraction": f, "reset_time": r}
+                for i, (w, f, r) in enumerate(buckets)]} for name, buckets in groups]}}}
+
+
+def run(monkeypatch, capsys, home, tmp_path, main, old=None):
     """One `aiu --config <file> --json` with main(): (exit code, stdout, stderr).
-    Antigravity's local server is never looked for, it would scan this machine:
-    its reply is the scenario's ANTIGRAVITY summary, read by main's own parser."""
-    mod, name = local_quota
-    summary = ANTIGRAVITY.get("summary")
-    monkeypatch.setattr(mod, name, lambda: mod._parse_summary_response(summary) if summary else None)
-    for state in (home / ".local" / "state" / "aiu").glob("*"):
-        state.unlink()  # each run starts without a pace history
+    The scenario's GEMINI groups reach the package through a fake agy in
+    tmp/bin (none when the scenario has none), and MAIN (old) through its own
+    parser: its scan for Antigravity's local server would read this machine."""
+    groups = GEMINI.get("groups")
+    agy = tmp_path / "bin" / "agy"
+    agy.unlink(missing_ok=True)
+    if old is not None:
+        monkeypatch.setattr(old, "_query_local_quota_summary", lambda: old._parse_summary_response(
+            antigravity_summary(groups)) if groups else None)
+    elif groups:
+        (tmp_path / "agy-reply.json").write_text(json.dumps(agy_reply(groups)))
+        agy.write_text(f"#!/bin/sh\n/bin/cat {tmp_path / 'agy-reply.json'}\n")
+        agy.chmod(0o755)
+    # each run starts without a pace history or a cached reading
+    shutil.rmtree(home / ".local" / "state" / "aiu", ignore_errors=True)
     cfg = tmp_path / "config.toml"
     cfg.write_text(CONFIG)
     cfg.chmod(0o600)
@@ -253,7 +280,7 @@ def run(monkeypatch, capsys, home, tmp_path, main, local_quota):
 
 def run_package(monkeypatch, capsys, home, tmp_path):
     monkeypatch.setattr(keys, "ENV_FILE", {})
-    return run(monkeypatch, capsys, home, tmp_path, cli.main, (gemini, "_query_local_quota_summary"))
+    return run(monkeypatch, capsys, home, tmp_path, cli.main)
 
 
 def main_module(tmp_path, monkeypatch):
@@ -284,8 +311,7 @@ def test_json_matches_the_recorded_output(monkeypatch, capsys, home, http, tmp_p
     if os.environ.get("AIU_RECORD_JSON"):
         old = main_module(tmp_path, monkeypatch)
         assert old, f"recording needs {MAIN} in the git history"
-        _, recorded, _ = run(monkeypatch, capsys, home, tmp_path, old.main,
-                             (old, "_query_local_quota_summary"))
+        _, recorded, _ = run(monkeypatch, capsys, home, tmp_path, old.main, old)
         fixture.parent.mkdir(exist_ok=True)
         fixture.write_text(since_main(recorded))
     assert code == 0 and err == ""
@@ -303,7 +329,7 @@ def test_json_matches_main_side_by_side(monkeypatch, capsys, home, http, tmp_pat
     if old is None:
         pytest.skip(f"{MAIN} is not in this checkout's history")
     SCENARIOS[scenario](home, http, monkeypatch)
-    before = run(monkeypatch, capsys, home, tmp_path, old.main, (old, "_query_local_quota_summary"))
+    before = run(monkeypatch, capsys, home, tmp_path, old.main, old)
     after = run_package(monkeypatch, capsys, home, tmp_path)
     code, out, err = before
     assert after == (code, since_main(out), err)

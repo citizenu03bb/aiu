@@ -25,7 +25,7 @@ documented residual risk.
 
 | ID | Status | Fixed in | Where now |
 |----|--------|----------|-----------|
-| H1 | Fixed | #7 | `_query_local_quota_summary` (`aiu/probes/gemini.py`): only sockets of a user-owned Antigravity `language_server`, its own CSRF token, no port spray, no `verify=False` |
+| H1 | Gone | #7, wave 9 (W) | Fixed in #7 (`_query_local_quota_summary`: only sockets of a user-owned Antigravity `language_server`, its own CSRF token, no port spray, no `verify=False`). Since wave 9, task W, that code is gone: aiu no longer scans `/proc`, reads a CSRF token or calls Antigravity's local server, and the `gemini` probe runs `agy -p /usage` instead (see below) |
 | M1 | Fixed | #8, #9 | `resolve_key` (`aiu/keys.py`) keeps the first line and refuses control characters; probes write their own words into notes and `collect` (`aiu/probes/__init__.py`) redacts token-like text (`_redact`, `aiu/probes/common.py`) |
 | M2 | Gone | #6, wave 8 (S) | Fixed in #6 (`_gemini_persist`: `flock`, temp file 0600, `fsync`, `os.replace`). Since wave 8, task S, aiu no longer reads or writes `oauth_creds.json` at all: the Gemini CLI fallback was removed |
 | M3 | Fixed | #7 | `render_html` (`aiu/render.py`) escapes every value and sets `default-src 'none'` |
@@ -81,6 +81,33 @@ that path is history: M2 no longer applies (nothing rewrites the file), L2's
 Gemini client names are no longer read from `~/.env`, and the Gemini
 `planName` / `tierName` (M3) and the refresh-token notes of I8 describe code
 that is gone.
+
+**Gemini from `agy /usage` (ROADMAP wave 9, task W, after v0.5.0).** The
+`gemini` probe no longer looks for Antigravity's language server: no `/proc`
+scan, no CSRF token from a command line or `~/.config/Antigravity/logs/main.log`,
+no `RetrieveUserQuotaSummary` call. H1, I9, the `/proc` scan in I3 and L5,
+and the 127.0.0.1 `verify=False` of I8 describe code that is gone. It runs the Antigravity CLI's own `/usage`
+command, `agy -p /usage --output-format json --log-file /dev/null`, which
+uses no model turn; agy keeps its sign-in and makes the request, and aiu makes
+no network call for Gemini.
+
+- `agy` is found and run like every vendor client (`find_cli` and `run_cli`,
+  `aiu/clis.py`): `agy_cmd` or a known location, never `PATH`, refused when
+  others can write it; a clean environment; its process group killed after
+  30 s and when aiu is done (agy starts the user's MCP servers).
+- The reply is untrusted input. It is accepted only as a JSON object with
+  `status` `SUCCESS`, `command.name` `usage` and `num_turns` 0 (and no
+  tokens); every bucket is type-checked (a numeric, finite
+  `remaining_fraction`, clamped to 0..1; a `5h` or `weekly` window; a
+  parseable `reset_time`), and a group name becomes a metric only after
+  everything but letters, digits, spaces and `.+&-` is dropped, and cut to 32
+  characters. The free-text `response` is not read.
+- A reply that fails the first check may be agy having taken `/usage` as a
+  prompt and run the model, which Antigravity's terms (§6) would count as
+  third-party access: aiu then shows an error and does not run agy for 24
+  hours. Otherwise the reading is cached for 15 minutes (5 after an ordinary
+  failure) in a 0600 file under aiu's state directory, so agy, and the MCP
+  servers it starts, run at most 96 times a day.
 
 The two bugs found outside the security scope (the `--config` parent
 directory, inline comments in `~/.env`) were fixed in #8. I3 was updated in
