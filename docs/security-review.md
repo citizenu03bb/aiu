@@ -522,7 +522,8 @@ acceptable, but the escaping is not (M3).
   `PATH`, as an argv list with no shell (`aiuClient.js:54-67`, `:95-98`).
   This happens at enable, every 300 s, and on each refresh click. Each run
   executes every `key_cmd`, may run `claude auth status` (L4) and scans
-  `/proc` (H1).
+  `/proc` (H1). Since wave 9 (task V) it also runs `codex app-server` when
+  `codex` is enabled (I6).
 - "Open aiu in a terminal" runs the fixed command line
   `gnome-terminal -- bash -c "aiu; …"` (`menuView.js:170-178`). No data is
   interpolated into it, only the translated "Press Enter to close…" prompt,
@@ -552,6 +553,17 @@ read-only (`aiu.py:294-302`). Its token and account id go only to
 `chatgpt.com` (`:310-319`). aiu never refreshes it or writes to it. The same
 holds for `~/.claude/.credentials.json`: only the Claude CLI writes it (L4).
 Since wave 8 aiu reads it only with `claude.read_token = true`.
+
+**Status (wave 9, task V).** aiu no longer reads `~/.codex/auth.json` at all:
+the `codex` probe asks the Codex CLI (`codex app-server`,
+`account/rateLimits/read`), which signs the request with its own token and
+refreshes it itself, and aiu calls no Codex endpoint. A test guards opening
+the file (`tests/test_probe_codex.py`). `codex` is found and run like
+`claude` (`find_cli` and `spawn` in `aiu/clis.py`: `codex_cmd` or a known
+location, never `PATH`, clean environment, process group killed after 20 s
+or once the answer is in). Its reply is untrusted input: every field used is
+type-checked, labels and titles are capped at 100 characters, at most 1000
+lines of 1 MiB are read, and anything off is a "malformed response" row.
 
 **I7. Notifications quote their input correctly.**
 - `_gvariant_str` (`aiu.py:1227-1228`) escapes `\`, `'` and newlines, and

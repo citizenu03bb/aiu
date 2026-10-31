@@ -144,8 +144,8 @@ function testContract() {
     assertEqual(config.providers.flatMap(p => p.switches.map(f => [p.id, f.option, f.active, f.fromFile])),
         [['claude', 'read_token', false, false]], 'contract: switches, off by default');
     const readOnly = config.providers.flatMap(p => p.fields.filter(f => !f.editable).map(f => `${p.id}.${f.option}`));
-    assertEqual(readOnly, ['claude.claude_cmd', 'openai.key_cmd', 'deepseek.key_cmd', 'openrouter.key_cmd',
-        'mistral.key_cmd'], 'contract: commands are read-only in an untrusted config');
+    assertEqual(readOnly, ['claude.claude_cmd', 'codex.codex_cmd', 'openai.key_cmd', 'deepseek.key_cmd',
+        'openrouter.key_cmd', 'mistral.key_cmd'], 'contract: commands are read-only in an untrusted config');
 
     // The status lines read aiu --json too (tests/test_json_output.py records it).
     const snapshot = JSON.parse(readFixture('snapshot.json'));

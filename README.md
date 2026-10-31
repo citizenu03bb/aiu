@@ -108,7 +108,7 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 | Provider     | What it shows                | Setup needed |
 |--------------|------------------------------|--------------|
 | `claude`     | 5h / weekly quota (+ credits with `read_token`) | aiu's Claude Code plugin, `aiu-claude-usage` (see [claude](#claude)) |
-| `codex`      | ChatGPT/Codex 5h + weekly quota | none — reads `~/.codex/auth.json` (OAuth) |
+| `codex`      | ChatGPT/Codex 5h + weekly quota, credits, free resets | the Codex CLI, installed and signed in (aiu asks `codex app-server`) |
 | `openai`     | month-to-date USD spend      | an **Admin** API key (off unless you use the API) |
 | `deepseek`   | remaining balance            | a normal API key |
 | `openrouter` | total spend + remaining credits | `aiu login openrouter` (or a normal API key) |
@@ -117,9 +117,21 @@ cached env, nothing global. Config: `~/.config/ai-usage/config.toml`
 
 **`codex`** covers OpenAI usage that runs on a ChatGPT subscription (the Codex
 CLI and Pi both sign in via ChatGPT OAuth — no API key). It's a quota, not API
-spend, so the OpenAI Costs API never sees it; `aiu` reads the OAuth token from
-`~/.codex/auth.json` and polls `chatgpt.com/backend-api/wham/usage`. If you *also*
-hit the OpenAI API directly, enable `openai` separately.
+spend, so the OpenAI Costs API never sees it. `aiu` asks the Codex CLI itself:
+it starts `codex app-server` (Codex's JSON-RPC server, marked experimental),
+asks `account/rateLimits/read` and stops it, about 1.5 s. Codex answers with its
+own sign-in and refreshes it itself; `aiu` reads no Codex token and never opens
+`~/.codex/auth.json`. So the Codex CLI must be installed and signed in (run
+`codex` once). `aiu` looks for it in `~/.local/bin`, `~/.npm-global/bin`,
+`/usr/local/bin`, `/usr/bin` and Homebrew's `bin`, never on `PATH`; elsewhere
+(an nvm install, say), set `aiu config set codex.codex_cmd ~/path/to/codex`.
+The rows are each limit's 5-hour and weekly windows (with the plan in the
+note), the `Credits` balance, and one `credit` row per free rate-limit reset
+Codex has granted ("Full reset (Weekly + 5 hr)", with its expiry),
+so `--alert` warns before one expires unused. The row says what to do when
+Codex is missing ("install it"), signed out ("run `codex` to sign in") or
+speaks a protocol aiu does not know ("update aiu or Codex"). If you *also* hit
+the OpenAI API directly, enable `openai` separately.
 
 **`mistral`** reports the two allowances every Mistral plan includes, Free
 included: €8.5/month for Vibe Code and €8.5/month for API/Studio, both reset on
@@ -250,8 +262,8 @@ them can run code as you.
   key". Like OpenSSH, `aiu` ignores every `key_cmd`, with a warning, when the
   config file or its directory is not yours or can be written by group or
   others. It writes the starter config `0600` in a `0700` directory.
-- Every option named `*_cmd` runs a program: `key_cmd`, and `claude_cmd`, the
-  vendor client aiu asks for its own figures. The trust check above drops
+- Every option named `*_cmd` runs a program: `key_cmd`, and `claude_cmd` and
+  `codex_cmd`, the vendor clients aiu asks for their own figures. The trust check above drops
   them all, and `aiu config set` refuses them, in a config that fails it. A
   vendor client is never taken from `PATH`: only its `*_cmd`, or else a known
   install location, and never one that someone else can write. It runs with
@@ -281,7 +293,7 @@ aiu config set openai.key_env ""   # an empty string turns a key source off
 
 `show` lists each provider's settings: `enabled`, the key sources it uses
 (`key_env`, `key_cmd`, `key_file`), and its own options (`read_token`,
-`claude_cmd`, Mistral's allowances), each with its value and whether the file sets it
+`claude_cmd`, `codex_cmd`, Mistral's allowances), each with its value and whether the file sets it
 (`"source": "file"`) or aiu's default applies. `--json` also gives the config
 path and whether the `*_cmd` options may run (`key_cmd_allowed`, with the
 reasons when not). It shows values only: it never runs `key_cmd`, reads a `key_file` or
@@ -480,7 +492,8 @@ and this project is not affiliated with Anthropic, OpenAI, Google or Mistral AI:
   (if it 404s after a Claude update, re-check it against the `onWatch`
   source). The default reads a local file Claude Code's plugin API fills, and
   calls nothing;
-- `codex`: `chatgpt.com/backend-api/wham/usage`;
+- `codex`: nothing. aiu asks the Codex CLI (`codex app-server`), which calls
+  its own endpoints with its own sign-in;
 - `gemini`: the Antigravity desktop language server's `RetrieveUserQuotaSummary`
   on 127.0.0.1, and nothing else;
 - `mistral`: the admin console's tRPC endpoints
@@ -514,6 +527,14 @@ sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.
 - `aiu cookie import mistral` first prints a notice: what the session can do,
   that it reads the browser's cookie store, and the clause of Mistral's terms
   that forbids extracting content "other than as permitted".
+- `codex` asks the Codex CLI (`codex app-server`, `account/rateLimits/read`)
+  instead of reading its token from `~/.codex/auth.json` and calling
+  `chatgpt.com/backend-api/wham/usage`: aiu no longer opens that file. The
+  Codex CLI must be installed and signed in; `codex_cmd` says where it is when
+  it is not in a usual place. New rows: one `credit` per free rate-limit
+  reset Codex granted, with its expiry, which `--alert` flags before it is
+  lost. When not signed in, the row says "not signed in: run `codex` to sign
+  in" (it said "no token in ~/.codex/auth.json" or "auth rejected").
 
 ## Development
 Every test is offline: providers are faked, and no key or network is needed.
