@@ -3,6 +3,8 @@
 GNOME Shell extension shipped with [`aiu`](../README.md); it shows the output of `aiu --json`.
 It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested on GNOME Shell 50.1, Wayland) and a menu with everything `aiu` collects.
 
+<p align="center"><img src="screenshots/menu.png" alt="The panel menu with four subscriptions and their credits"></p>
+
 ## Getting started
 
 1. **Install `aiu`**, the command-line tool this panel shows. It goes into `~/.local/bin`, where the extension looks first:
@@ -13,6 +15,9 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
 
    Or `pipx install git+https://github.com/citizenu03bb/aiu` (`sudo apt install pipx` first if needed).
    Until `aiu` is there, the menu shows this command with **Copy command**, **Install guide** and **Check again** buttons, and the dot stays grey.
+
+   <img src="screenshots/first-run.png" alt="The menu before aiu is installed, with the install command and its buttons">
+
    **Copy command** is the extension's only use of the clipboard: it writes the command there when you click it, and never reads the clipboard.
 2. **Turn on the extension** from [extensions.gnome.org](https://extensions.gnome.org), or from the release zip (see [Install](#install)).
 3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for in the [preferences window](#preferences) (or in the file itself), and sign in to their command-line tools (`codex`…); for Claude, install aiu's Claude Code plugin (`/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu`). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
