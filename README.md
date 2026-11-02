@@ -619,6 +619,12 @@ no other network call. No probe writes to another program's files.
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
 
+## What changed in v0.6.1
+
+- `openai` calls the Costs API at `/v1/organization/costs`. It called
+  `/v1/organizations/costs`, which answers 401 to every key, so the row said
+  "auth rejected (401) — needs an ADMIN key" even with a valid admin key.
+
 ## What changed in v0.6.0
 One list for the release notes. Wave 8's changes are told in their own
 sections (`claude`, `gemini`, `openrouter`); each wave 9 change adds its line.

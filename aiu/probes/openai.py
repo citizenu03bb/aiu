@@ -29,7 +29,7 @@ def probe_openai(cfg: dict) -> list[Row]:
             params["page"] = page
         try:
             r = httpx.get(
-                "https://api.openai.com/v1/organizations/costs",
+                "https://api.openai.com/v1/organization/costs",
                 headers={"Authorization": f"Bearer {key}"},
                 params=params, timeout=30,
             )

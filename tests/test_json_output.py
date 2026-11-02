@@ -113,9 +113,10 @@ def answers(home, http, monkeypatch):
         "credits": {"balance": "9.99"},
     }))
     monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-fake")
-    http.on("GET", "api.openai.com/v1/organizations/costs", (200, {
-        "data": [{"results": [{"amount": {"value": 1.234}}, {"amount": {"value": 0.5}}]}],
-        "has_more": False}))
+    costs = (200, {"data": [{"results": [{"amount": {"value": 1.234}}, {"amount": {"value": 0.5}}]}],
+                   "has_more": False})
+    http.on("GET", "api.openai.com/v1/organization/costs", costs)
+    http.on("GET", "api.openai.com/v1/organizations/costs", costs)  # MAIN's (wrong) URL
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-fake")
     http.on("GET", "api.deepseek.com/user/balance", (200, {
         "is_available": True, "balance_infos": [{"currency": "USD", "total_balance": "4.20"},
@@ -150,7 +151,8 @@ def failures(home, http, monkeypatch):
     (home / ".codex").mkdir()
     (home / ".codex" / "auth.json").write_text(json.dumps({"tokens": {"access_token": "codex-fake"}}))
     monkeypatch.setenv("OPENAI_ADMIN_KEY", "sk-admin-fake")
-    http.on("GET", "api.openai.com/v1/organizations/costs", (500, "oops"))
+    http.on("GET", "api.openai.com/v1/organization/costs", (500, "oops"))
+    http.on("GET", "api.openai.com/v1/organizations/costs", (500, "oops"))  # MAIN's (wrong) URL
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-deepseek-fake")
     http.on("GET", "api.deepseek.com/user/balance", (200, ["not", "an", "object"]))
     monkeypatch.setenv("OPENROUTER_API_KEY", "sk-or-v1-fake")
