@@ -13,7 +13,7 @@ from aiu import cli, keys, util  # noqa: E402
 from aiu.config import load_config  # noqa: E402
 from aiu.probes import deepseek, mistral, openai, openrouter  # noqa: E402
 
-OPENAI_URL = "https://api.openai.com/v1/organizations/costs"
+OPENAI_URL = "https://api.openai.com/v1/organization/costs"
 DEEPSEEK_URL = "https://api.deepseek.com/user/balance"
 OPENROUTER_URL = "https://openrouter.ai/api/v1/credits"
 OPENROUTER_KEY_URL = "https://openrouter.ai/api/v1/key"
