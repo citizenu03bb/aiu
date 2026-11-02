@@ -4,6 +4,11 @@ A single local poller. No daemon, no telemetry, keys never stored in the tool.
 Run `aiu` and you get one table: Claude Max session quotas + month-to-date API
 spend across your other providers.
 
+<p align="center"><img src="gnome-extension/screenshots/menu.png" width="400"
+  alt="The aiu GNOME panel menu: routing advice, quota bars per subscription, credits and balances"></p>
+
+*The [GNOME panel indicator](gnome-extension/README.md), on made-up numbers.*
+
 ```
 aiu                       # pretty table
 aiu --advise              # where to route: earliest-expiring surplus first
@@ -14,6 +19,55 @@ aiu --only claude         # subset, ignores enabled flags
 aiu config show           # what the config sets (see `aiu config` below)
 watch -n 60 aiu           # poor man's live view
 ```
+
+<details>
+<summary>Sample output of <code>aiu</code> and <code>aiu --advise</code></summary>
+
+Printed from the recorded test answers in `tests/fixtures/snapshot.json`,
+not from a real account.
+
+```
+$ aiu
+                              AI usage snapshot
+
+  Provider   Metric                                Usage   Resets / note
+ ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  claude     5-Hour Limit            █░░░░░░░░░░░  12.0%   in 2h 0m  pro
+  claude     Weekly (all models)     █████░░░░░░░  40.0%   in 3d 0h
+  claude     Weekly Sonnet           █░░░░░░░░░░░   5.0%   in 3d 0h
+  claude     Cloud Credit              31.50/50 USD left   expires in 10d 0h
+  codex      5-Hour Limit            ██░░░░░░░░░░  20.0%   in 1h 0m  plus
+  codex      Weekly Limit            ███████████░  90.0%   in 5d 0h
+  codex      Credits                            9.99 USD
+  openai     Spend (MTD)                        1.73 USD
+  deepseek   Balance (USD)                      4.20 USD
+  deepseek   Balance (CNY)                     12.00 CNY
+  gemini     5-Hour Limit            ███░░░░░░░░░  25.0%   in 2h 0m
+  gemini     Weekly Limit            ░░░░░░░░░░░░   2.0%   in 6d 20h
+  gemini     Claude and GPT Weekly   ░░░░░░░░░░░░   0.0%   in 6d 20h
+```
+
+```
+$ aiu --advise
+Routing advice — earliest-expiring capacity first (surplus projected at your current pace):
+
+  1. claude       Weekly (all models): reset in 3d0h, ~30% of the cap lost at your pace (0.42%/h; using it all = 0.83%/h, ×2.0)   deep reasoning / agentic
+  2. gemini       Weekly Limit 98% free, reset in 6d20h (unknown pace)   volume / throwaway tasks (Flash)
+  3. claude       Cloud Credit 31.50/50 USD, expires in 10d0h (≈3.15 USD/day to use it all)   deep reasoning / agentic
+
+  Conserve (runs dry before the reset — keep it for what only it can do):
+     codex        Weekly Limit 10% free: runs dry in ~5h19m, reset in 5d0h → ~4d18h without codex
+
+  Paid (overflow only; currencies not added up):
+     codex        9.99 USD  (Credits)
+     openai       1.73 USD  (Spend (MTD))
+     deepseek     4.20 USD  (Balance (USD))
+     deepseek     12.00 CNY  (Balance (CNY))
+
+  → Burn claude first (expires in 3d0h): send it everything it can do, including what you would give codex. Conserve codex for what only it can do.
+```
+
+</details>
 
 ## Language
 Messages are in English. For French, set `AIU_LANG=fr`; without it `aiu`
