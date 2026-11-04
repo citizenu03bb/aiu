@@ -849,6 +849,16 @@ tooltip cleanup, and menu fit are verified in an isolated Shell with synthetic d
 **Done when:** workflow validation and existing offline checks pass; release
 commands are verified without publishing or submitting anything.
 
+### AE. Release v0.6.3
+
+- Match the CLI and GNOME extension version names at 0.6.3 and finalize the notes.
+- Tag the checked main commit; verify GitHub publishes the ZIP and checksum with
+  installation/update instructions, without an EGO submission.
+
+**Files:** `aiu/__init__.py`, `gnome-extension/metadata.json`, `README.md`, `ROADMAP.md`.
+**Done when:** version checks and CI pass, and the published release assets match
+the tested CI artifact and its SHA-256 checksum.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it

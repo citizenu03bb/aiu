@@ -644,7 +644,7 @@ no other network call. No probe writes to another program's files.
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
 
-## What changed in v0.6.3 (unreleased)
+## What changed in v0.6.3
 
 - The GNOME extension is distributed through GitHub Releases only. Tagged
   releases publish the tested ZIP, its SHA-256 checksum and installation/update
