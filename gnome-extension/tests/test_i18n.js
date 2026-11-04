@@ -6,6 +6,7 @@ import System from 'system';
 import { DOMAIN } from '../i18n.js';
 import { AiuClient, formatDuration, resetText } from '../aiuClient.js';
 import { fieldValue, optionHelp, optionTitle, statusText } from '../aiuConfig.js';
+import { providerLink } from '../providerLinks.js';
 
 const extDir = GLib.path_get_dirname(GLib.path_get_dirname(GLib.filename_from_uri(import.meta.url)[0]));
 
@@ -56,6 +57,7 @@ function run() {
     assertEqual(statusText({ state: 'ok' }), 'Connecté', 'status line');
     assertEqual(optionTitle('key_cmd'), 'Commande qui affiche la clé', 'field title');
     assertEqual(optionTitle('unknown_option'), 'unknown_option', 'unknown option keeps its name');
+    assertEqual(providerLink('claude').label, 'Utilisation de Claude', 'provider link translated');
     assertEqual(optionTitle('read_token'), 'Lire le jeton de connexion de claude', 'switch title');
     assertEqual(optionHelp('read_token').startsWith('Désactivé par défaut.'), true, 'switch help');
     assertEqual(fieldValue({ type: 'string' }, 'sk-abc').error.startsWith('Ceci ressemble à une clé'), true,

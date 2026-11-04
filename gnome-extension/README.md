@@ -35,11 +35,19 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
 - **Menu**:
   - **Used up, or nearly**: at the top, the windows that turned the dot red or yellow, with when each resets.
   - **Subscriptions**: in routing order, each with a badge (burn first / unknown pace / on track / conserve), bars to scale coloured by what to do with them, and the time to the reset (e.g. `Reset in 4h27m · runs dry in ~11h33m at your pace`).
-  - **Credits & paid APIs**: free credits with their expiry, prepaid balances, and lifetime spend (greyed out).
+  - **Credits & paid APIs**: grouped by provider, with free credits and their
+    expiry, prepaid balances, and lifetime spend (greyed out).
+  - **Provider links**: a dedicated ↗ button in each provider header, also for
+    credits/API balances and probe errors. Hover or focus it to see the destination
+    and URL; click or press Enter/Space to open it in your browser and close the
+    menu. Claude and Codex credits open their subscription usage pages; OpenAI
+    spend opens API usage. Gemini quotas open Antigravity, not Google AI Studio.
+    Mistral opens Admin usage, DeepSeek its platform, and OpenRouter its activity.
   - **Advice**: from the `advice` field of `aiu --json`: burn first the subscription (or credit) whose surplus expires first, and keep for later the ones that would run dry before their reset.
   - **Errors in full**: every probe error or expired token, with what to run to fix it.
   - **Refresh button**, plus an automatic refresh every 5 minutes, or at the interval set in the preferences (and when the menu opens and the data is over 2 minutes old).
-  - **Shortcuts**: open `aiu` in a terminal, links to the AI web consoles (AI Studio, Anthropic, ChatGPT, OpenRouter, DeepSeek), and **Preferences…**.
+  - **Shortcuts**: open `aiu` in a terminal and **Preferences…**. Provider web
+    links live alongside their data instead of in a separate submenu.
 
 ## Preferences
 

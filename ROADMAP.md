@@ -809,7 +809,7 @@ secrets and an explicitly released tag.
   (1 is closest). Apply changes immediately without recreating the indicator.
 - Keep the default just right of the clock, translate the controls, and cover
   placement among other extensions and GSettings bounds with offline tests.
-- Web console links remain unchanged pending the requested UX decision.
+- Provider web links are covered separately by AC, following the approved UX.
 
 **Files:** `gnome-extension/extension.js`, `gnome-extension/indicator.js`,
 `gnome-extension/panelPlacement.js`, `gnome-extension/prefsWindow.js`,
@@ -818,6 +818,22 @@ secrets and an explicitly released tag.
 `gnome-extension/README.md`, `README.md`, `ROADMAP.md`.
 **Done when:** extension checks and offline tests pass; right-click and live
 placement are verified in GNOME Shell.
+
+### AC. Contextual provider web links
+
+- Replace the Web consoles submenu with an external-link button per provider
+  header, including subscriptions, grouped credits/API rows, and probe errors.
+- Keep Claude/Codex credits on their subscription portals, OpenAI API spend on
+  the API usage page, and Antigravity quotas on Antigravity rather than AI Studio.
+- Name destinations for assistive technology, show a tooltip on hover/focus,
+  keep cards/bars inert, and remove tooltips and pending timers on refresh/disable.
+
+**Files:** `gnome-extension/menuView.js`, `gnome-extension/providerLinks.js`,
+`gnome-extension/stylesheet.css`, `gnome-extension/Makefile`,
+`gnome-extension/tests/test_providerLinks.js`, `gnome-extension/tests/test_i18n.js`,
+`gnome-extension/po/fr.po`, `gnome-extension/README.md`, `README.md`, `ROADMAP.md`.
+**Done when:** offline extension checks pass; pointer/keyboard activation,
+tooltip cleanup, and menu fit are verified in an isolated Shell with synthetic data.
 
 ## Later
 
