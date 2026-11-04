@@ -621,6 +621,9 @@ no other network call. No probe writes to another program's files.
 
 ## What changed in v0.6.1
 
+- The GNOME menu, terminal table and HTML page hide `Gemini 4 Argon Weekly`
+  while its consumption is exactly zero, and show it again as soon as it is
+  used. Unknown readings and errors stay visible; JSON keeps every quota.
 - Tagged releases submit the tested GNOME extension ZIP to extensions.gnome.org
   after publishing the same ZIP on GitHub. Repository secrets `EGO_USERNAME`
   and `EGO_PASSWORD` are required; see [EGO setup](gnome-extension/EGO.md).

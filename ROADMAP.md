@@ -792,6 +792,16 @@ unchanged, and the task's lines are in the README's "What changed in v0.6.0".
 or failed uploader fails the EGO job. A real submission requires configured
 secrets and an explicitly released tag.
 
+### AA. Hide the unused Argon sublimit
+
+- Hide only a known-zero Argon quota in GNOME, terminal and HTML views.
+- Preserve JSON measurements, unknown values, errors and nonzero fractions.
+
+**Files:** `aiu/render.py`, `gnome-extension/aiuClient.js`,
+`gnome-extension/menuView.js`, `gnome-extension/tests/test_aiuClient.js`,
+`tests/test_quota_visibility.py`, `tests/test_gemini_visibility_e2e.py`, `README.md`.
+**Done when:** offline CLI/menu integration and the existing suites pass.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it

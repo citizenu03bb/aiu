@@ -5,6 +5,7 @@ import GLib from 'gi://GLib';
 import System from 'system';
 import {
     AiuClient, fullQuotaText, headerPills, installCommand, needsSetup, resetText, SCHEMA, schemaProblem,
+    visibleQuotas,
 } from '../aiuClient.js';
 
 function assertEqual(got, want, what) {
@@ -104,11 +105,48 @@ function runPills() {
     console.log('[Test] Header pills ✅');
 }
 
+function runArgonVisibility(client) {
+    const argon = { provider: 'gemini', metric: 'Gemini 4 Argon Weekly', kind: 'quota',
+        sublimit: true, used: 0, used_pct: 0 };
+    const weekly = { ...argon, metric: 'Weekly Limit', sublimit: false };
+    const cases = [
+        [argon, false, 'unused'],
+        [{ ...argon, used: 0.2, used_pct: 20 }, true, 'used'],
+        [{ ...argon, used: 0.00001 }, true, 'positive fraction rounded to 0%'],
+        [{ ...argon, used: 1, used_pct: 100 }, true, 'exhausted'],
+        [{ ...argon, used: undefined }, false, 'percentage only, unused'],
+        [{ ...argon, used: undefined, used_pct: 0.01 }, true, 'percentage only, used'],
+        [{ ...argon, used: null, used_pct: null }, true, 'unknown'],
+        [{ ...argon, used: undefined, used_pct: undefined }, true, 'missing'],
+        [{ ...argon, used: NaN, used_pct: null }, true, 'invalid'],
+        [{ ...argon, kind: 'error', note: 'unreadable quota' }, true, 'error'],
+        [{ ...argon, provider: 'claude' }, true, 'different provider'],
+        [{ ...argon, metric: 'Claude and GPT Weekly' }, true, 'different metric'],
+        [weekly, true, 'unused shared quota'],
+    ];
+    for (const [row, shown, what] of cases) {
+        assertEqual(visibleQuotas([row]), shown ? [row] : [], `Argon: ${what}`);
+    }
+    assertEqual(visibleQuotas(), [], 'no quotas');
+    const raw = { rows: [weekly, argon], advice: [] };
+    const unused = client._processData(raw);
+    assertEqual(visibleQuotas(unused.quotas).map(q => q.metric), ['Weekly Limit'], 'unused hidden');
+    assertEqual(unused.quotas.length, 2, 'snapshot retains the unused sublimit');
+    assertEqual(raw.rows.length, 2, 'input retained');
+    const used = client._processData({ rows: [weekly, { ...argon, used: 0.2, used_pct: 20 }] });
+    assertEqual(visibleQuotas(used.quotas).length, 2, 'used sublimit reappears on refresh');
+    assertEqual(visibleQuotas(unused.quotas).length, 1, 'unused sublimit hides again');
+    const failed = client._processData({ rows: [{ ...argon, kind: 'error', note: 'unreadable quota' }] });
+    assertEqual(failed.errors.map(r => r.note), ['unreadable quota'], 'error remains visible');
+    console.log('[Test] Argon hides only when known unused, and returns when used ✅');
+}
+
 function run() {
     console.log('[Test] Instantiating AiuClient...');
     const client = new AiuClient();
     runContract(client);
     runPills();
+    runArgonVisibility(client);
 
     console.log('[Test] Testing _processData with synthetic mock data...');
     const mock = {

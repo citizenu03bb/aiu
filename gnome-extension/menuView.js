@@ -10,7 +10,7 @@ import Pango from 'gi://Pango';
 import GLib from 'gi://GLib';
 import {
     INSTALL_GUIDE_URL, displayName, formatDuration, fullQuotaText, headerPills, installCommand, needsSetup,
-    resetText,
+    resetText, visibleQuotas,
 } from './aiuClient.js';
 import { dataMaxHeight } from './menuLayout.js';
 import { _, N_, fmt } from './i18n.js';
@@ -450,14 +450,15 @@ export class MenuView {
         };
 
         // 4. Subscriptions, in routing order (the one to use first on top)
-        if (data.quotas && data.quotas.length > 0) {
+        const quotas = visibleQuotas(data.quotas);
+        if (quotas.length > 0) {
             this._dataBox.add_child(new St.Label({
                 text: _('Subscriptions'),
                 style_class: 'aiu-section-label',
             }));
 
             const grouped = {};
-            for (const q of data.quotas) {
+            for (const q of quotas) {
                 (grouped[q.provider] ||= []).push(q);
             }
             const providers = Object.keys(grouped).sort((x, y) => rankOf(x) - rankOf(y));
