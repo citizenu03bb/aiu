@@ -1,45 +1,14 @@
-# extensions.gnome.org listing kit
+# Historical extensions.gnome.org listing kit
 
-Everything to paste or prepare when uploading `aiu-indicator` to
-[extensions.gnome.org](https://extensions.gnome.org/upload/).
+The extension is now distributed through [GitHub Releases](https://github.com/citizenu03bb/aiu/releases).
+See the [installation and update guide](README.md#install) for the current procedure.
+The release workflow no longer submits to EGO or uses `EGO_USERNAME` /
+`EGO_PASSWORD`. The listing text and manual upload information below are kept
+as historical reference; they are not part of the release process.
 
 ## 1. Upload
 
-### Automatic submissions from GitHub Actions
-
-The Release workflow runs on a `v*` tag. It checks that the Python and GNOME
-versions match the tag, runs the Python and extension tests, and builds one ZIP.
-That ZIP is attached to the GitHub release and transferred, with its SHA-256,
-to the separate EGO job. The job verifies the checksum and submits it using
-the official `gnome-extensions upload` command in Fedora 43 (GNOME >= 49).
-It does not rebuild the extension.
-
-Before the first automated submission, add these **repository secrets** in
-[Settings → Secrets and variables → Actions](https://github.com/citizenu03bb/aiu/settings/secrets/actions):
-
-- `EGO_USERNAME`: the EGO account that owns this extension.
-- `EGO_PASSWORD`: that account's password. Do not put it in Git or an issue.
-
-Alternatively, these commands prompt for each value without putting it in argv:
-
-```bash
-gh secret set EGO_USERNAME --repo citizenu03bb/aiu
-gh secret set EGO_PASSWORD --repo citizenu03bb/aiu
-```
-
-The uploader passes the password on stdin, removes it from the child's
-environment and accepts the EGO developer agreement with `--accept-tos`.
-Missing secrets fail the EGO job explicitly; the GitHub release remains
-available. After adding the secrets, use **Re-run failed jobs** on that release
-run. A failed upload is not automatically retried; check the EGO version list
-before retrying an ambiguous network failure to avoid a duplicate submission.
-
-The job summary records the tag and ZIP checksum when the uploader succeeds.
-This means **submitted for review**, not approved or publicly available.
-Check the EGO version's status separately. A submission uses the existing UUID;
-EGO manages its own numeric version, while `version-name` follows aiu's release.
-
-### Manual fallback
+### Historical manual upload
 
 - Zip: `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` from the
   latest [GitHub release](https://github.com/citizenu03bb/aiu/releases) (v0.6.0 or later).
@@ -119,9 +88,8 @@ MUTTER_DEBUG_DUMMY_MODE_SPECS=1280x800 dbus-run-session -- gnome-shell --devkit 
 - Everything is created in enable() and destroyed in disable().
 ```
 
-## 5. After approval
+## 5. Release status
 
-- Add the extensions.gnome.org link to the README install sections.
-- For each release: bump the version, tag, check both Release jobs, then check
-  the EGO review status. Upload manually only if the automatic submission was
-  not made.
+EGO submission and approval are no longer steps in the release process.
+Tagged releases run the checks and publish the extension ZIP, checksum and
+installation instructions on GitHub.
