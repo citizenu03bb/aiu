@@ -17,6 +17,17 @@ class AiuIndicator extends PanelMenu.Button {
         this._extensionPath = extensionPath;
         this._callbacks = callbacks;
 
+        // Shell 50+ uses gestures. Keep the base gesture for primary/touch;
+        // secondary press opens preferences without toggling the popup.
+        if (this._clickGesture) {
+            this._clickGesture.set_required_button(Clutter.BUTTON_PRIMARY);
+            this._preferencesGesture = new Clutter.ClickGesture();
+            this._preferencesGesture.set_required_button(Clutter.BUTTON_SECONDARY);
+            this._preferencesGesture.set_recognize_on_press(true);
+            this._preferencesGesture.connect('recognize', () => this._openPreferences());
+            this.add_action(this._preferencesGesture);
+        }
+
         // Container box for top bar
         const panelBox = new St.BoxLayout({
             style_class: 'aiu-panel-box',
@@ -59,6 +70,20 @@ class AiuIndicator extends PanelMenu.Button {
             onPreferences: () => this._callbacks.onPreferences?.(),
         });
 
+        // While the popup owns a modal grab, Shell routes button presses to
+        // its actor instead of the panel button. Handle the same shortcut there.
+        this.menu.actor.connectObject('captured-event', (_actor, event) => {
+            if (event.type() === Clutter.EventType.BUTTON_PRESS &&
+                event.get_button() === Clutter.BUTTON_SECONDARY) {
+                const target = global.stage.get_event_actor?.(event) ?? event.get_source();
+                if (target && this.contains(target)) {
+                    this._openPreferences();
+                    return Clutter.EVENT_STOP;
+                }
+            }
+            return Clutter.EVENT_PROPAGATE;
+        }, this);
+
         // Refresh when menu is opened if data is stale (> 2 minutes)
         this._lastFetchTime = 0;
         this.menu.connectObject('open-state-changed', (menu, isOpen) => {
@@ -71,6 +96,21 @@ class AiuIndicator extends PanelMenu.Button {
                 }
             }
         }, this);
+    }
+
+    _openPreferences() {
+        this.menu.close();
+        this._callbacks.onPreferences?.();
+    }
+
+    // Shell 45–49 toggles the popup from this vfunc instead of a gesture.
+    vfunc_event(event) {
+        if (!this._preferencesGesture && event.type() === Clutter.EventType.BUTTON_PRESS &&
+            event.get_button() === Clutter.BUTTON_SECONDARY) {
+            this._openPreferences();
+            return Clutter.EVENT_STOP;
+        }
+        return this._preferencesGesture ? Clutter.EVENT_PROPAGATE : super.vfunc_event(event);
     }
 
     vfunc_allocate(box) {

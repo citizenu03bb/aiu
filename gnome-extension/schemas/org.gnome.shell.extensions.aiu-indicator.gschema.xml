@@ -5,6 +5,18 @@
 <schemalist>
   <schema id="org.gnome.shell.extensions.aiu-indicator"
           path="/org/gnome/shell/extensions/aiu-indicator/">
+    <key name="panel-side" type="s">
+      <choices><choice value="left"/><choice value="right"/></choices>
+      <default>'right'</default>
+      <summary>Side of the clock</summary>
+      <description>Place the indicator to the left or right of the clock.</description>
+    </key>
+    <key name="panel-order" type="u">
+      <range min="1" max="100"/>
+      <default>1</default>
+      <summary>Order from the clock</summary>
+      <description>Rank on the chosen side, counting away from the clock. One is closest. Positions beyond the available buttons use the outermost slot.</description>
+    </key>
     <key name="refresh-interval" type="u">
       <range min="60" max="86400"/>
       <default>300</default>

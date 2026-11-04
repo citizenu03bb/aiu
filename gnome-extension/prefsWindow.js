@@ -17,6 +17,7 @@ import {
     providerStatus, REFRESH_KEY, REFRESH_MAX_SECONDS, SchemaError, setArgv, showArgv, statusText,
 } from './aiuConfig.js';
 import { _, fmt } from './i18n.js';
+import { PANEL_ORDER_KEY, PANEL_ORDER_MAX, PANEL_SIDE_KEY } from './panelPlacement.js';
 
 /** A text field is saved this long after the last key stroke, or at once on Enter. */
 const SAVE_DELAY_MS = 1000;
@@ -53,11 +54,12 @@ export class PrefsController {
     /**
      * @param {Adw.PreferencesWindow} window
      * @param {object} options settings: the extension's Gio.Settings (null to
-     *   leave the interval out); findProgram: where aiu is, or null.
+     *   disable the panel controls); findProgram: where aiu is, or null.
      */
     constructor(window, { settings = null, findProgram = findAiu, runner = new AiuRunner() } = {}) {
         this._window = window;
         this._settings = settings;
+        this._settingsIds = [];
         this._findProgram = findProgram;
         this._runner = runner;
         this._aiu = null;
@@ -122,7 +124,44 @@ export class PrefsController {
     _buildGeneralPage() {
         const page = new Adw.PreferencesPage({ title: _('General'), icon_name: 'preferences-system-symbolic' });
 
-        const panel = new Adw.PreferencesGroup({ title: _('Panel') });
+        const panel = new Adw.PreferencesGroup({
+            title: _('Panel'), description: _('Right-click the panel button to open these preferences.'),
+        });
+        const side = plainRow(Adw.ComboRow, {
+            title: _('Side of the clock'),
+            model: Gtk.StringList.new([_('Left of the clock'), _('Right of the clock')]),
+        });
+        const order = plainRow(Adw.SpinRow, {
+            title: _('Order from the clock'),
+            subtitle: _('1 is closest to the clock. Higher numbers place the button farther away, among the available buttons on that side.'),
+            adjustment: new Gtk.Adjustment({ lower: 1, upper: PANEL_ORDER_MAX, step_increment: 1, page_increment: 1 }),
+        });
+        if (this._settings) {
+            const syncSide = () => {
+                side.selected = this._settings.get_string(PANEL_SIDE_KEY) === 'left' ? 0 : 1;
+            };
+            const syncOrder = () => { order.value = this._settings.get_uint(PANEL_ORDER_KEY); };
+            syncSide();
+            syncOrder();
+            side.connect('notify::selected', () => {
+                const value = side.selected === 0 ? 'left' : 'right';
+                if (value !== this._settings.get_string(PANEL_SIDE_KEY))
+                    this._settings.set_string(PANEL_SIDE_KEY, value);
+            });
+            order.connect('notify::value', () => {
+                const value = Math.round(order.value);
+                if (value !== this._settings.get_uint(PANEL_ORDER_KEY))
+                    this._settings.set_uint(PANEL_ORDER_KEY, value);
+            });
+            this._settingsIds.push(
+                this._settings.connect(`changed::${PANEL_SIDE_KEY}`, syncSide),
+                this._settings.connect(`changed::${PANEL_ORDER_KEY}`, syncOrder));
+        } else {
+            side.sensitive = false;
+            order.sensitive = false;
+        }
+        panel.add(side);
+        panel.add(order);
         const interval = plainRow(Adw.SpinRow, {
             title: _('Refresh every (minutes)'),
             subtitle: _('How often aiu runs in the background. Opening the menu also refreshes data older than 2 minutes.'),
@@ -138,9 +177,9 @@ export class PrefsController {
                     this._settings.set_uint(REFRESH_KEY, seconds);
                 }
             });
-            this._settingsId = this._settings.connect(`changed::${REFRESH_KEY}`, () => {
+            this._settingsIds.push(this._settings.connect(`changed::${REFRESH_KEY}`, () => {
                 interval.value = intervalMinutes(this._settings.get_uint(REFRESH_KEY));
-            });
+            }));
         } else {
             interval.sensitive = false;
         }
@@ -555,10 +594,9 @@ export class PrefsController {
         }
         this._sources.clear();
         this._runner.cancelAll();
-        if (this._settingsId) {
-            this._settings.disconnect(this._settingsId);
-            this._settingsId = 0;
-        }
+        for (const id of this._settingsIds)
+            this._settings.disconnect(id);
+        this._settingsIds = [];
         this._window.disconnect(this._closeId);
         this._window.disconnect(this._destroyId);
     }

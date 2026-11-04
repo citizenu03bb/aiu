@@ -619,6 +619,12 @@ no other network call. No probe writes to another program's files.
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
 
+## What changed in v0.6.2 (unreleased)
+
+- Right-click the GNOME panel button to open preferences. General → Panel
+  now chooses the side of the clock and the order on that side (1 is closest),
+  applied immediately. The default stays just right of the clock.
+
 ## What changed in v0.6.1
 
 - The GNOME menu, terminal table and HTML page hide `Gemini 4 Argon Weekly`

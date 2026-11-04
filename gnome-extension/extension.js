@@ -7,6 +7,7 @@ import GLib from 'gi://GLib';
 import { AiuClient } from './aiuClient.js';
 import { clampInterval, REFRESH_KEY, SCHEMA_ID } from './aiuConfig.js';
 import { AiuIndicator } from './indicator.js';
+import { PANEL_ORDER_KEY, PANEL_SIDE_KEY, panelIndex } from './panelPlacement.js';
 
 export default class AiuExtension extends Extension {
     enable() {
@@ -15,7 +16,11 @@ export default class AiuExtension extends Extension {
         this._client = new AiuClient();
         // The refresh interval, set in the preferences window: a change reschedules.
         this._settings = this.getSettings(SCHEMA_ID);
-        this._settingsId = this._settings.connect(`changed::${REFRESH_KEY}`, () => this._schedule());
+        this._settingsIds = [
+            this._settings.connect(`changed::${REFRESH_KEY}`, () => this._schedule()),
+            this._settings.connect(`changed::${PANEL_SIDE_KEY}`, () => this._placeIndicator()),
+            this._settings.connect(`changed::${PANEL_ORDER_KEY}`, () => this._placeIndicator()),
+        ];
         this._indicator = new AiuIndicator(this.path, {
             onRefresh: () => this._fetch(),
             onPreferences: () => this.openPreferences(),
@@ -27,13 +32,14 @@ export default class AiuExtension extends Extension {
             existing.destroy();
         }
 
-        // Place in center box, position 1 (immediately to the right of dateMenu at position 0)
+        // Register once with Shell's menu manager; subsequent moves keep this actor.
         Main.panel.addToStatusArea(
             'aiu-indicator',
             this._indicator,
             1,
             'center'
         );
+        this._placeIndicator();
 
         this._schedule();
 
@@ -50,7 +56,9 @@ export default class AiuExtension extends Extension {
         }
 
         if (this._settings) {
-            this._settings.disconnect(this._settingsId);
+            for (const id of this._settingsIds)
+                this._settings.disconnect(id);
+            this._settingsIds = [];
             this._settings = null;
         }
 
@@ -63,6 +71,24 @@ export default class AiuExtension extends Extension {
         if (this._indicator) {
             this._indicator.destroy();
             this._indicator = null;
+        }
+    }
+
+    /** Move relative to the clock, counting rank outwards on the chosen side. */
+    _placeIndicator() {
+        const container = this._indicator.container;
+        const clock = Main.panel.statusArea.dateMenu?.container;
+        const box = clock?.get_parent() || Main.panel._centerBox;
+        const siblings = box.get_children().filter(child => child !== container);
+        const index = panelIndex(siblings.indexOf(clock), siblings.length,
+            this._settings.get_string(PANEL_SIDE_KEY), this._settings.get_uint(PANEL_ORDER_KEY));
+        this._indicator.menu.close();
+        const parent = container.get_parent();
+        if (parent === box) {
+            box.set_child_at_index(container, index);
+        } else {
+            parent?.remove_child(container);
+            box.insert_child_at_index(container, index);
         }
     }
 
