@@ -17,6 +17,12 @@ from aiu.rows import Row
 JSON_SCHEMA = 1
 
 
+def _visible_rows(rows: list[Row]) -> list[Row]:
+    """Hide only the known-unused Argon sublimit in human-readable output."""
+    return [r for r in rows if not (r.kind == "quota" and r.provider == "gemini"
+            and r.metric == "Gemini 4 Argon Weekly" and r.used == 0)]
+
+
 def render_table(rows: list[Row]) -> None:
     from rich.console import Console
     from rich.table import Table
@@ -29,6 +35,7 @@ def render_table(rows: list[Row]) -> None:
     t.add_column(tr("Usage"), justify="right")
     t.add_column(tr("Resets / note"), style="dim")
 
+    rows = _visible_rows(rows)
     for r, tail in zip(rows, _tails(rows)):
         if r.kind == "error":
             usage = "[red]err[/red]"
@@ -87,6 +94,7 @@ def render_html(rows: list[Row], path: Path) -> None:
     lines = ["<table border=1 cellpadding=6 style='border-collapse:collapse;font-family:sans-serif'>",
              "<tr>" + "".join(f"<th>{esc(tr(h))}</th>"
                               for h in ("Provider", "Metric", "Usage", "Resets / note")) + "</tr>"]
+    rows = _visible_rows(rows)
     for r, tail in zip(rows, _tails(rows)):
         lines.append(f"<tr><td>{esc(r.provider)}</td><td>{esc(r.metric)}</td>"
                      f"<td align=right>{esc(cell(r))}</td><td>{esc(tail)}</td></tr>")

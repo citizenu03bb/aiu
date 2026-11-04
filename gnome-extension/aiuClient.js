@@ -58,6 +58,16 @@ export function resetText(row, nowSecs = Date.now() / 1000) {
         : _('passed, refresh the snapshot');
 }
 
+/** Quotas shown in the menu. Keep an unused Argon sublimit in the snapshot,
+ * but hide its row until it is used. Prefer the exact fraction: a positive
+ * reading may still round to 0% in used_pct. Unknown readings stay visible.
+ */
+export function visibleQuotas(quotas = []) {
+    return (quotas ?? []).filter(q => !(q.kind === 'quota'
+        && q.provider === 'gemini' && q.metric === 'Gemini 4 Argon Weekly'
+        && (typeof q.used === 'number' ? q.used === 0 : q.used_pct === 0)));
+}
+
 /** Used at or above this percentage, a window counts as used up: the dot turns red (yellow for a sublimit). */
 export const FULL_PCT = 95;
 
