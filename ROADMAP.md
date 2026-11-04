@@ -802,6 +802,23 @@ secrets and an explicitly released tag.
 `tests/test_quota_visibility.py`, `tests/test_gemini_visibility_e2e.py`, `README.md`.
 **Done when:** offline CLI/menu integration and the existing suites pass.
 
+### AB. Panel button preferences and placement
+
+- Right-click the panel button to open preferences; keep primary click and touch.
+- General → Panel chooses left/right of the clock and a rank counting outwards
+  (1 is closest). Apply changes immediately without recreating the indicator.
+- Keep the default just right of the clock, translate the controls, and cover
+  placement among other extensions and GSettings bounds with offline tests.
+- Web console links remain unchanged pending the requested UX decision.
+
+**Files:** `gnome-extension/extension.js`, `gnome-extension/indicator.js`,
+`gnome-extension/panelPlacement.js`, `gnome-extension/prefsWindow.js`,
+`gnome-extension/schemas/`, `gnome-extension/po/fr.po`,
+`gnome-extension/tests/test_panelPlacement.js`, `gnome-extension/Makefile`,
+`gnome-extension/README.md`, `README.md`, `ROADMAP.md`.
+**Done when:** extension checks and offline tests pass; right-click and live
+placement are verified in GNOME Shell.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it

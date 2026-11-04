@@ -24,7 +24,8 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
 
 ## Features
 
-- **Centre of the panel**: in the panel's centre box (`_centerBox`, index 1), just right of the clock.
+- **Beside the clock**: just right of it by default. General → Panel chooses
+  left or right and the order on that side (1 is closest), applied immediately.
 - **Fully asynchronous**: `aiu` runs in the background through `Gio.Subprocess`, so GNOME Shell never freezes.
 - **Status at a glance**:
   - Green dot: nothing to do.
@@ -42,14 +43,20 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
 
 ## Preferences
 
-Open them with **⚙️ Preferences…** at the bottom of the panel menu, from the Extensions app, or with:
+Open them by **right-clicking the panel button**, with **⚙️ Preferences…** at the bottom of the panel menu, from the Extensions app, or with:
 
 ```bash
 gnome-extensions prefs aiu-indicator@citizenu03bb.github.io
 ```
 
 - **Providers**: one row per provider, with an on/off switch and, under it, where `aiu` finds the key: an environment variable (its name), a command that prints the key, or a file. Mistral also has its two allowances; Claude has the **Read the claude sign-in token** switch (off by default; its subtitle says what it does and quotes Anthropic's terms) and the path of the `claude` program. The line under each name is its state in a snapshot taken when the window opens (**Signed in**, or the probe's note such as "token expired"); the refresh button takes a new one.
-- **General**: the refresh interval (5 minutes by default, 1 minute at least), the `aiu` program in use and an **Open config file** button, plus a link to the install guide when `aiu` is missing.
+- **General**: the button's side of the clock and order (1 is closest, larger
+  numbers count away from the clock among the available buttons on that side),
+  the refresh interval (5 minutes by default, 1 minute at least), the `aiu`
+  program in use and an **Open config file** button, plus a link to the install
+  guide when `aiu` is missing. Panel settings apply immediately. Other extensions
+  can subsequently reorder the panel; these settings apply again when changed
+  or when aiu is enabled.
 
 The window never parses or writes `config.toml` itself: it reads it with `aiu config show --json` and saves each change with `aiu config set` (see [`aiu config`](../README.md#aiu-config)), so every rule of `aiu` applies, and the file keeps its comments.
 A switch is saved at once, a text field one second after you stop typing (or on Enter), and the window reads the config back after each change. When `aiu` refuses one, its message shows under the provider and the field stays as typed, to fix.
@@ -64,7 +71,8 @@ A switch is saved at once, a text field one second after you stop typing (or on 
 - **Commands are read-only** when `aiu` would ignore them: a config file or directory that is not yours or that others can write. The window shows why.
 - `aiu` runs in the background with a timeout, from an argument list (no shell). Closing the window waits up to 5 seconds for the last change to be saved, then kills any `aiu` still running.
 
-The refresh interval is a GSettings key of the extension (`schemas/`), not an `aiu` setting:
+The refresh interval and placement are GSettings keys of the extension
+(`refresh-interval`, `panel-side`, `panel-order` in `schemas/`), not `aiu` settings:
 
 ```bash
 gsettings --schemadir schemas set org.gnome.shell.extensions.aiu-indicator refresh-interval 600

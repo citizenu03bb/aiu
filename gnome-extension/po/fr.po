@@ -471,3 +471,22 @@ msgstr "{window} est à {pct} %"
 #: menuView.js
 msgid "Used up, or nearly:"
 msgstr "Épuisé, ou presque :"
+
+# Panel placement and direct preferences access.
+msgid "Right-click the panel button to open these preferences."
+msgstr "Faites un clic droit sur le bouton du panneau pour ouvrir ces préférences."
+
+msgid "Side of the clock"
+msgstr "Côté de l’horloge"
+
+msgid "Left of the clock"
+msgstr "À gauche de l’horloge"
+
+msgid "Right of the clock"
+msgstr "À droite de l’horloge"
+
+msgid "Order from the clock"
+msgstr "Rang depuis l’horloge"
+
+msgid "1 is closest to the clock. Higher numbers place the button farther away, among the available buttons on that side."
+msgstr "1 correspond à la position la plus proche de l’horloge. Les nombres plus élevés éloignent le bouton, parmi les boutons disponibles de ce côté."

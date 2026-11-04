@@ -2,13 +2,13 @@ UUID = aiu-indicator@citizenu03bb.github.io
 EXT_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
 SRC_DIR = $(shell pwd)
 JS_FILES = extension.js indicator.js menuView.js menuLayout.js aiuClient.js i18n.js \
-	prefs.js prefsWindow.js aiuConfig.js
+	prefs.js prefsWindow.js aiuConfig.js panelPlacement.js
 TEST_FILES = $(wildcard tests/*.js)
 # gettext domain: "gettext-domain" in metadata.json and DOMAIN in i18n.js.
 DOMAIN = aiu-indicator
 PO_FILES = $(wildcard po/*.po)
 MO_FILES = $(patsubst po/%.po,locale/%/LC_MESSAGES/$(DOMAIN).mo,$(PO_FILES))
-# GSettings schema (refresh interval). GNOME 44+ compiles it when it installs
+# GSettings schema (refresh interval and placement). GNOME 44+ compiles it when it installs
 # the zip, and extensions.gnome.org wants only the XML for GNOME 45+; the
 # compiled file is for a checkout linked in place (make install) and the tests.
 SCHEMA_XML = $(wildcard schemas/*.gschema.xml)
@@ -58,6 +58,7 @@ test: $(MO_FILES) $(SCHEMA_COMPILED)
 	@LC_ALL=C.UTF-8 LANGUAGE= gjs -m tests/test_aiuClient.js
 	@LC_ALL=C.UTF-8 LANGUAGE= gjs -m tests/test_aiuConfig.js
 	@LC_ALL=C.UTF-8 LANGUAGE= gjs -m tests/test_menuLayout.js
+	@LC_ALL=C.UTF-8 LANGUAGE= gjs -m tests/test_panelPlacement.js
 	@sh tests/run_french.sh
 
 # Calls the real aiu (and so your providers): local only, never in CI.
