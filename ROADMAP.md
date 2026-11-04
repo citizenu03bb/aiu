@@ -775,6 +775,23 @@ unchanged, and the task's lines are in the README's "What changed in v0.6.0".
   `gnome-extension/EGO.md` (now in git; it says Gemini is read through the
   Antigravity CLI).
 
+## Wave 10 — Release automation
+
+### Z. Submit release ZIPs to EGO
+
+- Run the Python and extension checks before building a tagged release.
+- Publish the same ZIP to GitHub and EGO, with a verified SHA-256 between jobs.
+- Use the official GNOME uploader with the owner's credentials from repository
+  secrets, a password on stdin and no automatic upload retry.
+- Report submission separately from EGO approval, and document first-time setup
+  and the manual fallback.
+
+**Files:** `.github/workflows/release.yml`, `scripts/upload-ego.sh`,
+`tests/test_upload_ego.py`, `gnome-extension/EGO.md`, `README.md`.
+**Done when:** offline upload tests and workflow validation pass; a missing secret
+or failed uploader fails the EGO job. A real submission requires configured
+secrets and an explicitly released tag.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it
