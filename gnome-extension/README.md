@@ -3,7 +3,7 @@
 GNOME Shell extension shipped with [`aiu`](../README.md); it shows the output of `aiu --json`.
 It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested on GNOME Shell 50.1, Wayland) and a menu with everything `aiu` collects.
 
-<p align="center"><img src="screenshots/menu.png" alt="The panel menu with four subscriptions and their credits"></p>
+<p align="center"><img src="screenshots/menu.png" alt="The panel menu with provider links, four subscriptions, credits and balances (sample data)"></p>
 
 ## Getting started
 
@@ -19,7 +19,7 @@ It puts a small icon next to the clock in the top bar (GNOME 45 to 51+, tested o
    <img src="screenshots/first-run.png" alt="The menu before aiu is installed, with the install command and its buttons">
 
    **Copy command** is the extension's only use of the clipboard: it writes the command there when you click it, and never reads the clipboard.
-2. **Turn on the extension** from [extensions.gnome.org](https://extensions.gnome.org), or from the release zip (see [Install](#install)).
+2. **Install and enable the extension** from the [GitHub release ZIP](https://github.com/citizenu03bb/aiu/releases/latest) (see [Install](#install)).
 3. **Set up your providers.** On its first run `aiu` writes `~/.config/ai-usage/config.toml`. Turn on the subscriptions you pay for in the [preferences window](#preferences) (or in the file itself), and sign in to their command-line tools (`codex`…); for Claude, install aiu's Claude Code plugin (`/plugin install aiu-claude-usage --marketplace citizenu03bb/aiu`). Until one can be read, the menu says so and has an **Open config** button. Each provider's error note says what it still needs. The [main README](../README.md#providers) has the details per provider.
 
 ## Features
@@ -106,19 +106,46 @@ Keep each `{placeholder}` as it is. The text is shown as plain text, never marku
 
 Needs the `aiu` command in `~/.local/bin` or on the `PATH` (see the [main README](../README.md#install)).
 
-```bash
-cd gnome-extension   # in your clone of the aiu repository
-make install         # then log out and back in (Wayland)
-```
+### From GitHub Releases
 
-Without a clone, from the zip attached to each [GitHub release](https://github.com/citizenu03bb/aiu/releases) (or built with `make pack`, in the layout extensions.gnome.org expects):
+Download `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` from the
+**Assets** of the [latest release](https://github.com/citizenu03bb/aiu/releases/latest).
+In the directory containing the downloaded ZIP, run:
 
 ```bash
 gnome-extensions install --force aiu-indicator@citizenu03bb.github.io.shell-extension.zip
-gnome-extensions enable aiu-indicator@citizenu03bb.github.io   # after logging out and back in
 ```
 
+Log out and back in, then enable it:
+
+```bash
+gnome-extensions enable aiu-indicator@citizenu03bb.github.io
+```
+
+To verify the download, also download `release.sha256` from the same release
+into the same directory and run `sha256sum --check release.sha256` before
+installing. Checksums are included from v0.6.3 onward.
+
+### Updates
+
+Download the ZIP from the newer release and repeat `gnome-extensions install
+--force` above, then log out and back in. Updates are manual: GitHub releases
+are the distribution channel, and updates are not delivered through
+extensions.gnome.org.
+
 GNOME Shell keeps an extension's JavaScript in memory for the whole session: after an update, log out and back in (`make reload` does not reload the modules).
+
+The CLI updates separately: run `uv tool upgrade aiu` or `pipx upgrade aiu`,
+using the tool you installed it with.
+
+### From a development checkout
+
+```bash
+cd gnome-extension   # in your clone of the aiu repository
+make install         # then log out and back in
+```
+
+This links the extension to your checkout. For a standalone ZIP, use `make pack`.
 
 ## Make commands
 
@@ -128,7 +155,7 @@ GNOME Shell keeps an extension's JavaScript in memory for the whole session: aft
 - `make mo`: compiles `po/*.po` into `locale/` (with `python3`, no GNU gettext needed).
 - `make schemas`: compiles the settings schema into `schemas/gschemas.compiled`, for a checkout linked in place (`make install` does it). The zip carries only the XML: GNOME compiles it when it installs the extension.
 - `make pot`: writes the translation template `po/aiu-indicator.pot` (needs `xgettext`).
-- `make pack`: builds `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` for extensions.gnome.org, compiled translations and the schema XML included.
+- `make pack`: builds `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` for GitHub Releases, compiled translations and the schema XML included.
 - `make clean`: removes the zip, `locale/` and the compiled schema.
 - `make install`: compiles the translations and the schema, links this directory into `~/.local/share/gnome-shell/extensions/` and enables the extension.
 - `make prefs`: opens the preferences window of the installed extension.

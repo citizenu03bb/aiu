@@ -5,9 +5,9 @@ Run `aiu` and you get one table: Claude Max session quotas + month-to-date API
 spend across your other providers.
 
 <p align="center"><img src="gnome-extension/screenshots/menu.png" width="400"
-  alt="The aiu GNOME panel menu: routing advice, quota bars per subscription, credits and balances"></p>
+  alt="The current aiu GNOME panel menu: provider links, routing advice, quota bars, credits and balances"></p>
 
-*The [GNOME panel indicator](gnome-extension/README.md), on made-up numbers.*
+*The [GNOME panel indicator](gnome-extension/README.md), with sample data.*
 
 ```
 aiu                       # pretty table
@@ -97,8 +97,33 @@ ln -s "$PWD/aiu/aiu.py" ~/.local/bin/aiu
 ln -s "$PWD/aiu/consult.py" ~/.local/bin/consult   # optional, see consult.py
 ```
 
-The repository also ships a **GNOME Shell panel indicator** that shows the
-same snapshot and routing advice: see [gnome-extension/](gnome-extension/README.md).
+### GNOME Shell extension
+
+The optional panel indicator shows the same snapshot and routing advice beside
+the clock. Install the CLI above first, then:
+
+1. Download `aiu-indicator@citizenu03bb.github.io.shell-extension.zip` from the
+   **Assets** of the [latest GitHub release](https://github.com/citizenu03bb/aiu/releases/latest).
+2. In the download directory, run:
+
+   ```bash
+   gnome-extensions install --force aiu-indicator@citizenu03bb.github.io.shell-extension.zip
+   ```
+
+3. Log out and back in, then run:
+
+   ```bash
+   gnome-extensions enable aiu-indicator@citizenu03bb.github.io
+   ```
+
+**Updates are manual:** download the newer ZIP, repeat the install command,
+then log out and back in. Update the CLI separately with `pipx upgrade aiu`
+or `uv tool upgrade aiu`, using the tool you installed it with. Releases are
+distributed through GitHub; the extension does not receive updates through
+extensions.gnome.org.
+
+See the [extension guide](gnome-extension/README.md#install) for download
+verification, provider setup and installation from a checkout.
 
 ## Strategy: maximize the flat-fee subscriptions
 Claude Max, ChatGPT/Codex, and Google One (Gemini) are **flat fees** — marginal
@@ -619,6 +644,15 @@ no other network call. No probe writes to another program's files.
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
 
+## What changed in v0.6.3 (unreleased)
+
+- The GNOME extension is distributed through GitHub Releases only. Tagged
+  releases publish the tested ZIP, its SHA-256 checksum and installation/update
+  instructions; automatic extensions.gnome.org submissions have been removed.
+  Extension updates are manual, separately from CLI updates.
+- The README screenshot shows the current GNOME menu, including provider links
+  and separate credit/balance cards, with sample data.
+
 ## What changed in v0.6.2
 
 - Codex links open `https://chatgpt.com/settings/usage?tab=overview`, including
@@ -637,10 +671,9 @@ no other network call. No probe writes to another program's files.
 - The GNOME menu, terminal table and HTML page hide `Gemini 4 Argon Weekly`
   while its consumption is exactly zero, and show it again as soon as it is
   used. Unknown readings and errors stay visible; JSON keeps every quota.
-- Tagged releases submit the tested GNOME extension ZIP to extensions.gnome.org
-  after publishing the same ZIP on GitHub. Repository secrets `EGO_USERNAME`
-  and `EGO_PASSWORD` are required; see [EGO setup](gnome-extension/EGO.md).
-  A successful submission still needs EGO approval before it is available.
+- Tagged releases added automatic submission of the tested GNOME extension ZIP
+  to extensions.gnome.org after publishing it on GitHub. This was retired in
+  v0.6.3; releases now publish on GitHub only.
 - `openai` calls the Costs API at `/v1/organization/costs`. It called
   `/v1/organizations/costs`, which answers 401 to every key, so the row said
   "auth rejected (401) — needs an ADMIN key" even with a valid admin key.
@@ -709,7 +742,7 @@ make -C gnome-extension check test pack                         # extension, as 
   in French; it does not need `aiu`.
 - `make test-live` runs the installed `aiu`, so it calls your providers: local
   only, never in CI.
-- `make pack` builds the zip for extensions.gnome.org (with the compiled
+- `make pack` builds the release ZIP (with the compiled
   translations); `make clean` removes it and `locale/`.
 
 User-facing CLI messages are written in English and translated through the

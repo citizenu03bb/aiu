@@ -44,14 +44,13 @@ jobs:
         run: sha256sum -- ./*.shell-extension.zip > release.sha256
       - uses: actions/upload-artifact@v4
         with:
-          name: ego-release
+          name: gnome-extension-release
           path: |
             gnome-extension/*.shell-extension.zip
             gnome-extension/release.sha256
-            scripts/upload-ego.sh
           if-no-files-found: error
           retention-days: 30
-      - name: Attach the zip to the GitHub release
+      - name: Publish the ZIP and checksum on GitHub
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
@@ -61,54 +60,8 @@ jobs:
           [ "${#archives[@]}" -eq 1 ] && [ -f "${archives[0]}" ]
           zip="${archives[0]}"
           if gh release view "$TAG" > /dev/null 2>&1; then
-            gh release upload "$TAG" "$zip" --clobber
+            gh release upload "$TAG" "$zip" release.sha256 --clobber
           else
-            gh release create "$TAG" "$zip" --verify-tag --generate-notes
+            gh release create "$TAG" "$zip" release.sha256 --verify-tag \
+              --notes-file ../.github/RELEASE_NOTES.md --generate-notes
           fi
-
-  ego:
-    name: Submit the release ZIP to EGO
-    needs: gnome-extension
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    # Fedora 43 provides gnome-extensions >= 49, including `upload`.
-    container: fedora:43
-    defaults:
-      run:
-        shell: bash
-    steps:
-      - name: Check EGO configuration
-        env:
-          EGO_USERNAME: ${{ secrets.EGO_USERNAME }}
-          EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
-        run: |
-          if [[ -z "$EGO_USERNAME" || -z "$EGO_PASSWORD" ]]; then
-            echo '::error::Set the EGO_USERNAME and EGO_PASSWORD repository secrets before submitting to EGO.'
-            exit 1
-          fi
-      - uses: actions/download-artifact@v4
-        with:
-          name: ego-release
-      - name: Verify the tested ZIP
-        working-directory: gnome-extension
-        run: sha256sum --check release.sha256
-      - name: Install the official uploader
-        run: |
-          dnf install -y --setopt=install_weak_deps=False gnome-shell
-          gnome-extensions version
-      - name: Submit to extensions.gnome.org for review
-        env:
-          EGO_USERNAME: ${{ secrets.EGO_USERNAME }}
-          EGO_PASSWORD: ${{ secrets.EGO_PASSWORD }}
-        run: bash scripts/upload-ego.sh gnome-extension/*.shell-extension.zip
-      - name: Record submission
-        env:
-          TAG: ${{ github.ref_name }}
-        run: |
-          {
-            printf '### EGO submission: %s\n\n' "$TAG"
-            printf 'The official uploader succeeded. EGO review and public availability must be checked on extensions.gnome.org.\n\n'
-            printf 'ZIP SHA-256:\n```text\n'
-            cat gnome-extension/release.sha256
-            printf '```\n'
-          } >> "$GITHUB_STEP_SUMMARY"

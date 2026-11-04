@@ -835,6 +835,20 @@ placement are verified in GNOME Shell.
 **Done when:** offline extension checks pass; pointer/keyboard activation,
 tooltip cleanup, and menu fit are verified in an isolated Shell with synthetic data.
 
+### AD. Distribute the GNOME extension through GitHub Releases only
+
+- Remove automatic EGO submission while retaining the release checks and ZIP.
+- Publish the ZIP checksum and prepend install/update instructions to new releases.
+- Make GitHub ZIP installation and manual updates prominent in both READMEs;
+  mark the old EGO listing kit as historical.
+- Refresh the shared README screenshot from the current extension with sample data.
+
+**Files:** `.github/workflows/release.yml`, `.github/workflows/ci.yml`,
+`.github/RELEASE_NOTES.md`, `README.md`, `gnome-extension/README.md`,
+`gnome-extension/EGO.md`, `gnome-extension/screenshots/menu.png`, `ROADMAP.md`.
+**Done when:** workflow validation and existing offline checks pass; release
+commands are verified without publishing or submitting anything.
+
 ## Later
 
 - **Price list.** Per-task-type prices for the paid fallbacks, only if it

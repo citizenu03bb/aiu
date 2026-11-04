@@ -43,7 +43,7 @@ jobs:
         run: make check
       - name: Unit tests (offline; the live aiu test runs only locally)
         run: make test
-      - name: Pack for extensions.gnome.org
+      - name: Pack the GNOME extension ZIP
         run: make pack
       - uses: actions/upload-artifact@v4
         with:
