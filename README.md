@@ -619,7 +619,7 @@ no other network call. No probe writes to another program's files.
 ## Notes / limits
 - On-demand only by design. Wrap in `watch` or a cron if you want polling.
 
-## What changed in v0.6.2 (unreleased)
+## What changed in v0.6.2
 
 - Codex links open `https://chatgpt.com/settings/usage?tab=overview`, including
   subscription credits. The previous Codex-specific path redirected to ChatGPT home
