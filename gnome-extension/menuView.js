@@ -13,6 +13,7 @@ import {
     resetText, visibleQuotas,
 } from './aiuClient.js';
 import { dataMaxHeight } from './menuLayout.js';
+import { providerLink } from './providerLinks.js';
 import { _, N_, fmt } from './i18n.js';
 
 function setLineWrap(label, wrap = true) {
@@ -68,22 +69,16 @@ export class MenuView {
         this._callbacks = callbacks; // onRefresh, etc.
         this._dataSection = null;
         this._scrollView = null;
-        this._webSubmenu = null;
         this._headerSubtitle = null;
         this._refreshButton = null;
         this._refreshIcon = null;
+        this._providerTooltip = null;
 
         this._buildStaticMenu();
 
         // The menu dies with the indicator, and these handlers with it.
         this._menu.connect('open-state-changed', (menu, isOpen) => {
             if (isOpen) {
-                this._fitToScreen();
-            }
-        });
-        // Opening the web consoles makes the bottom items taller.
-        this._webSubmenu.menu.connect('open-state-changed', () => {
-            if (this._menu.isOpen) {
                 this._fitToScreen();
             }
         });
@@ -182,16 +177,6 @@ export class MenuView {
         });
         this._menu.addMenuItem(termItem);
 
-        // Web consoles submenu
-        const webSubmenu = new PopupMenu.PopupSubMenuMenuItem(_('🌐 Web consoles'));
-        this._webSubmenu = webSubmenu;
-        this._addWebLink(webSubmenu, 'Google AI Studio', 'https://aistudio.google.com/');
-        this._addWebLink(webSubmenu, 'Anthropic Console', 'https://console.anthropic.com/');
-        this._addWebLink(webSubmenu, 'ChatGPT / OpenAI', 'https://chatgpt.com/');
-        this._addWebLink(webSubmenu, 'DeepSeek Platform', 'https://platform.deepseek.com/');
-        this._addWebLink(webSubmenu, 'OpenRouter Activity', 'https://openrouter.ai/activity');
-        this._menu.addMenuItem(webSubmenu);
-
         // The preferences window (prefs.js), also under the Extensions app's gear
         const prefsItem = new PopupMenu.PopupMenuItem(_('⚙️ Preferences…'));
         prefsItem.connect('activate', () => this._callbacks.onPreferences?.());
@@ -210,15 +195,10 @@ export class MenuView {
             const workArea = layout.getWorkAreaForMonitor(monitor);
             const scaleFactor = St.ThemeContext.get_for_stage(global.stage).scale_factor;
 
-            // Everything but the data section, at its natural height. A submenu
-            // reports its new state before it shows or hides itself.
+            // Everything but the data section, at its natural height.
             const [, menuHeight] = this._menu.box.get_preferred_height(-1);
             const [, dataHeight] = this._dataSection.actor.get_preferred_height(-1);
-            const submenu = this._webSubmenu.menu;
-            const [, submenuHeight] = submenu.actor.get_preferred_height(-1);
             const fixedHeight = menuHeight - dataHeight
-                - (submenu.actor.visible ? submenuHeight : 0)
-                + (submenu.isOpen ? submenuHeight : 0)
                 + this._menu.actor.margin_top + this._menu.actor.margin_bottom;
 
             const maxHeight = dataMaxHeight(workArea?.height, fixedHeight, { scaleFactor });
@@ -229,10 +209,95 @@ export class MenuView {
         }
     }
 
-    _addWebLink(submenu, label, url) {
-        const item = new PopupMenu.PopupMenuItem(label);
-        item.connect('activate', () => this._openUri(url));
-        submenu.menu.addMenuItem(item);
+    /** One explicit external action; the card and its quota bars stay inert. */
+    _addProviderLink(header, provider) {
+        const link = providerLink(provider);
+        if (!link)
+            return;
+        const label = fmt(_('Open {destination} in your browser'), { destination: link.label });
+        const button = new St.Button({
+            style_class: 'button aiu-provider-link',
+            accessible_name: label,
+            can_focus: true, track_hover: true,
+            y_align: Clutter.ActorAlign.CENTER,
+            child: new St.Label({ text: '↗' }),
+        });
+        const tooltip = new St.Label({
+            text: `${label}\n${link.url}`,
+            style_class: 'aiu-link-tooltip',
+            reactive: false, visible: false,
+        });
+        setLineWrap(tooltip);
+        Main.uiGroup.add_child(tooltip);
+        const adjustment = this._scrollView.vadjustment ?? this._scrollView.vscroll.adjustment;
+        let timer = 0;
+        const hide = () => {
+            if (timer) {
+                GLib.source_remove(timer);
+                timer = 0;
+            }
+            tooltip.hide();
+            if (this._providerTooltip === tooltip)
+                this._providerTooltip = null;
+        };
+        const show = () => {
+            if (!this._menu.isOpen || !button.mapped)
+                return;
+            this._providerTooltip?.hide();
+            this._providerTooltip = tooltip;
+            Main.uiGroup.set_child_above_sibling(tooltip, null);
+            tooltip.show();
+            const [x, y] = button.get_transformed_position();
+            const [width, height] = button.get_transformed_size();
+            const monitor = Main.layoutManager.findMonitorForActor(button)
+                || Main.layoutManager.primaryMonitor;
+            const left = monitor?.x ?? 0;
+            const top = monitor?.y ?? 0;
+            const right = left + (monitor?.width ?? global.stage.width);
+            const bottom = top + (monitor?.height ?? global.stage.height);
+            const [, tw] = tooltip.get_preferred_width(-1);
+            const [, th] = tooltip.get_preferred_height(tw);
+            tooltip.set_position(
+                Math.max(left, Math.min(x + width / 2 - tw / 2, right - tw)),
+                y + height + th + 6 <= bottom ? y + height + 6 : Math.max(top, y - th - 6));
+        };
+        const sync = () => {
+            hide();
+            if ((button.has_key_focus() || button.hover) && button.mapped && this._menu.isOpen) {
+                // Give a focus-induced scroll one frame to update the geometry.
+                timer = GLib.timeout_add(GLib.PRIORITY_DEFAULT, button.has_key_focus() ? 50 : 400, () => {
+                    timer = 0;
+                    show();
+                    return GLib.SOURCE_REMOVE;
+                });
+            }
+        };
+        button.connect('notify::hover', sync);
+        button.connect('key-focus-in', () => {
+            const [, y] = button.get_transformed_position();
+            const [, height] = button.get_transformed_size();
+            const [, top] = this._scrollView.get_transformed_position();
+            const [, viewHeight] = this._scrollView.get_transformed_size();
+            const delta = y < top + 6 ? y - top - 6
+                : Math.max(0, y + height - (top + viewHeight - 6));
+            adjustment.value = Math.max(adjustment.lower,
+                Math.min(adjustment.value + delta, adjustment.upper - adjustment.page_size));
+            sync();
+        });
+        button.connect('key-focus-out', sync);
+        button.connect('notify::mapped', sync);
+        adjustment.connectObject('notify::value', hide, button);
+        this._menu.connectObject('open-state-changed', hide, button);
+        button.connect('destroy', () => {
+            hide();
+            tooltip.destroy();
+        });
+        button.connect('clicked', () => {
+            hide();
+            this._menu.close();
+            this._openUri(link.url);
+        });
+        header.add_child(button);
     }
 
     _openUri(uri) {
@@ -415,7 +480,11 @@ export class MenuView {
                     style_class: 'aiu-alert-text',
                 });
                 setLineWrap(noteLabel, true);
-                alertBox.add_child(provLabel);
+                const header = new St.BoxLayout({ style_class: 'aiu-provider-header', x_expand: true });
+                provLabel.x_expand = true;
+                header.add_child(provLabel);
+                this._addProviderLink(header, err.provider);
+                alertBox.add_child(header);
                 alertBox.add_child(noteLabel);
             }
             this._dataBox.add_child(alertBox);
@@ -498,6 +567,7 @@ export class MenuView {
                         y_align: Clutter.ActorAlign.CENTER,
                     }));
                 }
+                this._addProviderLink(provHeader, provider);
                 card.add_child(provHeader);
 
                 for (const item of items) {
@@ -574,54 +644,69 @@ export class MenuView {
                 style_class: 'aiu-section-label',
             }));
 
-            const balCard = new St.BoxLayout({
-                vertical: true,
-                style_class: 'aiu-card',
-                x_expand: true,
-            });
-            // Free credits first, then what can still pay for overflow, then sunk spend.
+            // Providers with free credits first; each provider keeps its own rows together.
             const order = { credit: 0, balance: 1, spend: 2 };
             const sorted = [...data.balances].sort((x, y) => (order[x.kind] ?? 3) - (order[y.kind] ?? 3));
-
-            for (const b of sorted) {
-                const block = new St.BoxLayout({ vertical: true, x_expand: true });
-                const balRow = new St.BoxLayout({ x_expand: true, style_class: 'aiu-balance-row' });
-                balRow.add_child(new St.Label({
-                    text: `${displayName(b.provider)} — ${b.metric}`,
-                    style_class: 'aiu-metric-name',
-                    x_expand: true,
-                }));
-
-                let valText = typeof b.used === 'number' ? b.used.toFixed(2) : `${b.used ?? '—'}`;
-                if (b.kind === 'credit' && typeof b.limit === 'number') {
-                    valText += ` / ${b.limit.toFixed(0)}`;
-                }
-                valText = `${valText} ${b.unit || ''}`.trim();
-                balRow.add_child(new St.Label({
-                    text: valText,
-                    style_class: `aiu-currency-val ${b.kind}`,
-                }));
-                block.add_child(balRow);
-
-                let sub = null;
-                if (b.kind === 'credit') {
-                    const left = resetText(b);
-                    sub = left
-                        ? fmt(_('free, lost when it expires ({when})'), { when: left })
-                        : _('free, lost when it expires');
-                } else if (b.kind === 'spend' && /total/i.test(b.metric)) {
-                    sub = _('already spent (history)');
-                }
-                if (b.note) {
-                    sub = sub ? `${sub} · ${b.note}` : b.note;
-                }
-                if (sub) {
-                    block.add_child(new St.Label({ text: sub, style_class: 'aiu-metric-reset' }));
-                }
-                balCard.add_child(block);
+            const grouped = new Map();
+            for (const row of sorted) {
+                if (!grouped.has(row.provider))
+                    grouped.set(row.provider, []);
+                grouped.get(row.provider).push(row);
             }
+            for (const [provider, balances] of grouped) {
+                const balCard = new St.BoxLayout({
+                    vertical: true, style_class: 'aiu-card', x_expand: true,
+                });
+                const header = new St.BoxLayout({
+                    style_class: 'aiu-provider-header', x_expand: true,
+                    y_align: Clutter.ActorAlign.CENTER,
+                });
+                header.add_child(new St.Label({
+                    text: displayName(provider), style_class: 'aiu-provider-name',
+                    x_expand: true, y_align: Clutter.ActorAlign.CENTER,
+                }));
+                this._addProviderLink(header, provider);
+                balCard.add_child(header);
 
-            this._dataBox.add_child(balCard);
+                for (const b of balances) {
+                    const block = new St.BoxLayout({ vertical: true, x_expand: true });
+                    const balRow = new St.BoxLayout({ x_expand: true, style_class: 'aiu-balance-row' });
+                    balRow.add_child(new St.Label({
+                        text: b.metric,
+                        style_class: 'aiu-metric-name',
+                        x_expand: true,
+                    }));
+
+                    let valText = typeof b.used === 'number' ? b.used.toFixed(2) : `${b.used ?? '—'}`;
+                    if (b.kind === 'credit' && typeof b.limit === 'number') {
+                        valText += ` / ${b.limit.toFixed(0)}`;
+                    }
+                    valText = `${valText} ${b.unit || ''}`.trim();
+                    balRow.add_child(new St.Label({
+                        text: valText,
+                        style_class: `aiu-currency-val ${b.kind}`,
+                    }));
+                    block.add_child(balRow);
+
+                    let sub = null;
+                    if (b.kind === 'credit') {
+                        const left = resetText(b);
+                        sub = left
+                            ? fmt(_('free, lost when it expires ({when})'), { when: left })
+                            : _('free, lost when it expires');
+                    } else if (b.kind === 'spend' && /total/i.test(b.metric)) {
+                        sub = _('already spent (history)');
+                    }
+                    if (b.note) {
+                        sub = sub ? `${sub} · ${b.note}` : b.note;
+                    }
+                    if (sub) {
+                        block.add_child(new St.Label({ text: sub, style_class: 'aiu-metric-reset' }));
+                    }
+                    balCard.add_child(block);
+                }
+                this._dataBox.add_child(balCard);
+            }
         }
     }
 }

@@ -621,6 +621,13 @@ no other network call. No probe writes to another program's files.
 
 ## What changed in v0.6.2 (unreleased)
 
+- Codex links open `https://chatgpt.com/settings/usage?tab=overview`, including
+  subscription credits. The previous Codex-specific path redirected to ChatGPT home
+  in the reported browser session; no plan-specific URL rule has been established.
+- Provider headers in the GNOME menu now have a dedicated external-link button,
+  including credits, API balances and probe errors. The destination is named for
+  screen readers and shown with its URL on hover or keyboard focus. These links
+  replace the Web consoles submenu and distinguish subscriptions from API usage.
 - Right-click the GNOME panel button to open preferences. General → Panel
   now chooses the side of the clock and the order on that side (1 is closest),
   applied immediately. The default stays just right of the clock.
