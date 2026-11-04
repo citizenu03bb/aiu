@@ -621,6 +621,10 @@ no other network call. No probe writes to another program's files.
 
 ## What changed in v0.6.1
 
+- Tagged releases submit the tested GNOME extension ZIP to extensions.gnome.org
+  after publishing the same ZIP on GitHub. Repository secrets `EGO_USERNAME`
+  and `EGO_PASSWORD` are required; see [EGO setup](gnome-extension/EGO.md).
+  A successful submission still needs EGO approval before it is available.
 - `openai` calls the Costs API at `/v1/organization/costs`. It called
   `/v1/organizations/costs`, which answers 401 to every key, so the row said
   "auth rejected (401) — needs an ADMIN key" even with a valid admin key.
